@@ -200,8 +200,28 @@ h1 strong {
   right: 3.4vw;
   bottom: 15vh;
   width: min(41vw, 610px);
+  height: 294px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(216, 255, 95, .42) rgba(241, 238, 231, .04);
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
   border-top: 1px solid var(--line);
   pointer-events: auto;
+}
+
+.universe-data::-webkit-scrollbar { width: 5px; }
+.universe-data::-webkit-scrollbar-track { background: rgba(241, 238, 231, .04); }
+.universe-data::-webkit-scrollbar-thumb {
+  border-radius: 99px;
+  background: rgba(216, 255, 95, .42);
+}
+.universe-data:focus-visible {
+  outline: 1px solid rgba(216, 255, 95, .42);
+  outline-offset: 7px;
 }
 
 .metric {
@@ -218,7 +238,7 @@ h1 strong {
 
 .metric-index { color: rgba(241, 238, 231, 0.26); font: 8px "Space Mono", monospace; }
 .metric-label { color: var(--muted); font-size: 11px; letter-spacing: 0.08em; }
-.metric strong { font: 400 16px var(--display-font); letter-spacing: 0; }
+.metric strong { max-width: 260px; text-align: right; font: 400 16px var(--display-font); letter-spacing: 0; }
 
 .primary-actions {
   position: absolute;
@@ -522,10 +542,19 @@ h1 strong {
   .hero-note { display: none; }
   .orbit-label { display: none; }
 
-  .universe-data { left: 20px; right: 20px; bottom: 18vh; width: auto; }
-  .metric { grid-template-columns: 28px 1fr auto; min-height: 42px; padding: 10px 0; }
+  .universe-data {
+    left: 20px;
+    right: 14px;
+    bottom: 18vh;
+    width: auto;
+    height: clamp(210px, 34vh, 290px);
+    padding-right: 6px;
+    scrollbar-gutter: auto;
+  }
+  .universe-data::-webkit-scrollbar { width: 4px; }
+  .metric { grid-template-columns: 28px minmax(0, 1fr) auto; min-height: 48px; padding: 12px 0; }
   .metric-label { font-size: 10px; }
-  .metric strong { font-size: 11px; }
+  .metric strong { max-width: 48vw; font-size: 11px; }
 
   .primary-actions { left: 20px; right: 20px; bottom: 4vh; }
   .enter-button { width: 100%; height: 52px; }

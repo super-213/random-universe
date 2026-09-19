@@ -67,7 +67,7 @@ let starDeathThresholds = null;
 let galaxyDriftVectors = null;
 let originalRemnantPositions = null;
 let remnantDriftVectors = null;
-let cosmicPosition = 500;
+let cosmicPosition = 0;
 let timePlaying = false;
 let timeSpeed = 1;
 let lastFrame = performance.now();
@@ -76,9 +76,10 @@ let eventFadeTimer = null;
 let sharedPointTexture = null;
 let cosmicEvents = [];
 let activeCosmicEvent = null;
+const NORMAL_JOURNEY_SECONDS = 35 * 60;
 
 const notes = [
-  '一次偶然涨落，六条全新的自然法则。',
+  '一次偶然涨落，一组全新的自然法则。',
   '这里的星光，以陌生的速度穿过真空。',
   '引力写下结构，时间负责把它读完。',
   '一个从未存在过，也不会再次出现的宇宙。',
@@ -121,6 +122,12 @@ function createUniverse(seed = Math.floor(Math.random() * 900000) + 100000) {
   const random = mulberry32(seed);
   const speed = randomBetween(random, 0.38, 1.84);
   const gravity = randomBetween(random, 0.52, 1.76);
+  const fineStructure = randomBetween(random, 0.72, 1.28);
+  const massRatio = randomBetween(random, 0.82, 1.18);
+  const expansionRate = randomBetween(random, 0.65, 1.45);
+  const darkEnergyDensity = randomBetween(random, 0.48, 0.82);
+  const primordialFluctuation = randomBetween(random, 0.55, 1.75);
+  const cmbTemperature = randomBetween(random, 1.9, 4.4);
   const elements = Math.floor(randomBetween(random, 36, 184));
   const stars = randomBetween(random, 0.12, 6.8);
   const lifeProbability = Math.pow(random(), 4) * 0.28;
@@ -133,7 +140,12 @@ function createUniverse(seed = Math.floor(Math.random() * 900000) + 100000) {
   const activeNucleus = hasCentralBlackHole && random() < [.1, .07, .05, .045, .025][galaxyType];
   const blackHoleEvaporationExponent = Math.floor(randomBetween(random, 97, 103));
   const hue = randomBetween(random, 0.48, 0.76);
-  return { seed, random, speed, gravity, elements, stars, lifeProbability, civilizations, lifetime, blackHoleEvaporationExponent, armCount, galaxyType, hasCentralBlackHole, activeNucleus, hue };
+  return {
+    seed, speed, gravity, fineStructure, massRatio, expansionRate, darkEnergyDensity,
+    primordialFluctuation, cmbTemperature, elements, stars, lifeProbability,
+    civilizations, lifetime, blackHoleEvaporationExponent, armCount, galaxyType,
+    hasCentralBlackHole, activeNucleus, hue
+  };
 }
 
 function formatStars(value) {
@@ -144,14 +156,49 @@ function formatCivilizations(value) {
   return value === 0 ? '尚未出现' : `${new Intl.NumberFormat('zh-CN').format(value)} 个`;
 }
 
+function formatProbability(value) {
+  const percent = value * 100;
+  if (percent < 0.0001) return '< 0.0001%';
+  if (percent < 0.01) return `${percent.toFixed(4)}%`;
+  if (percent < 1) return `${percent.toFixed(2)}%`;
+  return `${percent.toFixed(1)}%`;
+}
+
+function formatArmStructure(type, count) {
+  if (type === 2) return '主环 + 碎环';
+  if (type === 3) return '无旋臂';
+  if (type === 4) return '不规则';
+  return `${count} 条`;
+}
+
+function formatGalaxyHue(hue) {
+  const degrees = Math.round(hue * 360);
+  const name = degrees < 190 ? '青白' : degrees < 225 ? '蓝白' : degrees < 250 ? '靛蓝' : '紫白';
+  return `${name} · ${degrees}°`;
+}
+
 function updateData() {
   $('#universe-id').textContent = `#${universe.seed}`;
   $('#explore-id').textContent = `#${universe.seed}`;
   $('#speed-value').textContent = `${universe.speed.toFixed(2)} × 本宇宙`;
   $('#gravity-value').textContent = `${universe.gravity.toFixed(2)} × 本宇宙`;
+  $('#fine-structure-value').textContent = `${universe.fineStructure.toFixed(3)} × 本宇宙`;
+  $('#mass-ratio-value').textContent = `${universe.massRatio.toFixed(3)} × 本宇宙`;
+  $('#expansion-value').textContent = `${universe.expansionRate.toFixed(2)} × 本宇宙`;
+  $('#dark-energy-value').textContent = `${(universe.darkEnergyDensity * 100).toFixed(1)}%`;
+  $('#fluctuation-value').textContent = `${universe.primordialFluctuation.toFixed(2)} × 本宇宙`;
+  $('#cmb-value').textContent = `${universe.cmbTemperature.toFixed(2)} K`;
   $('#elements-value').textContent = `${universe.elements} 种`;
   $('#stars-value').textContent = formatStars(universe.stars);
+  $('#life-probability-value').textContent = formatProbability(universe.lifeProbability);
   $('#civilizations-value').textContent = formatCivilizations(universe.civilizations);
+  $('#galaxy-type-value').textContent = galaxyTypes[universe.galaxyType];
+  $('#arm-count-value').textContent = formatArmStructure(universe.galaxyType, universe.armCount);
+  $('#black-hole-value').textContent = universe.hasCentralBlackHole ? '存在' : '未形成';
+  $('#nucleus-value').textContent = universe.hasCentralBlackHole ? (universe.activeNucleus ? '活动 · 吸积中' : '宁静') : '不适用';
+  $('#stellar-window-value').textContent = `${new Intl.NumberFormat('zh-CN').format(universe.lifetime)} 亿年`;
+  $('#galaxy-hue-value').textContent = formatGalaxyHue(universe.hue);
+  $('#evaporation-value').textContent = `约 10^${universe.blackHoleEvaporationExponent} 年`;
   $('#lifetime-value').textContent = '渐近 · 无有限终点';
   $('#universe-note').textContent = notes[universe.seed % notes.length];
   $('#galaxy-name').textContent = `${galaxyRoots[universe.seed % galaxyRoots.length]}星系`;
@@ -581,12 +628,65 @@ function buildCosmicEvents(starPositions) {
   cosmicEvents = [];
   activeCosmicEvent = null;
 
+  const nucleusEvent = universe.hasCentralBlackHole
+    ? {
+        type: 'quasar-awakening', visual: 'pulsar', label: '类星体短暂苏醒',
+        message: '中心黑洞吸积率骤升，相对论喷流穿过星系核', preferCenter: true,
+        start: 535 + random() * 20, duration: 34, color: '#8dd9ff'
+      }
+    : {
+        type: 'magnetar-flare', visual: 'pulsar', label: '磁星巨型耀斑',
+        message: '磁壳重排释放高能辐射，脉冲扫过邻近恒星系',
+        start: 535 + random() * 20, duration: 30, color: '#7dcaff'
+      };
+
   const schedule = [
-    { type: 'supernova', start: 300 + random() * 75, duration: 25, color: '#ff9a52' },
-    { type: 'pulsar', start: 395 + random() * 65, duration: 31, color: '#68c8ff' },
-    { type: 'supernova', start: 515 + random() * 65, duration: 23, color: '#ff6b52' },
-    { type: 'pulsar', start: 630 + random() * 45, duration: 28, color: '#8ba8ff' },
-    { type: 'black-hole-merger', start: 872 + random() * 12, duration: 32, color: '#c897ff' }
+    {
+      type: 'pair-instability-supernova', visual: 'supernova', label: '成对不稳定超新星',
+      message: '第一代巨星被完全撕碎，重元素云向外扩散',
+      start: 282 + random() * 24, duration: 32, color: '#ffb36b'
+    },
+    {
+      type: 'young-pulsar-birth', visual: 'pulsar', label: '年轻脉冲星诞生',
+      message: '新生中子星高速自转，双极束流开始扫掠星际介质',
+      start: 346 + random() * 22, duration: 31, color: '#68c8ff'
+    },
+    {
+      type: 'type-ia-supernova', visual: 'supernova', label: 'Ia 型超新星爆发',
+      message: '白矮星发生热核失控，将铁族元素抛入星际空间',
+      start: 408 + random() * 24, duration: 28, color: '#ffd08a'
+    },
+    {
+      type: 'gamma-ray-burst', visual: 'pulsar', label: '长伽马射线暴',
+      message: '垂死巨星坍缩，狭窄高能喷流贯穿恒星外层',
+      start: 468 + random() * 22, duration: 27, color: '#89b9ff'
+    },
+    nucleusEvent,
+    {
+      type: 'core-collapse-supernova', visual: 'supernova', label: '核坍缩超新星',
+      message: '恒星核心坍缩，冲击波把新合成元素送入星际云',
+      start: 596 + random() * 22, duration: 30, color: '#ff875c'
+    },
+    {
+      type: 'pulsar-glitch', visual: 'pulsar', label: '脉冲星自转突变',
+      message: '中子星内部角动量重分配，脉冲节律突然跃迁',
+      start: 657 + random() * 20, duration: 29, color: '#8ba8ff'
+    },
+    {
+      type: 'superluminous-supernova', visual: 'supernova', label: '超亮超新星',
+      message: '磁星引擎持续注入能量，爆发亮度超过普通超新星',
+      start: 714 + random() * 17, duration: 31, color: '#ff6b52'
+    },
+    {
+      type: 'stellar-black-hole-merger', visual: 'black-hole-merger', label: '双黑洞合并',
+      message: '两颗恒星级黑洞完成旋近，引力波向外传播', preferCenter: true,
+      start: 818 + random() * 20, duration: 36, color: '#c897ff'
+    },
+    {
+      type: 'late-black-hole-merger', visual: 'black-hole-merger', label: '孤立黑洞捕获合并',
+      message: '漫长引力散射后，两颗孤立黑洞形成并合系统', preferCenter: true,
+      start: 900 + random() * 18, duration: 38, color: '#9bb8ff'
+    }
   ];
 
   const pickPosition = (preferCenter = false) => {
@@ -605,11 +705,11 @@ function buildCosmicEvents(starPositions) {
 
   schedule.forEach((data, index) => {
     const group = new THREE.Group();
-    group.position.copy(pickPosition(data.type === 'black-hole-merger'));
+    group.position.copy(pickPosition(data.preferCenter));
     group.visible = false;
     cosmicEventGroup.add(group);
 
-    if (data.type === 'supernova') {
+    if (data.visual === 'supernova') {
       const innerFlash = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeGlowTexture(), color: 0xffffff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
       const photosphere = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeGlowTexture(), color: 0xffad63, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
       const remnant = new THREE.Sprite(new THREE.SpriteMaterial({ map: getPointTexture(), color: 0xaed8ff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
@@ -660,7 +760,7 @@ function buildCosmicEvents(starPositions) {
 
       group.add(photosphere, innerFlash, ejecta, shell, remnant);
       group.userData.effect = { innerFlash, photosphere, remnant, ejecta, ejectaDirections, ejectaVelocity, ejectaDelay, shell, shellDirections, shellNoise };
-    } else if (data.type === 'pulsar') {
+    } else if (data.visual === 'pulsar') {
       const core = new THREE.Sprite(new THREE.SpriteMaterial({ map: getPointTexture(), color: 0xf4fbff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
       const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeGlowTexture(), color: 0x4bb9ff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
       const nebula = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeGlowTexture(), color: 0x1676b8, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, rotation: random() * Math.PI }));
@@ -766,7 +866,7 @@ function buildCosmicEvents(starPositions) {
       ...data,
       group,
       id: `${data.type}-${index}-${universe.seed}`,
-      label: data.type === 'supernova' ? '核坍缩超新星爆发' : data.type === 'pulsar' ? '脉冲星巨型耀斑' : '双黑洞合并'
+      label: data.label
     });
   });
 
@@ -788,7 +888,7 @@ function renderCosmicEventMarkers() {
     marker.addEventListener('click', () => {
       timePlaying = false;
       $('#toggle-time').textContent = '▶';
-      const previewPhase = event.type === 'supernova' ? .12 : event.type === 'black-hole-merger' ? .64 : .5;
+      const previewPhase = event.visual === 'supernova' ? .12 : event.visual === 'black-hole-merger' ? .64 : .5;
       updateCosmicTime(event.start + event.duration * previewPhase, true);
     });
     container.appendChild(marker);
@@ -927,6 +1027,7 @@ function regenerate() {
   updateData();
   buildUniverseObject();
   buildGalaxy();
+  $('.universe-data').scrollTop = 0;
   const flash = $('#creation-flash');
   flash.classList.remove('is-flashing');
   void flash.offsetWidth;
@@ -951,7 +1052,7 @@ function enterUniverse() {
   galaxyGroup.scale.setScalar(0.02);
   controls.enabled = true;
   controls.target.set(0, 0, 0);
-  cosmicPosition = 500;
+  cosmicPosition = 0;
   $('#cosmic-timeline').value = cosmicPosition;
   updateCosmicTime(cosmicPosition, true);
   transition = { type: 'enter', start: performance.now(), duration: prefersReducedMotion ? 1 : 2100 };
@@ -1050,17 +1151,9 @@ function cosmicTimeLabel(position) {
 }
 
 function timelineUnitsPerSecond(position) {
-  // The first two eras and logarithmic deep-time eras stay cinematically compressed.
-  // Across the linear "亿年" eras, 1× advances exactly 0.1 亿年 per second.
-  if (position < 55) return 55 / 80;
-  if (position < 145) return 90 / 90;
-  if (position < 260) return .1 / (1.7962 / 115);
-  if (position < 425) return .1 / (12 / 165);
-  if (position < 610) return .1 / (86.2 / 185);
-  if (position < 745) return .1 / (99900 / 135);
-  if (position < 875) return 130 / 160;
-  if (position < 970) return 95 / 160;
-  return 30 / 100;
+  // The logarithmic timeline is paced as a cinematic journey. At 1× the full
+  // 0–1000 range takes 35 minutes, leaving visible dwell time at both endpoints.
+  return 1000 / NORMAL_JOURNEY_SECONDS;
 }
 
 function advanceCosmicTime(deltaSeconds) {
@@ -1258,7 +1351,7 @@ function updateCosmicEvents(position) {
     event.group.userData.phase = phase;
     const effect = event.group.userData.effect;
 
-    if (event.type === 'supernova') {
+    if (event.visual === 'supernova') {
       const ignition = THREE.MathUtils.smoothstep(phase, 0, .028);
       const flash = ignition * (1 - THREE.MathUtils.smoothstep(phase, .045, .19));
       const afterglow = (1 - THREE.MathUtils.smoothstep(phase, .12, 1)) * ignition;
@@ -1294,7 +1387,7 @@ function updateCosmicEvents(position) {
       }
       effect.shell.geometry.attributes.position.needsUpdate = true;
       effect.shell.material.opacity = THREE.MathUtils.smoothstep(phase, .04, .14) * (1 - THREE.MathUtils.smoothstep(phase, .5, 1)) * .34;
-    } else if (event.type === 'pulsar') {
+    } else if (event.visual === 'pulsar') {
       const envelope = Math.pow(Math.sin(phase * Math.PI), .45);
       effect.core.material.opacity = envelope * .92;
       effect.halo.material.opacity = envelope * .16;
@@ -1361,11 +1454,11 @@ function animateCosmicEvents(now) {
     if (!event.group.visible) return;
     const phase = event.group.userData.phase;
     const effect = event.group.userData.effect;
-    if (event.type === 'supernova') {
+    if (event.visual === 'supernova') {
       effect.innerFlash.material.rotation = now * .00007;
       effect.photosphere.material.rotation = -now * .000035;
       effect.ejecta.rotation.y = Math.sin(now * .00021) * .035;
-    } else if (event.type === 'pulsar') {
+    } else if (event.visual === 'pulsar') {
       effect.rotor.rotation.y = now * .0024;
       const worldQuaternion = new THREE.Quaternion();
       const worldPosition = new THREE.Vector3();
@@ -1441,12 +1534,7 @@ function updateCosmicTime(value, force = false) {
   const activeEvent = updateCosmicEvents(cosmicPosition);
 
   if (activeEvent) {
-    const eventText = activeEvent.type === 'supernova'
-      ? `${activeEvent.label}，重元素正在被抛入星际空间`
-      : activeEvent.type === 'pulsar'
-        ? `${activeEvent.label}，双极喷流扫过邻近星系`
-        : `${activeEvent.label}，时空涟漪向外传播`;
-    setEvent(activeEvent.id, label, eventText, force);
+    setEvent(activeEvent.id, label, `${activeEvent.label}：${activeEvent.message}`, force);
   } else if (activeBattle) {
     const a = civilizationData[activeBattle.speciesA];
     const b = civilizationData[activeBattle.speciesB];
