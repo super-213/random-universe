@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { orbitalAngleAt } from '../domain/orbital-motion.js';
 
 export function applyCivilizationSnapshot(snapshot, {
   civilizationSimulation,
@@ -31,7 +32,7 @@ export function syncCivilizationHosts({
   const rotateOffsetWithHost = (hostIndex, x, y, z, target) => {
     const offset = hostIndex * 3;
     const samplePosition = Math.min(cosmicPosition, remnantDynamics.escapeAt[hostIndex]);
-    const angle = Math.max(0, samplePosition - 570) * remnantDynamics.orbitRates[hostIndex];
+    const angle = orbitalAngleAt(samplePosition, remnantDynamics.orbitRates[hostIndex]);
     const cosine = Math.cos(angle);
     const sine = Math.sin(angle);
     const ax = remnantDynamics.axes[offset];

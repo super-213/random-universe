@@ -36,8 +36,9 @@ controls.dampingFactor = 0.045;
 controls.enablePan = false;
 controls.minDistance = 8;
 controls.maxDistance = 46;
-controls.autoRotate = true;
-controls.autoRotateSpeed = 0.18;
+// The camera should only move in response to the observer. Automatic camera
+// orbit made a static galaxy look as though every star suddenly accelerated.
+controls.autoRotate = false;
 controls.enabled = false;
 
 let universeGroup = new THREE.Group();

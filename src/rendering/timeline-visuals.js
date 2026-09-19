@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { stellarEndTimelinePosition } from '../domain/universe.js';
+import { orbitalAngleAt } from '../domain/orbital-motion.js';
 
 export function updateEpochVisuals(position, context) {
   const {
@@ -145,7 +146,7 @@ export function updateEpochVisuals(position, context) {
       const ax = remnantDynamics.axes[offset];
       const ay = remnantDynamics.axes[offset + 1];
       const az = remnantDynamics.axes[offset + 2];
-      const angle = Math.max(0, samplePosition - 570) * remnantDynamics.orbitRates[index];
+      const angle = orbitalAngleAt(samplePosition, remnantDynamics.orbitRates[index]);
       const cosine = Math.cos(angle);
       const sine = Math.sin(angle);
       const dot = ax * x + ay * y + az * z;
