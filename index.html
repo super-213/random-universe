@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#050508" />
+    <meta name="description" content="每一次刷新，都会诞生一个独一无二的宇宙。" />
+    <title>随机宇宙发生器</title>
+  </head>
+  <body>
+    <canvas id="universe" aria-hidden="true"></canvas>
+
+    <div class="grain" aria-hidden="true"></div>
+
+    <header class="site-header">
+      <a class="brand" href="#" aria-label="随机宇宙发生器首页">
+        <span class="brand-mark">R<span>U</span></span>
+        <span class="brand-name">随机宇宙<br />发生器</span>
+      </a>
+
+      <div class="system-state">
+        <span class="pulse"></span>
+        <span id="mode-label">创世引擎在线</span>
+      </div>
+
+      <button class="text-button top-action" id="regenerate-top" type="button">
+        <span>生成新宇宙</span>
+        <span class="button-icon">↻</span>
+      </button>
+    </header>
+
+    <main>
+      <section class="generator-view is-active" id="generator-view" aria-labelledby="universe-title">
+        <div class="hero-copy">
+          <h1 id="universe-title">
+            <span>宇宙</span>
+            <strong id="universe-id">#739184</strong>
+          </h1>
+          <p class="hero-note" id="universe-note">一次偶然涨落，六条全新的自然法则。</p>
+        </div>
+
+        <div class="orbit-label label-a" aria-hidden="true">λ 0.0039</div>
+        <div class="orbit-label label-b" aria-hidden="true">OBS / 01</div>
+
+        <div class="universe-data" aria-label="宇宙参数">
+          <article class="metric" style="--order: 0">
+            <span class="metric-index">01</span>
+            <span class="metric-label">光速</span>
+            <strong id="speed-value">0.82 × 本宇宙</strong>
+          </article>
+          <article class="metric" style="--order: 1">
+            <span class="metric-index">02</span>
+            <span class="metric-label">引力强度</span>
+            <strong id="gravity-value">1.31 × 本宇宙</strong>
+          </article>
+          <article class="metric" style="--order: 2">
+            <span class="metric-index">03</span>
+            <span class="metric-label">稳定元素</span>
+            <strong id="elements-value">114 种</strong>
+          </article>
+          <article class="metric" style="--order: 3">
+            <span class="metric-index">04</span>
+            <span class="metric-label">恒星数量</span>
+            <strong id="stars-value">1.8 万亿颗</strong>
+          </article>
+          <article class="metric" style="--order: 4">
+            <span class="metric-index">05</span>
+            <span class="metric-label">智慧文明</span>
+            <strong id="civilizations-value">3,821 个</strong>
+          </article>
+          <article class="metric" style="--order: 5">
+            <span class="metric-index">06</span>
+            <span class="metric-label">热寂状态</span>
+            <strong id="lifetime-value">渐近 · 无有限终点</strong>
+          </article>
+        </div>
+
+        <div class="primary-actions">
+          <button class="enter-button" id="enter-universe" type="button">
+            <span>进入宇宙</span>
+            <span class="enter-arrow">↗</span>
+          </button>
+        </div>
+      </section>
+
+      <section class="explorer-view" id="explorer-view" aria-label="宇宙探索器">
+        <button class="hud-toggle" id="toggle-hud" type="button" aria-label="隐藏观察界面" aria-pressed="false">
+          <span></span> HUD
+        </button>
+
+        <div class="explorer-title">
+          <p class="kicker"><span id="explore-id">#739184</span></p>
+          <h2 id="galaxy-name">赫利俄斯星系</h2>
+          <p id="galaxy-meta">棒旋星系 · 直径 18.4 万光年</p>
+        </div>
+
+        <div class="coordinates" aria-hidden="true">
+          <span>X <b id="coord-x">−02.41</b></span>
+          <span>Y <b id="coord-y">+08.75</b></span>
+          <span>Z <b id="coord-z">−00.18</b></span>
+        </div>
+
+        <div class="era-readout" aria-live="polite">
+          <span class="era-number" id="era-number">04</span>
+          <div>
+            <p id="era-name">生命窗口</p>
+            <strong id="cosmic-time">138 亿年</strong>
+          </div>
+          <p class="era-description" id="era-description">恒星照亮宇宙，复杂生命与文明开始扩张。</p>
+        </div>
+
+        <div class="civilization-legend" id="civilization-legend" aria-label="文明种群"></div>
+
+        <div class="event-feed" id="event-feed" aria-live="polite">
+          <span class="event-signal"></span>
+          <p><b id="event-year">T+13.8 BY</b><span id="event-text">首次检测到智慧生命的窄带信号</span></p>
+        </div>
+
+        <aside class="star-inspector" id="star-inspector">
+          <button class="inspector-close" id="close-inspector" aria-label="关闭恒星信息">×</button>
+          <p class="kicker">恒星样本</p>
+          <h3 id="star-name">RU-4817</h3>
+          <dl>
+            <div><dt>光谱型</dt><dd id="star-type">G2 V</dd></div>
+            <div><dt>表面温度</dt><dd id="star-temp">5,772 K</dd></div>
+            <div><dt>行星</dt><dd id="star-planets">6</dd></div>
+            <div><dt>生命信号</dt><dd id="star-life">未检出</dd></div>
+          </dl>
+        </aside>
+
+        <div class="explorer-footer">
+          <button class="text-button" id="leave-universe" type="button"><span class="back-arrow">←</span> 返回</button>
+        </div>
+
+        <div class="time-console" aria-label="宇宙时间控制">
+          <div class="timeline-head">
+            <button class="play-button" id="toggle-time" type="button" aria-label="播放时间">▶</button>
+            <span>宇宙时间</span>
+            <b id="timeline-value">T+138 亿年</b>
+            <div class="speed-controls" aria-label="时间速度">
+              <button type="button" data-speed="1" class="is-active" aria-pressed="true" aria-label="正常速度，每秒零点一亿年">1×</button>
+              <button type="button" data-speed="100" aria-pressed="false" aria-label="一百倍速，每秒十亿年">100×</button>
+              <button type="button" data-speed="10000" aria-pressed="false" aria-label="一万倍速，每秒一千亿年">10000×</button>
+            </div>
+          </div>
+          <div class="range-wrap">
+            <input id="cosmic-timeline" type="range" min="0" max="1000" value="500" aria-label="从大爆炸到热寂的宇宙时间" />
+            <div class="time-progress" id="time-progress"></div>
+            <div class="cosmic-event-markers" id="cosmic-event-markers" aria-label="宇宙事件"></div>
+            <div class="timeline-marks" aria-hidden="true">
+              <span style="left:0%">大爆炸</span>
+              <span style="left:20%">首批恒星</span>
+              <span style="left:42.5%">生命窗口</span>
+              <span style="left:73%">恒星熄灭</span>
+              <span style="left:100%">热寂</span>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <div class="creation-flash" id="creation-flash" aria-hidden="true"></div>
+    <div class="cursor" id="cursor" aria-hidden="true"></div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
