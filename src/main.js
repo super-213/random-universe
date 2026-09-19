@@ -6,6 +6,7 @@ import { mulberry32, randomBetween, gaussianRandom } from './domain/random.js';
 import { createUniverse, stellarEndTimelinePosition } from './domain/universe.js';
 import { cosmicTimeLabel, createCosmicTimelineState, selectTimelineNarrative, timelineUnitsPerSecond } from './domain/cosmic-time.js';
 import { getPointTexture, makeGlowTexture, makeRingTexture } from './rendering/textures.js';
+import { animateBlackHoleVisual, createBlackHoleVisual } from './rendering/black-hole.js';
 import { applyCivilizationSnapshot, syncCivilizationHosts } from './rendering/civilizations.js';
 import { animateCosmicEvents, updateCosmicEvents, updateEpochVisuals } from './rendering/timeline-visuals.js';
 import { buildCivilizationSimulation, civilizationSnapshotAt, deriveCivilizationRuntime, findDominantRelationship } from './simulation/civilization.js';
@@ -457,17 +458,20 @@ function buildEpochEffects(starPositions) {
 
   const blackHoleCount = universe.hasCentralBlackHole ? 9 : 6;
   for (let i = 0; i < blackHoleCount; i++) {
-    const hole = new THREE.Group();
     const isCentral = i === 0 && universe.hasCentralBlackHole;
     const baseScale = isCentral ? .9 : randomBetween(random, .3, .5);
-    const horizon = new THREE.Mesh(new THREE.SphereGeometry(.32, 24, 16), new THREE.MeshBasicMaterial({ color: 0x000000 }));
-    const photonRing = new THREE.Mesh(new THREE.TorusGeometry(.4, .018, 5, 72), new THREE.MeshBasicMaterial({ color: 0x7296bd, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
-    photonRing.rotation.x = Math.PI / 2;
+    const hole = createBlackHoleVisual({
+      color: isCentral ? 0xffc996 : (random() > .35 ? 0xffb77c : 0xb9d7ff),
+      tilt: randomBetween(random, -.38, .38),
+      phase: random() * Math.PI * 2,
+      visualScale: isCentral ? 1.14 : 1,
+      intensity: 0
+    });
     const hawkingGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeGlowTexture(), color: 0x6f9fcc, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
     hawkingGlow.scale.set(1.2, 1.2, 1);
     const finalPulse = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeGlowTexture(), color: 0xe8f4ff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
     finalPulse.scale.set(.2, .2, 1);
-    hole.add(hawkingGlow, finalPulse, horizon, photonRing);
+    hole.add(hawkingGlow, finalPulse);
     if (isCentral) {
       hole.position.set(0, 0, 0);
     } else {
@@ -476,15 +480,14 @@ function buildEpochEffects(starPositions) {
     }
     hole.scale.setScalar(baseScale);
     hole.visible = false;
-    hole.userData = {
+    Object.assign(hole.userData, {
       baseScale,
       birthAt: 825 + random() * 34,
       evaporationAt: isCentral ? 949 : 880 + Math.pow(random(), .46) * 64,
-      horizon,
-      photonRing,
       hawkingGlow,
-      finalPulse
-    };
+      finalPulse,
+      spinDirection: random() < .5 ? -1 : 1
+    });
     blackHoleRemnants.push(hole);
     remnantGroup.add(hole);
   }
@@ -830,22 +833,21 @@ function buildCosmicEvents(starPositions) {
       group.add(nebula, halo, sweepGlow, core, rotor);
       group.userData.effect = { core, halo, nebula, sweepGlow, rotor, jets, fieldLines, knots };
     } else {
-      const makeHole = (color) => {
-        const hole = new THREE.Group();
-        const horizon = new THREE.Mesh(new THREE.SphereGeometry(.27, 28, 18), new THREE.MeshBasicMaterial({ color: 0x000000 }));
-        const photonRing = new THREE.Mesh(new THREE.TorusGeometry(.34, .013, 5, 96), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: .72, depthWrite: false, blending: THREE.AdditiveBlending }));
-        photonRing.rotation.x = Math.PI / 2;
-        const lensing = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeRingTexture(), color, transparent: true, opacity: .14, depthWrite: false, blending: THREE.AdditiveBlending }));
-        lensing.scale.set(1.08, 1.08, 1);
-        hole.add(lensing, horizon, photonRing);
-        hole.userData.photonRing = photonRing;
+      const makeHole = (color, direction) => {
+        const hole = createBlackHoleVisual({
+          color,
+          tilt: randomBetween(random, -.28, .28),
+          phase: random() * Math.PI * 2,
+          visualScale: 1.08
+        });
+        hole.userData.spinDirection = direction;
         return hole;
       };
       const orbitalPlane = new THREE.Group();
       orbitalPlane.rotation.set(.76, .18, .24);
-      const holeA = makeHole(0xffba70);
-      const holeB = makeHole(0x8bcfff);
-      const remnantHole = makeHole(0xd9e9ff);
+      const holeA = makeHole(0xffba70, 1);
+      const holeB = makeHole(0xa7d7ff, -1);
+      const remnantHole = makeHole(0xffd9ad, 1);
       remnantHole.scale.setScalar(1.24);
       remnantHole.visible = false;
 
@@ -1282,7 +1284,7 @@ function animate(now) {
     if (!prefersReducedMotion) {
       blackHoleRemnants.forEach((hole, index) => {
         if (!hole.visible) return;
-        hole.userData.photonRing.rotation.z += .002 + index * .0003;
+        animateBlackHoleVisual(hole, now, hole.userData.spinDirection || (index % 2 ? -1 : 1));
         hole.userData.hawkingGlow.material.rotation = now * (.000025 + index * .000001);
       });
     }

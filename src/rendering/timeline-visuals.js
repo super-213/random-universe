@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { stellarEndTimelinePosition } from '../domain/universe.js';
 import { orbitalAngleAt } from '../domain/orbital-motion.js';
+import { animateBlackHoleVisual, setBlackHoleIntensity } from './black-hole.js';
 
 export function updateEpochVisuals(position, context) {
   const {
@@ -215,7 +216,8 @@ export function updateEpochVisuals(position, context) {
     hole.visible = mode === 'explorer' && position >= data.birthAt && position <= data.evaporationAt + pulseWindow;
     const massScale = data.baseScale * (.18 + .82 * Math.cbrt(Math.max(0, remaining)));
     hole.scale.setScalar(Math.max(.035, massScale));
-    data.photonRing.material.opacity = born * (.1 + lateEvaporation * .34) * Math.sqrt(Math.max(0, remaining));
+    const accretionIntensity = born * (.78 + lateEvaporation * .22) * Math.sqrt(Math.max(0, remaining));
+    setBlackHoleIntensity(hole, accretionIntensity);
     data.hawkingGlow.material.opacity = born * (.07 + lateEvaporation * .62) * Math.sqrt(Math.max(0, remaining));
     data.finalPulse.material.opacity = pulse * .84;
     const pulseScale = (.22 + pulse * 2.1) / Math.max(.035, massScale);
@@ -393,9 +395,9 @@ export function animateCosmicEvents(now, context) {
         field.rotation.y += .006 + index * .001;
       });
     } else {
-      effect.holeA.userData.photonRing.rotation.z += .012;
-      effect.holeB.userData.photonRing.rotation.z -= .01;
-      effect.remnantHole.userData.photonRing.rotation.z += .006;
+      animateBlackHoleVisual(effect.holeA, now, effect.holeA.userData.spinDirection);
+      animateBlackHoleVisual(effect.holeB, now, effect.holeB.userData.spinDirection);
+      animateBlackHoleVisual(effect.remnantHole, now, effect.remnantHole.userData.spinDirection);
     }
   });
 }
