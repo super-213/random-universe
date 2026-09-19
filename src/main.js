@@ -1,6 +1,17 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import './style.css';
+import { galaxyTypes, speciesColors, speciesNames, eras } from './domain/catalog.js';
+import { mulberry32, randomBetween, gaussianRandom } from './domain/random.js';
+import { createUniverse, stellarEndTimelinePosition } from './domain/universe.js';
+import { cosmicTimeLabel, createCosmicTimelineState, selectTimelineNarrative, timelineUnitsPerSecond } from './domain/cosmic-time.js';
+import { getPointTexture, makeGlowTexture, makeRingTexture } from './rendering/textures.js';
+import { applyCivilizationSnapshot, syncCivilizationHosts } from './rendering/civilizations.js';
+import { animateCosmicEvents, updateCosmicEvents, updateEpochVisuals } from './rendering/timeline-visuals.js';
+import { buildCivilizationSimulation, civilizationSnapshotAt, deriveCivilizationRuntime, findDominantRelationship } from './simulation/civilization.js';
+import { updateUniverseData } from './ui/universe-data.js';
+import { renderCivilizationRows, renderTimelineEvent, renderTimelineHeader } from './ui/timeline.js';
+import { organizeCivilizationLegend, resetCivilizationLegend } from './ui/civilization-legend.js';
 
 const $ = (selector) => document.querySelector(selector);
 const canvas = $('#universe');
@@ -49,7 +60,6 @@ let civilizationGroups = [];
 let civilizationData = [];
 let civilizationRuntimeState = [];
 let civilizationSimulation = null;
-let organizedLegendSnapshot = null;
 let blackHoleRemnants = [];
 let primordialParticles = null;
 let primordialDirections = null;
@@ -71,162 +81,7 @@ let cosmicPosition = 0;
 let timePlaying = false;
 let timeSpeed = 1;
 let lastFrame = performance.now();
-let lastEventKey = '';
-let eventFadeTimer = null;
-let sharedPointTexture = null;
 let cosmicEvents = [];
-let activeCosmicEvent = null;
-const NORMAL_JOURNEY_SECONDS = 35 * 60;
-
-const notes = [
-  '一次偶然涨落，一组全新的自然法则。',
-  '这里的星光，以陌生的速度穿过真空。',
-  '引力写下结构，时间负责把它读完。',
-  '一个从未存在过，也不会再次出现的宇宙。',
-  '尘埃正在聚集，第一颗恒星即将点亮。'
-];
-const galaxyRoots = ['赫利俄斯', '弥涅耳瓦', '伊奥', '俄耳甫斯', '忒弥斯', '厄里倪厄斯', '欧律狄刻', '阿斯忒里亚'];
-const galaxyTypes = ['棒旋星系', '絮状螺旋星系', '环状星系', '椭圆星系', '不规则星系'];
-const speciesNames = [
-  '赛里安共同体', '洛珂蜂群', '弧光联盟', '静默者', '澄海文明',
-  '铸星者', '织光议会', '塔乌林协约', '奈落合众体', '远潮群落',
-  '镜海联邦', '巡星庭', '赤纬公社', '无昼同盟', '尘环智群'
-];
-const speciesColors = [
-  0xd8ff5f, 0xff7b6b, 0x69b8ff, 0xe78cff, 0xffc65c,
-  0x62e6cf, 0xff8dc7, 0xa6a0ff, 0xf29d55, 0x73e46c,
-  0x5ed8ff, 0xffe67b, 0xc38cff, 0xff6666, 0x90b8ff
-];
-// The boundaries follow the conventional thermal history and the long-term
-// Adams–Laughlin era scheme. Far-future boundaries are explicitly conditional.
-const eras = [
-  { until: 55, name: '炽热大爆炸', description: '整个可观测区域同时处于高温、高密度状态；这不是物质从某个中心炸开。' },
-  { until: 145, name: '等离子体时代', description: '宇宙膨胀并冷却，原初核合成后，光子仍被自由电子频繁散射。' },
-  { until: 245, name: '宇宙黑暗时代', description: '38 万年后宇宙变得透明，但第一代恒星尚未点亮。' },
-  { until: 340, name: '宇宙黎明', description: '约 1～2 亿年后，第一代恒星与星系开始形成并推动再电离。' },
-  { until: 650, name: '恒星时代', description: '恒星、星系与重元素持续演化；生命与文明属于未证实的模型层。' },
-  { until: 845, name: '简并时代 · 假说', description: '若质子衰变等标准长期假说成立，恒星残骸绕核运行，并在近遇中逐个逃离或落入黑洞。' },
-  { until: 950, name: '黑洞时代 · 假说', description: '若霍金辐射的标准推断适用，孤立黑洞在极漫长时间中逐个蒸发。' },
-  { until: 1001, name: '暗时代 · 渐近', description: '宇宙继续膨胀，辐射红移与稀释，可用能量梯度趋近于零，而非发生一次全局终结。' }
-];
-
-function mulberry32(seed) {
-  return function random() {
-    let t = seed += 0x6D2B79F5;
-    t = Math.imul(t ^ t >>> 15, t | 1);
-    t ^= t + Math.imul(t ^ t >>> 7, t | 61);
-    return ((t ^ t >>> 14) >>> 0) / 4294967296;
-  };
-}
-
-function randomBetween(random, min, max) { return min + random() * (max - min); }
-
-function gaussianRandom(random) {
-  const u = Math.max(random(), 1e-7);
-  const v = random();
-  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
-}
-
-function createUniverse(seed = Math.floor(Math.random() * 900000) + 100000) {
-  const random = mulberry32(seed);
-  const speed = randomBetween(random, 0.38, 1.84);
-  const gravity = randomBetween(random, 0.52, 1.76);
-  const fineStructure = randomBetween(random, 0.72, 1.28);
-  const massRatio = randomBetween(random, 0.82, 1.18);
-  const expansionRate = randomBetween(random, 0.65, 1.45);
-  const darkEnergyDensity = randomBetween(random, 0.48, 0.82);
-  const primordialFluctuation = randomBetween(random, 0.55, 1.75);
-  const cmbTemperature = randomBetween(random, 1.9, 4.4);
-  // Alternative constants are a hypothesis layer, not a solved theory. Keep
-  // their downstream values correlated so they are not independent decoration.
-  const chemistryStability = Math.exp(-Math.pow((fineStructure - 1) / .17, 2) - Math.pow((massRatio - 1) / .14, 2));
-  const structureEfficiency = THREE.MathUtils.clamp(gravity * primordialFluctuation / Math.pow(expansionRate, .72), .12, 2.8);
-  const elements = Math.max(2, Math.round(118 * chemistryStability * randomBetween(random, .82, 1.08)));
-  const stars = THREE.MathUtils.clamp(randomBetween(random, .35, 3.2) * structureEfficiency, .08, 7.2);
-  const stellarFormationEndExponent = THREE.MathUtils.clamp(13.4 - (darkEnergyDensity - .68) * 2.1 - (expansionRate - 1) * .55, 12.2, 14.1);
-  const habitability = chemistryStability * THREE.MathUtils.clamp(1 - Math.abs(cmbTemperature - 2.725) / 3.5, .12, 1);
-  const lifeProbability = Math.pow(random(), 4) * .08 * habitability;
-  const speciesCount = Math.floor(randomBetween(random, 5, 16));
-  const civilizations = Math.max(speciesCount, Math.floor(stars * 1e5 * lifeProbability * randomBetween(random, 0.02, 0.7)));
-  const lifetime = Math.round(Math.pow(10, stellarFormationEndExponent - 8) / 10) * 10;
-  const armCount = Math.floor(randomBetween(random, 3, 7));
-  const galaxyType = seed % galaxyTypes.length;
-  const blackHoleProbability = [.96, .92, .72, .99, .34][galaxyType];
-  const hasCentralBlackHole = random() < blackHoleProbability;
-  const activeNucleus = hasCentralBlackHole && random() < [.1, .07, .05, .045, .025][galaxyType];
-  const blackHoleEvaporationExponent = Math.floor(randomBetween(random, 97, 103));
-  const hue = randomBetween(random, 0.48, 0.76);
-  return {
-    seed, speed, gravity, fineStructure, massRatio, expansionRate, darkEnergyDensity,
-    primordialFluctuation, cmbTemperature, chemistryStability, structureEfficiency,
-    stellarFormationEndExponent, elements, stars, lifeProbability,
-    civilizations, speciesCount, lifetime, blackHoleEvaporationExponent, armCount, galaxyType,
-    hasCentralBlackHole, activeNucleus, hue
-  };
-}
-
-function formatStars(value) {
-  return value >= 1 ? `${value.toFixed(1)} 万亿颗` : `${Math.round(value * 10000)} 亿颗`;
-}
-
-function stellarEndTimelinePosition() {
-  return THREE.MathUtils.clamp(570 + (universe.stellarFormationEndExponent - 12) / 2 * 80, 578, 654);
-}
-
-function formatCivilizations(value) {
-  return value === 0 ? '尚未出现' : `${new Intl.NumberFormat('zh-CN').format(value)} 个`;
-}
-
-function formatProbability(value) {
-  const percent = value * 100;
-  if (percent < 0.0001) return '< 0.0001%';
-  if (percent < 0.01) return `${percent.toFixed(4)}%`;
-  if (percent < 1) return `${percent.toFixed(2)}%`;
-  return `${percent.toFixed(1)}%`;
-}
-
-function formatArmStructure(type, count) {
-  if (type === 2) return '主环 + 碎环';
-  if (type === 3) return '无旋臂';
-  if (type === 4) return '不规则';
-  return `${count} 条`;
-}
-
-function formatGalaxyHue(hue) {
-  const degrees = Math.round(hue * 360);
-  const name = degrees < 190 ? '青白' : degrees < 225 ? '蓝白' : degrees < 250 ? '靛蓝' : '紫白';
-  return `${name} · ${degrees}°`;
-}
-
-function updateData() {
-  $('#universe-id').textContent = `#${universe.seed}`;
-  $('#explore-id').textContent = `#${universe.seed}`;
-  $('#speed-value').textContent = `${universe.speed.toFixed(2)} × 现实宇宙`;
-  $('#gravity-value').textContent = `${universe.gravity.toFixed(2)} × 现实宇宙`;
-  $('#fine-structure-value').textContent = `${universe.fineStructure.toFixed(3)} × 现实宇宙`;
-  $('#mass-ratio-value').textContent = `${universe.massRatio.toFixed(3)} × 现实宇宙`;
-  $('#expansion-value').textContent = `${universe.expansionRate.toFixed(2)} × 现实宇宙`;
-  $('#dark-energy-value').textContent = `${(universe.darkEnergyDensity * 100).toFixed(1)}%`;
-  $('#fluctuation-value').textContent = `${universe.primordialFluctuation.toFixed(2)} × 现实宇宙`;
-  $('#cmb-value').textContent = `${universe.cmbTemperature.toFixed(2)} K`;
-  $('#elements-value').textContent = `${universe.elements} 种`;
-  $('#stars-value').textContent = formatStars(universe.stars);
-  $('#life-probability-value').textContent = formatProbability(universe.lifeProbability);
-  $('#civilizations-value').textContent = formatCivilizations(universe.civilizations);
-  $('#galaxy-type-value').textContent = galaxyTypes[universe.galaxyType];
-  $('#arm-count-value').textContent = formatArmStructure(universe.galaxyType, universe.armCount);
-  $('#black-hole-value').textContent = universe.hasCentralBlackHole ? '存在' : '未形成';
-  $('#nucleus-value').textContent = universe.hasCentralBlackHole ? (universe.activeNucleus ? '活动 · 吸积中' : '宁静') : '不适用';
-  $('#stellar-window-value').textContent = `约 10^${universe.stellarFormationEndExponent.toFixed(1)} 年`;
-  $('#galaxy-hue-value').textContent = formatGalaxyHue(universe.hue);
-  $('#evaporation-value').textContent = `约 10^${universe.blackHoleEvaporationExponent} 年`;
-  $('#lifetime-value').textContent = '渐近 · 无有限终点';
-  $('#universe-note').textContent = notes[universe.seed % notes.length];
-  $('#galaxy-name').textContent = `${galaxyRoots[universe.seed % galaxyRoots.length]}星系`;
-  const diameter = (8 + universe.stars * 4.7).toFixed(1);
-  $('#galaxy-meta').textContent = `${galaxyTypes[universe.galaxyType]} · 直径 ${diameter} 万光年`;
-}
-
 function disposeGroup(group) {
   group.traverse((object) => {
     if (object.geometry) object.geometry.dispose();
@@ -306,7 +161,7 @@ function buildGalaxy() {
   starDeathThresholds = new Float32Array(count);
   const core = new THREE.Color(0xffe7b4);
   const edge = new THREE.Color().setHSL(universe.hue, 0.65, 0.56);
-  const stellarEnd = stellarEndTimelinePosition();
+  const stellarEnd = stellarEndTimelinePosition(universe);
   const irregularClumps = Array.from({ length: 4 + universe.seed % 3 }, (_, index) => ({
     x: randomBetween(random, -8, 8) + index * .35,
     y: randomBetween(random, -.6, .6),
@@ -439,7 +294,7 @@ function buildGalaxy() {
   // marker is mapped to a nearby remnant below so it still follows late orbits.
   buildCivilizations(positions);
   buildCosmicEvents(positions);
-  buildCivilizationSimulation();
+  buildCivilizationSimulation({ universe, civilizationData, civilizationSimulation, cosmicEvents });
 }
 
 function buildEpochEffects(starPositions) {
@@ -673,7 +528,6 @@ function buildEpochEffects(starPositions) {
 function buildCosmicEvents(starPositions) {
   const random = mulberry32(universe.seed + 1447);
   cosmicEvents = [];
-  activeCosmicEvent = null;
 
   const nucleusEvent = universe.hasCentralBlackHole
     ? {
@@ -1046,7 +900,7 @@ function renderCosmicEventMarkers() {
     marker.className = 'event-marker';
     marker.style.left = `${event.start / 10}%`;
     marker.style.setProperty('--event-color', event.color);
-    marker.setAttribute('aria-label', `${event.label}，${cosmicTimeLabel(event.start)}；${event.outcome}`);
+    marker.setAttribute('aria-label', `${event.label}，${cosmicTimeLabel(event.start, universe)}；${event.outcome}`);
     marker.title = event.outcome;
     marker.addEventListener('click', () => {
       timePlaying = false;
@@ -1059,7 +913,7 @@ function renderCosmicEventMarkers() {
 }
 
 function buildCivilizations() {
-  organizedLegendSnapshot = null;
+  resetCivilizationLegend();
   const random = mulberry32(universe.seed + 410);
   const speciesCount = universe.speciesCount;
   const remnantCount = originalRemnantPositions.length / 3;
@@ -1169,514 +1023,12 @@ function buildCivilizations() {
   }
 }
 
-function buildCivilizationSimulation() {
-  if (!civilizationSimulation || civilizationData.length === 0) return;
-  const simulation = civilizationSimulation;
-  const random = mulberry32(universe.seed + 9241);
-  const nodeCount = simulation.habitatRemnantIndices.length;
-  const speciesCount = civilizationData.length;
-  const neighborsPerNode = 6;
 
-  for (let node = 0; node < nodeCount; node++) {
-    const nearest = [];
-    const source = node * 3;
-    for (let candidate = 0; candidate < nodeCount; candidate++) {
-      if (candidate === node) continue;
-      const target = candidate * 3;
-      const distance = Math.hypot(
-        simulation.habitatPositions[source] - simulation.habitatPositions[target],
-        simulation.habitatPositions[source + 1] - simulation.habitatPositions[target + 1],
-        simulation.habitatPositions[source + 2] - simulation.habitatPositions[target + 2]
-      );
-      if (nearest.length < neighborsPerNode || distance < nearest[nearest.length - 1].distance) {
-        nearest.push({ node: candidate, distance });
-        nearest.sort((a, b) => a.distance - b.distance);
-        if (nearest.length > neighborsPerNode) nearest.pop();
-      }
-    }
-    simulation.adjacency[node] = Uint16Array.from(nearest.map((entry) => entry.node));
-  }
-
-  const owners = new Int16Array(nodeCount);
-  owners.fill(-1);
-  const strength = new Float32Array(nodeCount);
-  const seeded = new Uint8Array(speciesCount);
-  const relationScores = new Float32Array(speciesCount * speciesCount);
-  const relationStates = new Int8Array(speciesCount * speciesCount);
-  const reservedFor = new Int16Array(nodeCount);
-  reservedFor.fill(-1);
-  civilizationData.forEach((species, index) => { reservedFor[species.homeNodeIndex] = index; });
-  const lastCounts = new Uint16Array(speciesCount);
-  const lastCauses = Array(speciesCount).fill('自主扩张');
-
-  const relationIndex = (a, b) => a * speciesCount + b;
-  for (let a = 0; a < speciesCount; a++) {
-    for (let b = a + 1; b < speciesCount; b++) {
-      const speciesA = civilizationData[a];
-      const speciesB = civilizationData[b];
-      const affinity = (speciesA.cooperation + speciesB.cooperation) * .28
-        - (speciesA.aggression + speciesB.aggression) * .24
-        + randomBetween(random, -.16, .16);
-      relationScores[relationIndex(a, b)] = affinity;
-      relationScores[relationIndex(b, a)] = affinity;
-    }
-  }
-
-  const setRelation = (a, b, score, state) => {
-    relationScores[relationIndex(a, b)] = score;
-    relationScores[relationIndex(b, a)] = score;
-    relationStates[relationIndex(a, b)] = state;
-    relationStates[relationIndex(b, a)] = state;
-  };
-
-  const removeTerritory = (speciesIndex, fraction, collapse, cause) => {
-    const territory = [];
-    for (let node = 0; node < nodeCount; node++) {
-      if (owners[node] === speciesIndex) territory.push(node);
-    }
-    if (territory.length === 0) return;
-    if (collapse) fraction = 1;
-    for (let index = territory.length - 1; index > 0; index--) {
-      const swap = Math.floor(random() * (index + 1));
-      [territory[index], territory[swap]] = [territory[swap], territory[index]];
-    }
-    const losses = Math.min(territory.length, Math.max(collapse ? territory.length : 0, Math.round(territory.length * fraction * .62)));
-    territory.forEach((node, order) => {
-      if (order < losses) {
-        owners[node] = -1;
-        strength[node] = 0;
-      } else {
-        strength[node] *= Math.max(.18, 1 - fraction * .46);
-      }
-    });
-    lastCauses[speciesIndex] = cause;
-  };
-
-  const events = cosmicEvents.slice().sort((a, b) => a.impactAt - b.impactAt);
-  for (let time = simulation.start; time <= simulation.end; time += simulation.step) {
-    civilizationData.forEach((species, speciesIndex) => {
-      if (seeded[speciesIndex] || time < species.birth) return;
-      seeded[speciesIndex] = 1;
-      owners[species.homeNodeIndex] = speciesIndex;
-      strength[species.homeNodeIndex] = .34;
-      lastCauses[speciesIndex] = '母星文明进入星际阶段';
-    });
-
-    events.forEach((event) => {
-      if (event.impactAt <= time - simulation.step || event.impactAt > time) return;
-      event.civilizationImpacts.forEach((impact) => {
-        const species = civilizationData[impact.speciesIndex];
-        if (!species || (species.highDimensional && time >= species.ascensionAt)) return;
-        removeTerritory(impact.speciesIndex, impact.lossFraction, impact.collapse, event.label);
-      });
-    });
-
-    const friendlyCounts = new Uint8Array(speciesCount);
-    const conflictCounts = new Uint8Array(speciesCount);
-    for (let a = 0; a < speciesCount; a++) {
-      for (let b = a + 1; b < speciesCount; b++) {
-        const state = relationStates[relationIndex(a, b)];
-        if (state > 0) { friendlyCounts[a]++; friendlyCounts[b]++; }
-        if (state < 0) { conflictCounts[a]++; conflictCounts[b]++; }
-      }
-    }
-
-    for (let node = 0; node < nodeCount; node++) {
-      const owner = owners[node];
-      if (owner < 0) continue;
-      const species = civilizationData[owner];
-      const support = 1 + friendlyCounts[owner] * .045 - conflictCounts[owner] * .028;
-      strength[node] += (.032 + species.resilience * .018) * support * (1 - strength[node]);
-      strength[node] = THREE.MathUtils.clamp(strength[node], 0, 1.35);
-    }
-
-    const contact = new Uint8Array(speciesCount * speciesCount);
-    for (let node = 0; node < nodeCount; node++) {
-      const owner = owners[node];
-      if (owner < 0) continue;
-      simulation.adjacency[node].forEach((neighbor) => {
-        const other = owners[neighbor];
-        if (other < 0 || other === owner) return;
-        contact[relationIndex(owner, other)] = 1;
-        contact[relationIndex(other, owner)] = 1;
-      });
-    }
-
-    for (let a = 0; a < speciesCount; a++) {
-      for (let b = a + 1; b < speciesCount; b++) {
-        let score = relationScores[relationIndex(a, b)];
-        let state = relationStates[relationIndex(a, b)];
-        if (contact[relationIndex(a, b)]) {
-          const speciesA = civilizationData[a];
-          const speciesB = civilizationData[b];
-          score += ((speciesA.cooperation + speciesB.cooperation) - 1) * .026;
-          score -= ((speciesA.aggression + speciesB.aggression) - .82) * .023;
-          score += randomBetween(random, -.012, .012);
-          if (state === 0 && score > .3) state = 1;
-          if (state === 0 && score < -.26) state = -1;
-          if (state === 1 && score < .08) state = 0;
-          if (state === -1 && score > -.04) state = 0;
-        } else {
-          score *= .992;
-          if (state === 1 && score < .1) state = 0;
-          if (state === -1 && score > -.08) state = 0;
-        }
-        setRelation(a, b, THREE.MathUtils.clamp(score, -.95, .95), state);
-      }
-    }
-
-    const ownedBySpecies = Array.from({ length: speciesCount }, () => []);
-    for (let node = 0; node < nodeCount; node++) {
-      if (owners[node] >= 0) ownedBySpecies[owners[node]].push(node);
-    }
-    civilizationData.forEach((species, speciesIndex) => {
-      const territory = ownedBySpecies[speciesIndex];
-      if (!seeded[speciesIndex] || territory.length === 0 || time >= 650) return;
-      const attempts = 1 + Math.floor(species.expansionRate + friendlyCounts[speciesIndex] * .34);
-      for (let attempt = 0; attempt < attempts; attempt++) {
-        const frontier = [];
-        territory.forEach((source) => {
-          simulation.adjacency[source].forEach((target) => {
-            if (owners[target] !== speciesIndex) frontier.push([source, target]);
-          });
-        });
-        if (frontier.length === 0) break;
-        const [source, target] = frontier[Math.floor(random() * frontier.length)];
-        const defender = owners[target];
-        if (defender < 0) {
-          if (reservedFor[target] >= 0 && reservedFor[target] !== speciesIndex && !seeded[reservedFor[target]]) continue;
-          if (random() < .18 + species.expansionRate * .19 + friendlyCounts[speciesIndex] * .025) {
-            owners[target] = speciesIndex;
-            strength[target] = Math.max(.14, strength[source] * .34);
-            territory.push(target);
-            lastCauses[speciesIndex] = friendlyCounts[speciesIndex] > 0 ? '协作网络推动殖民' : '殖民前沿扩张';
-          }
-          continue;
-        }
-        const state = relationStates[relationIndex(speciesIndex, defender)];
-        if (state > 0) {
-          strength[source] = Math.min(1.35, strength[source] + .018);
-          strength[target] = Math.min(1.35, strength[target] + .012);
-          lastCauses[speciesIndex] = `与${civilizationData[defender].name}交流`;
-          lastCauses[defender] = `与${species.name}交流`;
-          continue;
-        }
-        if (state < 0) {
-          const attack = strength[source] * (.72 + species.aggression * .76 + random() * .35);
-          const defense = strength[target] * (.84 + civilizationData[defender].resilience * .52 + random() * .28);
-          if (attack > defense) {
-            owners[target] = speciesIndex;
-            strength[target] = Math.max(.08, Math.min(.48, (attack - defense) * .5));
-            lastCauses[speciesIndex] = `与${civilizationData[defender].name}争夺边界`;
-            lastCauses[defender] = `边界被${species.name}突破`;
-          } else {
-            strength[source] *= .84;
-            strength[target] *= .92;
-            lastCauses[speciesIndex] = `对${civilizationData[defender].name}的进攻受挫`;
-          }
-        } else if (random() < species.aggression * .035) {
-          const lowered = relationScores[relationIndex(speciesIndex, defender)] - .055;
-          setRelation(speciesIndex, defender, lowered, lowered < -.26 ? -1 : 0);
-        }
-      }
-    });
-
-    if (time >= 620) {
-      const decline = THREE.MathUtils.smoothstep(time, 620, 710);
-      for (let node = 0; node < nodeCount; node++) {
-        const owner = owners[node];
-        if (owner < 0 || civilizationData[owner].highDimensional && time >= civilizationData[owner].ascensionAt) continue;
-        strength[node] -= .004 + decline * .052;
-        if (strength[node] <= .035 || time >= 710) {
-          owners[node] = -1;
-          strength[node] = 0;
-          lastCauses[owner] = '恒星能源枯竭';
-        }
-      }
-    }
-
-    const counts = new Uint16Array(speciesCount);
-    const populations = new Float32Array(speciesCount);
-    for (let node = 0; node < nodeCount; node++) {
-      const owner = owners[node];
-      if (owner < 0) continue;
-      counts[owner]++;
-      populations[owner] += strength[node];
-    }
-    const trends = new Int8Array(speciesCount);
-    const active = new Uint8Array(speciesCount);
-    const ascended = new Uint8Array(speciesCount);
-    for (let speciesIndex = 0; speciesIndex < speciesCount; speciesIndex++) {
-      trends[speciesIndex] = Math.sign(counts[speciesIndex] - lastCounts[speciesIndex]);
-      active[speciesIndex] = seeded[speciesIndex] && counts[speciesIndex] > 0 ? 1 : 0;
-      ascended[speciesIndex] = civilizationData[speciesIndex].highDimensional && time >= civilizationData[speciesIndex].ascensionAt ? 1 : 0;
-      lastCounts[speciesIndex] = counts[speciesIndex];
-    }
-    simulation.snapshots.push({
-      time,
-      owners: owners.slice(),
-      counts,
-      populations,
-      trends,
-      active,
-      ascended,
-      relations: relationStates.slice(),
-      relationScores: relationScores.slice(),
-      causes: lastCauses.slice()
-    });
-  }
-
-}
-
-function civilizationSnapshotAt(position) {
-  if (!civilizationSimulation?.snapshots.length) return null;
-  const simulation = civilizationSimulation;
-  const index = THREE.MathUtils.clamp(
-    Math.floor((position - simulation.start) / simulation.step),
-    0,
-    simulation.snapshots.length - 1
-  );
-  return simulation.snapshots[index];
-}
-
-function applyCivilizationSnapshot(snapshot) {
-  if (!snapshot || !civilizationSimulation) return;
-  const writeCounts = new Uint16Array(civilizationData.length);
-  snapshot.owners.forEach((owner, node) => {
-    if (owner < 0) return;
-    const target = writeCounts[owner]++;
-    civilizationData[owner].hostRemnantIndices[target] = civilizationSimulation.habitatRemnantIndices[node];
-  });
-  civilizationData.forEach((species, index) => {
-    species.displayCount = writeCounts[index];
-    civilizationGroups[index].geometry.setDrawRange(0, writeCounts[index]);
-  });
-}
-
-function organizeCivilizationLegend(snapshot) {
-  if (!snapshot || snapshot === organizedLegendSnapshot) return;
-  organizedLegendSnapshot = snapshot;
-  const legend = $('#civilization-legend');
-  const speciesCount = civilizationData.length;
-  const speciesRows = new Map(
-    [...legend.querySelectorAll('.civilization-item')].map((row) => [Number(row.dataset.species), row])
-  );
-  legend.replaceChildren();
-  const parent = Int16Array.from({ length: speciesCount }, (_, index) => index);
-  const find = (index) => {
-    let root = index;
-    while (parent[root] !== root) root = parent[root];
-    while (parent[index] !== index) {
-      const next = parent[index];
-      parent[index] = root;
-      index = next;
-    }
-    return root;
-  };
-  const union = (a, b) => {
-    const rootA = find(a);
-    const rootB = find(b);
-    if (rootA !== rootB) parent[Math.max(rootA, rootB)] = Math.min(rootA, rootB);
-  };
-
-  for (let a = 0; a < speciesCount; a++) {
-    if (!snapshot.active[a] || snapshot.ascended[a]) continue;
-    for (let b = a + 1; b < speciesCount; b++) {
-      if (!snapshot.active[b] || snapshot.ascended[b]) continue;
-      const relationIndex = a * speciesCount + b;
-      if (snapshot.relations[relationIndex] > 0 && snapshot.relationScores[relationIndex] >= .52) union(a, b);
-    }
-  }
-
-  const components = new Map();
-  const inactive = [];
-  const detached = [];
-  for (let index = 0; index < speciesCount; index++) {
-    if (!snapshot.active[index]) {
-      inactive.push(index);
-      continue;
-    }
-    if (snapshot.ascended[index]) {
-      detached.push(index);
-      continue;
-    }
-    const root = find(index);
-    if (!components.has(root)) components.set(root, []);
-    components.get(root).push(index);
-  }
-  const factions = [...components.values()];
-  const factionStrength = (members) => members.reduce((sum, index) => sum + snapshot.counts[index], 0);
-  const strongestRelation = (left, right) => {
-    let strongest = { kind: 'neutral', state: 0, strength: 0 };
-    left.forEach((a) => right.forEach((b) => {
-      const index = a * speciesCount + b;
-      const state = snapshot.relations[index];
-      const strength = Math.abs(snapshot.relationScores[index]);
-      if (state !== 0 && strength > strongest.strength) {
-        strongest = { kind: state < 0 ? 'conflict' : 'friendly', state, strength };
-      }
-    }));
-    return strongest;
-  };
-  factions.sort((a, b) => factionStrength(b) - factionStrength(a));
-  const orderedFactions = factions.length ? [factions.shift()] : [];
-  while (factions.length) {
-    const previous = orderedFactions[orderedFactions.length - 1];
-    let bestIndex = 0;
-    let bestStrength = -1;
-    factions.forEach((candidate, index) => {
-      const strength = strongestRelation(previous, candidate).strength;
-      if (strength > bestStrength) { bestStrength = strength; bestIndex = index; }
-    });
-    orderedFactions.push(factions.splice(bestIndex, 1)[0]);
-  }
-
-  const relationIcons = {
-    conflict: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3l10 10M13 3L3 13"/><path d="M2 5l3-3M11 14l3-3"/></svg>',
-    friendly: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="6" cy="8" r="3.5"/><circle cx="10" cy="8" r="3.5"/></svg>',
-    neutral: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 8h3M10.5 8h3"/><circle cx="8" cy="8" r="1.25"/></svg>'
-  };
-  const relationName = (kind) => kind === 'conflict' ? '冲突' : kind === 'friendly' ? '友好' : '中立';
-  const factionAccent = (members) => {
-    const representative = members.slice().sort((a, b) => snapshot.counts[b] - snapshot.counts[a])[0];
-    return `#${civilizationData[representative].color.toString(16).padStart(6, '0')}`;
-  };
-  const factionMeta = orderedFactions.map((members, index) => ({
-    members,
-    number: String(index + 1).padStart(2, '0'),
-    accent: factionAccent(members)
-  }));
-
-  factionMeta.forEach((faction, factionIndex) => {
-    const block = document.createElement('section');
-    block.className = 'faction-block';
-    block.style.setProperty('--faction', faction.accent);
-    block.setAttribute('aria-label', `阵营 ${faction.number}`);
-
-    const header = document.createElement('div');
-    header.className = 'faction-header';
-    const identity = document.createElement('span');
-    identity.className = 'faction-identity';
-    identity.textContent = faction.number;
-    identity.setAttribute('aria-hidden', 'true');
-    header.appendChild(identity);
-
-    const relations = document.createElement('div');
-    relations.className = 'faction-relations';
-    const relatedFactions = { conflict: [], friendly: [], neutral: [] };
-    factionMeta.forEach((target, targetIndex) => {
-      if (targetIndex === factionIndex) return;
-      const relation = strongestRelation(faction.members, target.members);
-      relatedFactions[relation.kind].push(target);
-    });
-    ['conflict', 'friendly', 'neutral'].forEach((kind) => {
-      const targets = relatedFactions[kind];
-      if (!targets.length) return;
-      const relationSet = document.createElement('span');
-      relationSet.className = `faction-relation is-${kind}`;
-      const accessibleName = `阵营 ${faction.number}${relationName(kind)}：阵营 ${targets.map((target) => target.number).join('、')}`;
-      relationSet.setAttribute('role', 'img');
-      relationSet.setAttribute('aria-label', accessibleName);
-      relationSet.title = accessibleName;
-      relationSet.innerHTML = `${relationIcons[kind]}<span>${targets.map((target) => `<b style="--target-faction:${target.accent}">${target.number}</b>`).join('')}</span>`;
-      relations.appendChild(relationSet);
-    });
-    header.appendChild(relations);
-    block.appendChild(header);
-
-    const members = document.createElement('div');
-    members.className = 'faction-members';
-    faction.members
-      .slice()
-      .sort((a, b) => (snapshot.counts[b] - snapshot.counts[a]) || a - b)
-      .forEach((speciesIndex) => {
-        const row = speciesRows.get(speciesIndex);
-        if (row) members.appendChild(row);
-      });
-    block.appendChild(members);
-    legend.appendChild(block);
-  });
-
-  if (detached.length) {
-    const block = document.createElement('section');
-    block.className = 'faction-block is-transcendent';
-    block.setAttribute('aria-label', '升维种群');
-    block.innerHTML = '<div class="faction-header"><span class="faction-identity" aria-hidden="true">◇</span></div>';
-    const members = document.createElement('div');
-    members.className = 'faction-members';
-    detached.forEach((speciesIndex) => {
-      const row = speciesRows.get(speciesIndex);
-      if (row) members.appendChild(row);
-    });
-    block.appendChild(members);
-    legend.appendChild(block);
-  }
-
-  if (inactive.length) {
-    const inactiveGroup = document.createElement('div');
-    inactiveGroup.className = 'faction-inactive';
-    inactive.forEach((speciesIndex) => {
-      const row = speciesRows.get(speciesIndex);
-      if (row) inactiveGroup.appendChild(row);
-    });
-    legend.appendChild(inactiveGroup);
-  }
-}
-
-function getPointTexture() {
-  if (sharedPointTexture) return sharedPointTexture;
-  const c = document.createElement('canvas');
-  c.width = c.height = 64;
-  const context = c.getContext('2d');
-  const gradient = context.createRadialGradient(32, 32, 0, 32, 32, 32);
-  gradient.addColorStop(0, 'rgba(255,255,255,1)');
-  gradient.addColorStop(.22, 'rgba(255,255,255,.95)');
-  gradient.addColorStop(.5, 'rgba(255,255,255,.35)');
-  gradient.addColorStop(1, 'rgba(255,255,255,0)');
-  context.fillStyle = gradient;
-  context.fillRect(0, 0, 64, 64);
-  sharedPointTexture = new THREE.CanvasTexture(c);
-  sharedPointTexture.colorSpace = THREE.SRGBColorSpace;
-  return sharedPointTexture;
-}
-
-function makeGlowTexture() {
-  const c = document.createElement('canvas');
-  c.width = c.height = 128;
-  const context = c.getContext('2d');
-  const gradient = context.createRadialGradient(64, 64, 0, 64, 64, 64);
-  gradient.addColorStop(0, 'rgba(255,255,255,1)');
-  gradient.addColorStop(.08, 'rgba(255,230,170,.85)');
-  gradient.addColorStop(.35, 'rgba(255,190,100,.22)');
-  gradient.addColorStop(1, 'rgba(0,0,0,0)');
-  context.fillStyle = gradient;
-  context.fillRect(0, 0, 128, 128);
-  const texture = new THREE.CanvasTexture(c);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  return texture;
-}
-
-function makeRingTexture() {
-  const c = document.createElement('canvas');
-  c.width = c.height = 256;
-  const context = c.getContext('2d');
-  const gradient = context.createRadialGradient(128, 128, 82, 128, 128, 128);
-  gradient.addColorStop(0, 'rgba(255,255,255,0)');
-  gradient.addColorStop(.72, 'rgba(255,255,255,0)');
-  gradient.addColorStop(.86, 'rgba(255,255,255,.8)');
-  gradient.addColorStop(.91, 'rgba(255,255,255,.18)');
-  gradient.addColorStop(1, 'rgba(255,255,255,0)');
-  context.fillStyle = gradient;
-  context.fillRect(0, 0, 256, 256);
-  const texture = new THREE.CanvasTexture(c);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  return texture;
-}
 
 function regenerate() {
   if (mode !== 'generator') return;
   universe = createUniverse();
-  updateData();
+  updateUniverseData(universe);
   buildUniverseObject();
   buildGalaxy();
   $('.universe-data').scrollTop = 0;
@@ -1795,58 +1147,11 @@ function inspectStar(event) {
   $('#star-inspector').classList.add('is-open');
 }
 
-function cosmicTimeLabel(position) {
-  const logLerp = (start, end, value) => 10 ** (Math.log10(start) + (Math.log10(end) - Math.log10(start)) * value);
-  const formatYears = (years) => {
-    if (years < 1) {
-      const seconds = years * 31557600;
-      if (seconds < 3600) return `${Math.round(seconds / 60)} 分钟`;
-      if (seconds < 86400) return `${(seconds / 3600).toFixed(1)} 小时`;
-      return `${(seconds / 86400).toFixed(1)} 天`;
-    }
-    if (years < 1e4) return `${Math.max(1, Math.round(years))} 年`;
-    if (years < 1e8) return `${(years / 1e4).toFixed(years < 1e6 ? 1 : 0)} 万年`;
-    if (years < 1e12) return `${(years / 1e8).toFixed(years < 1e9 ? 2 : 1)} 亿年`;
-    return `10^${Math.log10(years).toFixed(1)} 年`;
-  };
-  if (position < 18) return `T+${Math.max(.001, logLerp(.001, 1, position / 18)).toFixed(3)} 秒`;
-  if (position < 55) return `T+${Math.max(1, Math.round(logLerp(1, 180, (position - 18) / 37)))} 秒`;
-  if (position < 145) return `T+${formatYears(logLerp(180 / 31557600, 380000, (position - 55) / 90))}`;
-  if (position < 245) return `T+${formatYears(logLerp(380000, 1.8e8, (position - 145) / 100))}`;
-  if (position < 340) return `T+${formatYears(logLerp(1.8e8, 1e9, (position - 245) / 95))}`;
-  if (position < 470) return `T+${formatYears(logLerp(1e9, 1.38e10, (position - 340) / 130))}`;
-  if (position < 570) return `T+${formatYears(logLerp(1.38e10, 1e12, (position - 470) / 100))}`;
-  if (position < 650) return `T+10^${(12 + (position - 570) / 80 * 2).toFixed(1)} 年`;
-  if (position < 680) return `T+10^${(14 + (position - 650) / 30).toFixed(1)} 年`;
-  if (position < 845) return `T+10^${Math.round(15 + (position - 680) / 165 * 23)} 年`;
-  if (position < 950) return `T+10^${Math.round(38 + (position - 845) / 105 * (universe.blackHoleEvaporationExponent - 38))} 年`;
-  return position < 999 ? `T+10^${universe.blackHoleEvaporationExponent} 年以后` : '趋近热寂';
-}
-
-function timelineUnitsPerSecond(position) {
-  // Keep the whole 1× journey at roughly 35 minutes while deliberately
-  // lingering in the hot beginning and the final approach to heat death.
-  const weightedUnits = 145 / .42 + (930 - 145) / 1.25 + (1000 - 930) / .42;
-  const baseRate = weightedUnits / NORMAL_JOURNEY_SECONDS;
-  if (position < 145 || position >= 930) return baseRate * .42;
-  return baseRate * 1.25;
-}
-
 function advanceCosmicTime(deltaSeconds) {
   cosmicPosition += deltaSeconds * timelineUnitsPerSecond(cosmicPosition) * timeSpeed;
 }
 
-function setEvent(key, time, text, force = false) {
-  if (key === lastEventKey && !force) return;
-  lastEventKey = key;
-  $('#event-year').textContent = time;
-  $('#event-text').textContent = text;
-  const feed = $('#event-feed');
-  feed.classList.remove('is-visible');
-  requestAnimationFrame(() => feed.classList.add('is-visible'));
-  clearTimeout(eventFadeTimer);
-  eventFadeTimer = setTimeout(() => feed.classList.remove('is-visible'), 3200);
-}
+
 
 function toggleHud() {
   if (mode !== 'explorer') return;
@@ -1857,617 +1162,90 @@ function toggleHud() {
   $('#toggle-hud').setAttribute('aria-label', hidden ? '显示观察界面' : '隐藏观察界面');
 }
 
-function updateEpochVisuals(position) {
-  const earlyVisible = position < 150 && mode === 'explorer';
-  epochEffectsGroup.visible = earlyVisible;
-  if (earlyVisible && primordialParticles) {
-    const expansion = THREE.MathUtils.smoothstep(position, 0, 145);
-    const rapidExpansion = THREE.MathUtils.smoothstep(position, 0, 55);
-    const plasmaExpansion = THREE.MathUtils.smoothstep(position, 55, 145);
-    // The compact origin represents our observable patch, not a privileged
-    // centre of the entire universe. Every sampled point then separates from
-    // every other point as the metric expands.
-    const radius = .06 + Math.pow(rapidExpansion, .62) * 32 + plasmaExpansion * 7;
-    const array = primordialParticles.geometry.attributes.position.array;
-    for (let i = 0; i < primordialFactors.length; i++) {
-      const r = radius * primordialFactors[i];
-      array[i * 3] = primordialDirections[i * 3] * r;
-      array[i * 3 + 1] = primordialDirections[i * 3 + 1] * r;
-      array[i * 3 + 2] = primordialDirections[i * 3 + 2] * r;
-    }
-    primordialParticles.geometry.attributes.position.needsUpdate = true;
-    primordialParticles.material.opacity = .98 * (1 - THREE.MathUtils.smoothstep(position, 112, 150));
-    primordialParticles.material.size = .3 - expansion * .17;
 
-    const streakArray = expansionStreaks.geometry.attributes.position.array;
-    for (let i = 0; i < expansionDirections.length / 4; i++) {
-      const factor = expansionDirections[i * 4 + 3];
-      const head = (.04 + Math.pow(rapidExpansion, .5) * 31 + plasmaExpansion * 5) * factor;
-      const tail = Math.max(0, head - (1.2 + expansion * 5.5) * factor);
-      for (let axis = 0; axis < 3; axis++) {
-        const direction = expansionDirections[i * 4 + axis];
-        streakArray[i * 6 + axis] = direction * tail;
-        streakArray[i * 6 + 3 + axis] = direction * head;
-      }
-    }
-    expansionStreaks.geometry.attributes.position.needsUpdate = true;
-    expansionStreaks.material.opacity = .68
-      * THREE.MathUtils.smoothstep(position, 1.5, 8)
-      * (1 - THREE.MathUtils.smoothstep(position, 48, 82));
 
-    const coreFade = 1 - THREE.MathUtils.smoothstep(position, 7, 34);
-    const coreScale = .7 + Math.pow(rapidExpansion, .46) * 18;
-    bangCore.material.opacity = coreFade;
-    bangCore.scale.set(coreScale, coreScale, 1);
-    shockwaves.forEach((wave, index) => {
-      const start = 3 + index * 6;
-      const duration = 52 + index * 7;
-      const phase = THREE.MathUtils.clamp((position - start) / duration, 0, 1);
-      const scale = .9 + Math.pow(phase, .72) * (39 + index * 5);
-      wave.scale.set(scale, scale, 1);
-      wave.material.opacity = Math.sin(phase * Math.PI) * (.24 - index * .045);
-    });
-  }
 
-  const normalBackground = new THREE.Color(0x050508);
-  const currentBackground = normalBackground.clone();
-  if (position < 70) {
-    const cooling = THREE.MathUtils.smoothstep(position, 0, 70);
-    currentBackground.lerpColors(new THREE.Color(0x2a1108), normalBackground, cooling);
-    renderer.toneMappingExposure = 1.15 + (1 - cooling) * 2.2;
-  } else if (position > 950) {
-    // Heat death is the disappearance of usable gradients, not a global dimmer.
-    const cooling = THREE.MathUtils.smoothstep(position, 950, 1000);
-    currentBackground.lerpColors(normalBackground, new THREE.Color(0x03050a), cooling * .32);
-    renderer.toneMappingExposure = 1.15;
-  } else {
-    renderer.toneMappingExposure = 1.15;
-  }
-  renderer.setClearColor(currentBackground, 1);
-  scene.fog.color.copy(currentBackground);
 
-  if (!clickableStars || !originalGalaxyPositions) return;
-  const stellarEnd = stellarEndTimelinePosition();
-  const formation = THREE.MathUtils.smoothstep(position, 220, 340);
-  const stellarPopulation = 1 - THREE.MathUtils.smoothstep(position, stellarEnd - 75, stellarEnd + 10);
-  clickableStars.material.opacity = formation * .9;
-  clickableStars.material.size = .09;
-  if (!transition) galaxyGroup.scale.setScalar(1);
 
-  const positionArray = clickableStars.geometry.attributes.position.array;
-  const colorArray = clickableStars.geometry.attributes.color.array;
-  for (let i = 0; i < originalGalaxyPositions.length; i += 3) {
-    const starIndex = i / 3;
-    const alive = 1 - THREE.MathUtils.smoothstep(position, starDeathThresholds[starIndex], starDeathThresholds[starIndex] + 22);
-    positionArray[i] = originalGalaxyPositions[i];
-    positionArray[i + 1] = originalGalaxyPositions[i + 1];
-    positionArray[i + 2] = originalGalaxyPositions[i + 2];
-    colorArray[i] = originalGalaxyColors[i] * alive;
-    colorArray[i + 1] = originalGalaxyColors[i + 1] * alive;
-    colorArray[i + 2] = originalGalaxyColors[i + 2] * alive;
-  }
-  cosmicEvents.forEach((event) => {
-    if (position < event.impactAt) return;
-    const aftermath = THREE.MathUtils.smoothstep(position, event.impactAt, event.impactAt + 24);
-    event.starImpacts.forEach((impact) => {
-      const offset = impact.index * 3;
-      positionArray[offset] += impact.kick[0] * aftermath;
-      positionArray[offset + 1] += impact.kick[1] * aftermath;
-      positionArray[offset + 2] += impact.kick[2] * aftermath;
-      colorArray[offset] *= impact.dimFactor;
-      colorArray[offset + 1] *= impact.dimFactor;
-      colorArray[offset + 2] *= impact.dimFactor;
-    });
-  });
-  clickableStars.geometry.attributes.position.needsUpdate = true;
-  clickableStars.geometry.attributes.color.needsUpdate = true;
 
-  const coreGlow = galaxyGroup.children.find((item) => item.userData.isCoreGlow);
-  if (coreGlow) {
-    const { scale, opacity } = coreGlow.userData.profile;
-    coreGlow.material.opacity = formation * stellarPopulation * opacity;
-    coreGlow.scale.set(scale, scale, 1);
-  }
-  const agnGlow = galaxyGroup.children.find((item) => item.userData.isAgnGlow);
-  const agnJet = galaxyGroup.children.find((item) => item.userData.isAgnJet);
-  if (agnGlow) {
-    const activePhase = formation * (1 - THREE.MathUtils.smoothstep(position, 500, 650));
-    agnGlow.material.opacity = activePhase * .82;
-    agnGlow.scale.set(.72, .72, 1);
-    agnJet.material.opacity = activePhase * .18;
-  }
-
-  const remnantsVisible = position > stellarEnd - 80 && position < 930;
-  const blackHolesVisible = position > 825 && position < 960;
-  remnantGroup.visible = (remnantsVisible || blackHolesVisible) && mode === 'explorer';
-  if (remnantsVisible && stellarRemnants) {
-    const remnantBirth = THREE.MathUtils.smoothstep(position, stellarEnd - 80, stellarEnd + 15);
-    const remnantFade = 1 - THREE.MathUtils.smoothstep(position, 845, 930);
-    stellarRemnants.material.opacity = remnantBirth * remnantFade * .64;
-    const remnantArray = stellarRemnants.geometry.attributes.position.array;
-    const writeOrbit = (index, samplePosition) => {
-      const offset = index * 3;
-      const x = originalRemnantPositions[offset];
-      const y = originalRemnantPositions[offset + 1];
-      const z = originalRemnantPositions[offset + 2];
-      const ax = remnantDynamics.axes[offset];
-      const ay = remnantDynamics.axes[offset + 1];
-      const az = remnantDynamics.axes[offset + 2];
-      const angle = Math.max(0, samplePosition - 570) * remnantDynamics.orbitRates[index];
-      const cosine = Math.cos(angle);
-      const sine = Math.sin(angle);
-      const dot = ax * x + ay * y + az * z;
-      remnantArray[offset] = x * cosine + (ay * z - az * y) * sine + ax * dot * (1 - cosine);
-      remnantArray[offset + 1] = y * cosine + (az * x - ax * z) * sine + ay * dot * (1 - cosine);
-      remnantArray[offset + 2] = z * cosine + (ax * y - ay * x) * sine + az * dot * (1 - cosine);
-    };
-
-    for (let index = 0; index < originalRemnantPositions.length / 3; index++) {
-      const offset = index * 3;
-      const fate = remnantDynamics.fates[index];
-      const transitionAt = remnantDynamics.escapeAt[index];
-      if (position < transitionAt || fate === 1) {
-        writeOrbit(index, position);
-        continue;
-      }
-
-      if (fate === 2) {
-        const infall = THREE.MathUtils.smoothstep(position, transitionAt, Math.min(900, transitionAt + 42));
-        writeOrbit(index, position + infall * 150);
-        const radiusScale = 1 - infall * .985;
-        remnantArray[offset] *= radiusScale;
-        remnantArray[offset + 1] *= radiusScale;
-        remnantArray[offset + 2] *= radiusScale;
-        continue;
-      }
-
-      writeOrbit(index, transitionAt);
-      const startX = remnantArray[offset];
-      const startY = remnantArray[offset + 1];
-      const startZ = remnantArray[offset + 2];
-      const radius = Math.max(.001, Math.hypot(startX, startY, startZ));
-      const ax = remnantDynamics.axes[offset];
-      const ay = remnantDynamics.axes[offset + 1];
-      const az = remnantDynamics.axes[offset + 2];
-      const orbitDirection = Math.sign(remnantDynamics.orbitRates[index]) || 1;
-      let tangentX = (ay * startZ - az * startY) * orbitDirection;
-      let tangentY = (az * startX - ax * startZ) * orbitDirection;
-      let tangentZ = (ax * startY - ay * startX) * orbitDirection;
-      const tangentLength = Math.max(.001, Math.hypot(tangentX, tangentY, tangentZ));
-      tangentX /= tangentLength; tangentY /= tangentLength; tangentZ /= tangentLength;
-      let directionX = tangentX * .9 + startX / radius * .34;
-      let directionY = tangentY * .9 + startY / radius * .34 + ay * Math.sin(index * 12.9898) * .08;
-      let directionZ = tangentZ * .9 + startZ / radius * .34;
-      const directionLength = Math.max(.001, Math.hypot(directionX, directionY, directionZ));
-      directionX /= directionLength; directionY /= directionLength; directionZ /= directionLength;
-      const progress = THREE.MathUtils.clamp((position - transitionAt) / Math.max(1, 900 - transitionAt), 0, 1);
-      const distance = fate === 3
-        ? Math.pow(progress, .72) * (18 + remnantDynamics.speeds[index] * 7)
-        : Math.pow(progress, 1.35) * (6 + remnantDynamics.speeds[index] * 11);
-      remnantArray[offset] = startX + directionX * distance;
-      remnantArray[offset + 1] = startY + directionY * distance;
-      remnantArray[offset + 2] = startZ + directionZ * distance;
-    }
-    stellarRemnants.geometry.attributes.position.needsUpdate = true;
-  }
-
-  blackHoleRemnants.forEach((hole) => {
-    const data = hole.userData;
-    const born = THREE.MathUtils.smoothstep(position, data.birthAt, data.birthAt + 7);
-    const remaining = 1 - THREE.MathUtils.smoothstep(position, data.evaporationAt - 24, data.evaporationAt);
-    const lateEvaporation = THREE.MathUtils.smoothstep(position, data.evaporationAt - 15, data.evaporationAt);
-    const pulseWindow = 7.5;
-    const pulseDistance = Math.abs(position - data.evaporationAt);
-    const pulse = pulseDistance < pulseWindow ? Math.sin((1 - pulseDistance / pulseWindow) * Math.PI / 2) : 0;
-    hole.visible = mode === 'explorer' && position >= data.birthAt && position <= data.evaporationAt + pulseWindow;
-    const massScale = data.baseScale * (.18 + .82 * Math.cbrt(Math.max(0, remaining)));
-    hole.scale.setScalar(Math.max(.035, massScale));
-    data.photonRing.material.opacity = born * (.1 + lateEvaporation * .34) * Math.sqrt(Math.max(0, remaining));
-    data.hawkingGlow.material.opacity = born * (.07 + lateEvaporation * .62) * Math.sqrt(Math.max(0, remaining));
-    data.finalPulse.material.opacity = pulse * .84;
-    const pulseScale = (.22 + pulse * 2.1) / Math.max(.035, massScale);
-    data.finalPulse.scale.set(pulseScale, pulseScale, 1);
-  });
-
-  heatDeathGroup.visible = position > 910 && mode === 'explorer';
-  if (coldPhotons && originalPhotonPositions && originalPhotonColors) {
-    const radiationBirth = THREE.MathUtils.smoothstep(position, 910, 940);
-    const redshift = THREE.MathUtils.smoothstep(position, 938, 1000);
-    coldPhotons.material.opacity = radiationBirth * Math.pow(1 - redshift, 1.7) * .34;
-    const photonArray = coldPhotons.geometry.attributes.position.array;
-    const photonColors = coldPhotons.geometry.attributes.color.array;
-    const expansion = 1 + redshift * 1.8;
-    for (let i = 0; i < originalPhotonPositions.length; i += 3) {
-      photonArray[i] = originalPhotonPositions[i] * expansion;
-      photonArray[i + 1] = originalPhotonPositions[i + 1] * expansion;
-      photonArray[i + 2] = originalPhotonPositions[i + 2] * expansion;
-      photonColors[i] = originalPhotonColors[i] * (1 - redshift * .55) + redshift * .06;
-      photonColors[i + 1] = originalPhotonColors[i + 1] * (1 - redshift * .88);
-      photonColors[i + 2] = originalPhotonColors[i + 2] * (1 - redshift * .96);
-    }
-    coldPhotons.geometry.attributes.position.needsUpdate = true;
-    coldPhotons.geometry.attributes.color.needsUpdate = true;
-  }
-}
-
-function updateCosmicEvents(position) {
-  activeCosmicEvent = null;
-  let anyVisible = false;
-  cosmicEvents.forEach((event) => {
-    const phase = (position - event.start) / event.duration;
-    const visible = phase >= 0 && phase <= 1 && mode === 'explorer';
-    event.group.visible = visible;
-    if (!visible) return;
-    anyVisible = true;
-    activeCosmicEvent = event;
-    event.group.userData.phase = phase;
-    const effect = event.group.userData.effect;
-
-    if (event.visual === 'supernova') {
-      const ignition = THREE.MathUtils.smoothstep(phase, 0, .028);
-      const flash = ignition * (1 - THREE.MathUtils.smoothstep(phase, .045, .19));
-      const afterglow = (1 - THREE.MathUtils.smoothstep(phase, .12, 1)) * ignition;
-      effect.innerFlash.material.opacity = flash * .98;
-      const flashScale = .08 + Math.pow(Math.min(1, phase / .16), .28) * .72;
-      effect.innerFlash.scale.set(flashScale, flashScale, 1);
-      effect.photosphere.material.opacity = flash * .58 + afterglow * .2;
-      const photosphereScale = .16 + Math.pow(phase, .56) * 1.15;
-      effect.photosphere.scale.set(photosphereScale, photosphereScale * .9, 1);
-      effect.remnant.material.opacity = THREE.MathUtils.smoothstep(phase, .2, .52) * (1 - THREE.MathUtils.smoothstep(phase, .82, 1)) * .72;
-
-      const ejectaArray = effect.ejecta.geometry.attributes.position.array;
-      for (let i = 0; i < effect.ejectaVelocity.length; i++) {
-        const local = THREE.MathUtils.clamp((phase - effect.ejectaDelay[i]) / (1 - effect.ejectaDelay[i]), 0, 1);
-        const distance = .05 + Math.pow(local, .58) * effect.ejectaVelocity[i];
-        const turbulence = Math.sin(local * 10 + i * 1.73) * local * .045;
-        const offset = i * 3;
-        ejectaArray[offset] = effect.ejectaDirections[offset] * distance + turbulence * effect.ejectaDirections[offset + 1];
-        ejectaArray[offset + 1] = effect.ejectaDirections[offset + 1] * distance + turbulence * effect.ejectaDirections[offset + 2];
-        ejectaArray[offset + 2] = effect.ejectaDirections[offset + 2] * distance + turbulence * effect.ejectaDirections[offset];
-      }
-      effect.ejecta.geometry.attributes.position.needsUpdate = true;
-      effect.ejecta.material.opacity = ignition * (1 - THREE.MathUtils.smoothstep(phase, .58, 1)) * .86;
-
-      const shellArray = effect.shell.geometry.attributes.position.array;
-      const shellRadius = .12 + (1 - Math.pow(1 - phase, 2.4)) * 2.25;
-      for (let i = 0; i < effect.shellNoise.length; i++) {
-        const offset = i * 3;
-        const uneven = 1 + Math.sin(effect.shellNoise[i] + phase * 4.5) * .055 + Math.sin(i * 2.1) * .025;
-        shellArray[offset] = effect.shellDirections[offset] * shellRadius * uneven;
-        shellArray[offset + 1] = effect.shellDirections[offset + 1] * shellRadius * uneven;
-        shellArray[offset + 2] = effect.shellDirections[offset + 2] * shellRadius * uneven;
-      }
-      effect.shell.geometry.attributes.position.needsUpdate = true;
-      effect.shell.material.opacity = THREE.MathUtils.smoothstep(phase, .04, .14) * (1 - THREE.MathUtils.smoothstep(phase, .5, 1)) * .34;
-    } else if (event.visual === 'pulsar') {
-      const envelope = Math.pow(Math.sin(phase * Math.PI), .45);
-      const glitchScale = event.type === 'pulsar-glitch' ? .22 : 1;
-      effect.core.material.opacity = envelope * .92;
-      effect.halo.material.opacity = envelope * .16 * glitchScale;
-      effect.nebula.material.opacity = envelope * .095 * glitchScale;
-      effect.halo.scale.set(1.05, 1.05, 1);
-      effect.jets.material.opacity = envelope * .18 * glitchScale;
-      effect.fieldLines.forEach((field, fieldIndex) => {
-        field.material.opacity = envelope * (.055 - fieldIndex * .007) * glitchScale;
-      });
-      event.group.userData.intensity = envelope;
-    } else {
-      const mergePoint = .68;
-      const merged = phase >= mergePoint;
-      effect.holeA.visible = !merged;
-      effect.holeB.visible = !merged;
-      effect.remnantHole.visible = merged;
-      const inspiral = Math.min(1, phase / mergePoint);
-      const angleFor = (value) => Math.PI * 2 * (1.15 * value + 4.1 * Math.pow(value, 3));
-      const radiusFor = (value) => .12 + 2.45 * Math.pow(1 - value, .72);
-      const angle = angleFor(inspiral);
-      const radius = radiusFor(inspiral);
-      effect.holeA.position.set(Math.cos(angle) * radius, Math.sin(angle) * radius, Math.sin(angle * .5) * .09);
-      effect.holeB.position.set(-Math.cos(angle) * radius, -Math.sin(angle) * radius, -Math.sin(angle * .5) * .09);
-
-      const updateTrail = (trail, side) => {
-        const array = trail.geometry.attributes.position.array;
-        for (let i = 0; i < 84; i++) {
-          const historical = Math.max(0, inspiral - (83 - i) * (.0028 + inspiral * .0009));
-          const oldAngle = angleFor(historical);
-          const oldRadius = radiusFor(historical);
-          array[i * 3] = side * Math.cos(oldAngle) * oldRadius;
-          array[i * 3 + 1] = side * Math.sin(oldAngle) * oldRadius;
-          array[i * 3 + 2] = side * Math.sin(oldAngle * .5) * .09;
-        }
-        trail.geometry.attributes.position.needsUpdate = true;
-        trail.material.opacity = merged ? 0 : THREE.MathUtils.smoothstep(phase, .02, .22) * .34;
-      };
-      updateTrail(effect.trailA, 1);
-      updateTrail(effect.trailB, -1);
-
-      const postMerge = THREE.MathUtils.clamp((phase - mergePoint) / (1 - mergePoint), 0, 1);
-      const ringdown = Math.exp(-postMerge * 7) * Math.sin(postMerge * 38);
-      effect.remnantHole.scale.set(1.24 + ringdown * .07, 1.24 - ringdown * .045, 1.24);
-      const mergerFlash = merged ? Math.exp(-postMerge * 18) : 0;
-      // Vacuum black-hole mergers are not expected to produce a bright
-      // electromagnetic flash; retain only a faint locator for legibility.
-      effect.mergerGlow.material.opacity = mergerFlash * .045;
-      const glowScale = .3 + postMerge * 2.4;
-      effect.mergerGlow.scale.set(glowScale, glowScale, 1);
-      effect.wavefronts.forEach((wave, waveIndex) => {
-        const delay = waveIndex * .11;
-        const local = THREE.MathUtils.clamp((postMerge - delay) / (1 - delay), 0, 1);
-        wave.visible = merged && local > 0;
-        wave.scale.setScalar(.3 + Math.pow(local, .62) * (3.2 + waveIndex * .7));
-        wave.material.opacity = Math.sin(local * Math.PI) * .075 * (1 - waveIndex * .16);
-      });
-    }
-  });
-  cosmicEventGroup.visible = anyVisible;
-  return activeCosmicEvent;
-}
-
-function animateCosmicEvents(now) {
-  if (!cosmicEventGroup.visible || prefersReducedMotion) return;
-  cosmicEvents.forEach((event) => {
-    if (!event.group.visible) return;
-    const phase = event.group.userData.phase;
-    const effect = event.group.userData.effect;
-    if (event.visual === 'supernova') {
-      effect.innerFlash.material.rotation = now * .00007;
-      effect.photosphere.material.rotation = -now * .000035;
-      effect.ejecta.rotation.y = Math.sin(now * .00021) * .035;
-    } else if (event.visual === 'pulsar') {
-      effect.rotor.rotation.y = now * .0024;
-      const worldQuaternion = new THREE.Quaternion();
-      const worldPosition = new THREE.Vector3();
-      const beamAxis = new THREE.Vector3(0, 1, 0);
-      effect.rotor.getWorldQuaternion(worldQuaternion);
-      event.group.getWorldPosition(worldPosition);
-      beamAxis.applyQuaternion(worldQuaternion).normalize();
-      const viewDirection = camera.position.clone().sub(worldPosition).normalize();
-      const alignment = Math.pow(Math.abs(beamAxis.dot(viewDirection)), 14);
-      const pulse = .52 + Math.pow(Math.max(0, Math.sin(now * .012)), 10) * .48;
-      const glitchScale = event.type === 'pulsar-glitch' ? .16 : 1;
-      effect.jets.material.opacity = event.group.userData.intensity * (.34 + alignment * .58) * pulse * glitchScale;
-      effect.sweepGlow.material.opacity = event.group.userData.intensity * alignment * pulse * .78 * glitchScale;
-      const sweepScale = .5 + alignment * 1.8;
-      effect.sweepGlow.scale.set(sweepScale, sweepScale, 1);
-      effect.knots.forEach((knot) => {
-        const travel = (now * .00055 + knot.userData.offset) % 1;
-        knot.position.set(0, knot.userData.side * (.18 + travel * 2.45), 0);
-        knot.material.opacity = event.group.userData.intensity * Math.sin(travel * Math.PI) * (.12 + alignment * .55) * glitchScale;
-      });
-      effect.fieldLines.forEach((field, index) => {
-        field.rotation.y += .006 + index * .001;
-      });
-    } else {
-      effect.holeA.userData.photonRing.rotation.z += .012;
-      effect.holeB.userData.photonRing.rotation.z -= .01;
-      effect.remnantHole.userData.photonRing.rotation.z += .006;
-    }
-  });
-}
-
-function civilizationConsequencesAt(position, speciesIndex) {
-  let capacityFactor = 1;
-  let collapsedAt = Infinity;
-  const causes = [];
-  const species = civilizationData[speciesIndex];
-  cosmicEvents.forEach((event) => {
-    if (position < event.impactAt) return;
-    if (species?.highDimensional && event.impactAt >= species.ascensionAt) return;
-    const impact = event.civilizationImpacts.find((item) => item.speciesIndex === speciesIndex);
-    if (!impact) return;
-    capacityFactor *= 1 - impact.lossFraction;
-    if (impact.collapse) collapsedAt = Math.min(collapsedAt, event.impactAt);
-    causes.push(event.label);
-  });
-  return { capacityFactor, collapsedAt, lossFraction: 1 - capacityFactor, causes };
-}
-
-function syncCivilizationHosts() {
-  if (!stellarRemnants) return;
-  const remnantPositions = stellarRemnants.geometry.attributes.position.array;
-  const rotatedOffset = new THREE.Vector3();
-  const rotateOffsetWithHost = (hostIndex, x, y, z, target) => {
-    const offset = hostIndex * 3;
-    const samplePosition = Math.min(cosmicPosition, remnantDynamics.escapeAt[hostIndex]);
-    const angle = Math.max(0, samplePosition - 570) * remnantDynamics.orbitRates[hostIndex];
-    const cosine = Math.cos(angle);
-    const sine = Math.sin(angle);
-    const ax = remnantDynamics.axes[offset];
-    const ay = remnantDynamics.axes[offset + 1];
-    const az = remnantDynamics.axes[offset + 2];
-    const dot = ax * x + ay * y + az * z;
-    target.set(
-      x * cosine + (ay * z - az * y) * sine + ax * dot * (1 - cosine),
-      y * cosine + (az * x - ax * z) * sine + ay * dot * (1 - cosine),
-      z * cosine + (ax * y - ay * x) * sine + az * dot * (1 - cosine)
-    );
+function timelineVisualContext() {
+  return {
+    mode, epochEffectsGroup, primordialParticles, primordialFactors, primordialDirections,
+    expansionStreaks, expansionDirections, bangCore, shockwaves, renderer, scene,
+    clickableStars, originalGalaxyPositions, universe, transition, galaxyGroup,
+    starDeathThresholds, originalGalaxyColors, cosmicEvents, remnantGroup,
+    stellarRemnants, originalRemnantPositions, remnantDynamics, blackHoleRemnants,
+    heatDeathGroup, coldPhotons, originalPhotonPositions, originalPhotonColors,
+    cosmicEventGroup
   };
-  civilizationData.forEach((species, speciesIndex) => {
-    const civilization = civilizationGroups[speciesIndex];
-    if (!civilization) return;
-    const colonyPositions = civilization.geometry.attributes.position.array;
-    for (let colonyIndex = 0; colonyIndex < species.displayCount; colonyIndex++) {
-      const hostIndex = species.hostRemnantIndices[colonyIndex];
-      const source = hostIndex * 3;
-      const target = colonyIndex * 3;
-      rotateOffsetWithHost(
-        hostIndex,
-        species.hostOffsets[target],
-        species.hostOffsets[target + 1],
-        species.hostOffsets[target + 2],
-        rotatedOffset
-      );
-      colonyPositions[target] = remnantPositions[source] + rotatedOffset.x;
-      colonyPositions[target + 1] = remnantPositions[source + 1] + rotatedOffset.y;
-      colonyPositions[target + 2] = remnantPositions[source + 2] + rotatedOffset.z;
-      if (species.highDimensional && cosmicPosition >= species.ascensionAt) {
-        const projection = THREE.MathUtils.smoothstep(cosmicPosition, species.ascensionAt, species.ascensionAt + 34);
-        const phase = colonyIndex * 1.618 + cosmicPosition * .035;
-        colonyPositions[target] += Math.sin(phase) * projection * .7;
-        colonyPositions[target + 1] += Math.cos(phase * .73) * projection * .42;
-        colonyPositions[target + 2] += Math.sin(phase * .51 + 2.1) * projection * .7;
-      }
-    }
-    civilization.geometry.attributes.position.needsUpdate = true;
+}
 
-    const homeOffset = species.homeRemnantIndex * 3;
-    rotateOffsetWithHost(
-      species.homeRemnantIndex,
-      species.homeOffset.x,
-      species.homeOffset.y,
-      species.homeOffset.z,
-      rotatedOffset
-    );
-    species.home.set(
-      remnantPositions[homeOffset] + rotatedOffset.x,
-      remnantPositions[homeOffset + 1] + rotatedOffset.y,
-      remnantPositions[homeOffset + 2] + rotatedOffset.z
-    );
-    if (species.highDimensional && cosmicPosition >= species.ascensionAt) {
-      const projection = THREE.MathUtils.smoothstep(cosmicPosition, species.ascensionAt, species.ascensionAt + 34);
-      const phase = speciesIndex * 2.17 + cosmicPosition * .035;
-      species.home.x += Math.sin(phase) * projection * .7;
-      species.home.y += Math.cos(phase * .73) * projection * .42;
-      species.home.z += Math.sin(phase * .51 + 2.1) * projection * .7;
-    }
+function applyCivilizationVisuals(runtimeState) {
+  runtimeState.forEach((state, index) => {
+    const group = civilizationGroups[index];
+    const species = civilizationData[index];
+    group.visible = state.alive && state.count > 0;
+    group.material.opacity = state.ascended ? .88 : .98;
+    group.material.size = state.ascended ? .31 : .24;
+    group.material.color.setHex(state.ascended ? 0xe9d7ff : species.color);
   });
-
 }
 
 function updateCosmicTime(value, force = false) {
-  cosmicPosition = Math.max(0, Math.min(1000, Number(value)));
-  $('#cosmic-timeline').value = cosmicPosition;
-  $('#time-progress').style.width = `${cosmicPosition / 10}%`;
-  const label = cosmicTimeLabel(cosmicPosition);
-  $('#timeline-value').textContent = label;
-
-  const eraIndex = eras.findIndex((era) => cosmicPosition < era.until);
-  const era = eras[Math.max(0, eraIndex)];
-  $('#era-number').textContent = String(eraIndex + 1).padStart(2, '0');
-  $('#era-name').textContent = era.name;
-  $('#cosmic-time').textContent = label.replace('T+', '');
-  $('#era-description').textContent = era.description;
-  const galaxyIdentityOpacity = THREE.MathUtils.smoothstep(cosmicPosition, 245, 325)
-    * (1 - THREE.MathUtils.smoothstep(cosmicPosition, 820, 900));
-  $('.explorer-title').style.setProperty('--cosmic-opacity', galaxyIdentityOpacity.toFixed(3));
+  const timelineState = createCosmicTimelineState(value, universe, eras);
+  cosmicPosition = timelineState.position;
+  renderTimelineHeader(timelineState);
 
   if (!clickableStars) return;
-  updateEpochVisuals(cosmicPosition);
-  const simulationState = civilizationSnapshotAt(cosmicPosition);
-  applyCivilizationSnapshot(simulationState);
-  syncCivilizationHosts();
 
-  let activeSpecies = 0;
-  let ascendedSpecies = 0;
-  civilizationRuntimeState = [];
-  civilizationData.forEach((species, index) => {
-    const eventState = civilizationConsequencesAt(cosmicPosition, index);
-    const alive = Boolean(simulationState?.active[index]);
-    const ascended = Boolean(simulationState?.ascended[index]) && alive;
-    const count = simulationState?.counts[index] || 0;
-    const trend = simulationState?.trends[index] || 0;
-    const friendlyNames = [];
-    const conflictNames = [];
-    civilizationData.forEach((other, otherIndex) => {
-      if (otherIndex === index || !simulationState?.active[otherIndex]) return;
-      const relation = simulationState.relations[index * civilizationData.length + otherIndex];
-      if (relation > 0) friendlyNames.push(other.name);
-      if (relation < 0) conflictNames.push(other.name);
-    });
-    civilizationRuntimeState[index] = { alive, ascended, count, eventState, friendlyNames, conflictNames };
-    civilizationGroups[index].visible = alive && count > 0;
-    civilizationGroups[index].material.opacity = ascended ? .88 : .98;
-    civilizationGroups[index].material.size = ascended ? .31 : .24;
-    civilizationGroups[index].material.color.setHex(ascended ? 0xe9d7ff : species.color);
-    const row = document.querySelector(`[data-species="${index}"]`);
-    if (row) {
-      row.style.opacity = alive ? '1' : '.18';
-      row.classList.toggle('is-impacted', alive && eventState.causes.length > 0);
-      row.classList.toggle('is-ascended', ascended);
-      const details = [];
-      if (simulationState?.causes[index]) details.push(simulationState.causes[index]);
-      if (friendlyNames.length) details.push(`与 ${friendlyNames.join('、')} 友好交流`);
-      if (conflictNames.length) details.push(`与 ${conflictNames.join('、')} 冲突`);
-      if (eventState.causes.length) details.push(`受 ${eventState.causes.join('、')} 影响`);
-      row.title = ascended ? '1% 概率的高维转化：已脱离普通物质宿主' : details.join('；');
-      row.querySelector('b').textContent = alive
-        ? (ascended ? '超维存续' : `${count} 域${trend > 0 ? ' ↑' : trend < 0 ? ' ↓' : ''}`)
-        : cosmicPosition < species.birth ? '未诞生' : '衰亡';
-    }
-    if (alive) {
-      activeSpecies++;
-      if (ascended) ascendedSpecies++;
-    }
+  updateEpochVisuals(cosmicPosition, timelineVisualContext());
+  const simulationState = civilizationSnapshotAt(civilizationSimulation, cosmicPosition);
+  applyCivilizationSnapshot(simulationState, {
+    civilizationSimulation,
+    civilizationData,
+    civilizationGroups
   });
-  organizeCivilizationLegend(simulationState);
-  $('#civilization-legend').style.setProperty('--cosmic-opacity', activeSpecies > 0 ? '1' : '0');
+  syncCivilizationHosts({
+    stellarRemnants,
+    remnantDynamics,
+    cosmicPosition,
+    civilizationData,
+    civilizationGroups
+  });
 
-  let activeRelationship = null;
-  let relationshipPriority = -1;
-  if (simulationState) {
-    for (let a = 0; a < civilizationData.length; a++) {
-      for (let b = a + 1; b < civilizationData.length; b++) {
-        const stateA = civilizationRuntimeState[a];
-        const stateB = civilizationRuntimeState[b];
-        if (!stateA?.alive || !stateB?.alive || stateA.ascended || stateB.ascended) continue;
-        const relationState = simulationState.relations[a * civilizationData.length + b];
-        if (relationState === 0) continue;
-        const score = Math.abs(simulationState.relationScores[a * civilizationData.length + b]);
-        const priority = score + (relationState < 0 ? 2 : 0);
-        if (priority > relationshipPriority) {
-          relationshipPriority = priority;
-          activeRelationship = {
-            speciesA: a,
-            speciesB: b,
-            relationship: relationState < 0 ? 'conflict' : 'coexistence'
-          };
-        }
-      }
-    }
-  }
+  civilizationRuntimeState = deriveCivilizationRuntime(
+    cosmicPosition,
+    simulationState,
+    civilizationData,
+    cosmicEvents
+  );
+  applyCivilizationVisuals(civilizationRuntimeState);
+  renderCivilizationRows({
+    position: cosmicPosition,
+    simulationState,
+    runtimeState: civilizationRuntimeState,
+    civilizationData
+  });
+  organizeCivilizationLegend(simulationState, civilizationData);
 
-  const activeEvent = updateCosmicEvents(cosmicPosition);
-
-  if (activeEvent) {
-    const impacted = cosmicPosition >= activeEvent.impactAt;
-    const aftermath = impacted ? `；${activeEvent.outcome}` : '';
-    setEvent(`${activeEvent.id}-${impacted ? 'aftermath' : 'forming'}`, label, `${activeEvent.label}：${activeEvent.message}${aftermath}`, force);
-  } else if (activeRelationship) {
-    const a = civilizationData[activeRelationship.speciesA];
-    const b = civilizationData[activeRelationship.speciesB];
-    const text = activeRelationship.relationship === 'conflict'
-      ? `${a.name} 与 ${b.name} 的边界冲突正在削减双方疆域`
-      : `${a.name} 与 ${b.name} 建立友好共存区，共享资源与航路`;
-    setEvent(`relation-${activeRelationship.relationship}-${activeRelationship.speciesA}-${activeRelationship.speciesB}`, label, text, force);
-  } else if (ascendedSpecies > 0) {
-    setEvent(`ascended-${ascendedSpecies}`, label, `${ascendedSpecies} 个种群已转化为高维生命，脱离恒星与黑洞的普通物质演化`, force);
-  } else if (cosmicPosition < 55) {
-    setEvent('bang', 'T+0', '整个可观测区域处于超高温、高密度状态，空间本身在膨胀', force);
-  } else if (cosmicPosition < 145) {
-    setEvent('plasma', label, '光子在等离子体中不断散射，宇宙随膨胀持续冷却', force);
-  } else if (cosmicPosition < 245) {
-    setEvent('dark', label, '复合后宇宙变得透明，但尚没有恒星光', force);
-  } else if (cosmicPosition < 340) {
-    setEvent('stars', label, '第一代恒星与星系点亮，再电离逐渐开始', force);
-  } else if (activeSpecies > 0) {
-    setEvent(`life-${activeSpecies}`, label, `${activeSpecies} 个主要文明种群正在跨越恒星系扩张`, force);
-  } else if (cosmicPosition < 430) {
-    setEvent('chemistry', label, '重元素丰度上升，宜居行星开始形成', force);
-  } else if (cosmicPosition < Math.min(...civilizationData.map((species) => species.birth), 620)) {
-    setEvent('waiting-life', label, '宜居世界正在积累复杂化学反应，智慧生命尚未出现', force);
-  } else if (cosmicPosition < 620) {
-    setEvent('silence', label, '文明信号已经沉寂，只剩无人维护的轨道遗迹', force);
-  } else if (cosmicPosition < 650) {
-    setEvent('last-stars', label, '恒星形成早已停止，最后的低质量红矮星仍在极缓慢地消耗燃料', force);
-  } else if (cosmicPosition < 710) {
-    setEvent('degenerate', label, '最后一批红矮星熄灭，恒星残骸仍被星系引力束缚并长期绕核运行', force);
-  } else if (cosmicPosition < 845) {
-    setEvent('evaporation', label, '长期引力近遇持续重分配能量，少数残骸逐个逃离，极少数落向星系中心', force);
-  } else if (cosmicPosition < 950) {
-    setEvent('holes', label, '黑洞通过霍金辐射缓慢蒸发', force);
-  } else {
-    setEvent('heatdeath', label, '最后的黑洞已经蒸发，残余光子持续红移并稀释，可用能量梯度趋近于零', force);
-  }
+  const activeSpecies = civilizationRuntimeState.filter((state) => state.alive).length;
+  const ascendedSpecies = civilizationRuntimeState.filter((state) => state.ascended).length;
+  const activeRelationship = findDominantRelationship(
+    simulationState,
+    civilizationRuntimeState,
+    civilizationData.length
+  );
+  const activeEvent = updateCosmicEvents(cosmicPosition, timelineVisualContext());
+  const narrative = selectTimelineNarrative({
+    position: cosmicPosition,
+    label: timelineState.label,
+    activeEvent,
+    activeRelationship,
+    ascendedSpecies,
+    activeSpecies,
+    civilizationData
+  });
+  renderTimelineEvent(narrative, force);
 }
 
 function animate(now) {
@@ -2507,7 +1285,12 @@ function animate(now) {
         hole.userData.hawkingGlow.material.rotation = now * (.000025 + index * .000001);
       });
     }
-    animateCosmicEvents(now);
+    animateCosmicEvents(now, {
+      cosmicEventGroup,
+      prefersReducedMotion,
+      cosmicEvents,
+      camera
+    });
     if (!controls.enabled) galaxyGroup.rotation.y += 0.0003;
     const time = now * 0.00012;
     $('#coord-x').textContent = `${Math.sin(time) < 0 ? '−' : '+'}${Math.abs(Math.sin(time) * 9).toFixed(2)}`;
@@ -2567,7 +1350,7 @@ document.addEventListener('keydown', (event) => {
 });
 
 universe = createUniverse();
-updateData();
+updateUniverseData(universe);
 buildUniverseObject();
 buildGalaxy();
 animate(performance.now());

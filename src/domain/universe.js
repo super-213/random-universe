@@ -1,0 +1,74 @@
+import * as THREE from 'three';
+import { galaxyTypes } from './catalog.js';
+import { mulberry32, randomBetween } from './random.js';
+
+export function formatGalaxyHue(hue) {
+  const degrees = Math.round(hue * 360);
+  const name = degrees < 190 ? '青白' : degrees < 225 ? '蓝白' : degrees < 250 ? '靛蓝' : '紫白';
+  return `${name} · ${degrees}°`;
+}
+
+export function formatArmStructure(type, count) {
+  if (type === 2) return '主环 + 碎环';
+  if (type === 3) return '无旋臂';
+  if (type === 4) return '不规则';
+  return `${count} 条`;
+}
+
+export function formatProbability(value) {
+  const percent = value * 100;
+  if (percent < 0.0001) return '< 0.0001%';
+  if (percent < 0.01) return `${percent.toFixed(4)}%`;
+  if (percent < 1) return `${percent.toFixed(2)}%`;
+  return `${percent.toFixed(1)}%`;
+}
+
+export function formatCivilizations(value) {
+  return value === 0 ? '尚未出现' : `${new Intl.NumberFormat('zh-CN').format(value)} 个`;
+}
+
+export function stellarEndTimelinePosition(universe) {
+  return THREE.MathUtils.clamp(570 + (universe.stellarFormationEndExponent - 12) / 2 * 80, 578, 654);
+}
+
+export function formatStars(value) {
+  return value >= 1 ? `${value.toFixed(1)} 万亿颗` : `${Math.round(value * 10000)} 亿颗`;
+}
+
+export function createUniverse(seed = Math.floor(Math.random() * 900000) + 100000) {
+  const random = mulberry32(seed);
+  const speed = randomBetween(random, 0.38, 1.84);
+  const gravity = randomBetween(random, 0.52, 1.76);
+  const fineStructure = randomBetween(random, 0.72, 1.28);
+  const massRatio = randomBetween(random, 0.82, 1.18);
+  const expansionRate = randomBetween(random, 0.65, 1.45);
+  const darkEnergyDensity = randomBetween(random, 0.48, 0.82);
+  const primordialFluctuation = randomBetween(random, 0.55, 1.75);
+  const cmbTemperature = randomBetween(random, 1.9, 4.4);
+  // Alternative constants are a hypothesis layer, not a solved theory. Keep
+  // their downstream values correlated so they are not independent decoration.
+  const chemistryStability = Math.exp(-Math.pow((fineStructure - 1) / .17, 2) - Math.pow((massRatio - 1) / .14, 2));
+  const structureEfficiency = THREE.MathUtils.clamp(gravity * primordialFluctuation / Math.pow(expansionRate, .72), .12, 2.8);
+  const elements = Math.max(2, Math.round(118 * chemistryStability * randomBetween(random, .82, 1.08)));
+  const stars = THREE.MathUtils.clamp(randomBetween(random, .35, 3.2) * structureEfficiency, .08, 7.2);
+  const stellarFormationEndExponent = THREE.MathUtils.clamp(13.4 - (darkEnergyDensity - .68) * 2.1 - (expansionRate - 1) * .55, 12.2, 14.1);
+  const habitability = chemistryStability * THREE.MathUtils.clamp(1 - Math.abs(cmbTemperature - 2.725) / 3.5, .12, 1);
+  const lifeProbability = Math.pow(random(), 4) * .08 * habitability;
+  const speciesCount = Math.floor(randomBetween(random, 5, 16));
+  const civilizations = Math.max(speciesCount, Math.floor(stars * 1e5 * lifeProbability * randomBetween(random, 0.02, 0.7)));
+  const lifetime = Math.round(Math.pow(10, stellarFormationEndExponent - 8) / 10) * 10;
+  const armCount = Math.floor(randomBetween(random, 3, 7));
+  const galaxyType = seed % galaxyTypes.length;
+  const blackHoleProbability = [.96, .92, .72, .99, .34][galaxyType];
+  const hasCentralBlackHole = random() < blackHoleProbability;
+  const activeNucleus = hasCentralBlackHole && random() < [.1, .07, .05, .045, .025][galaxyType];
+  const blackHoleEvaporationExponent = Math.floor(randomBetween(random, 97, 103));
+  const hue = randomBetween(random, 0.48, 0.76);
+  return {
+    seed, speed, gravity, fineStructure, massRatio, expansionRate, darkEnergyDensity,
+    primordialFluctuation, cmbTemperature, chemistryStability, structureEfficiency,
+    stellarFormationEndExponent, elements, stars, lifeProbability,
+    civilizations, speciesCount, lifetime, blackHoleEvaporationExponent, armCount, galaxyType,
+    hasCentralBlackHole, activeNucleus, hue
+  };
+}
