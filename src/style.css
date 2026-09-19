@@ -351,8 +351,8 @@ h1 strong {
   position: absolute;
   top: 13vh;
   right: 3.4vw;
-  display: grid;
-  width: 150px;
+  display: block;
+  width: 232px;
   max-height: 38vh;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -372,17 +372,58 @@ h1 strong {
   grid-template-columns: 12px 1fr auto;
   align-items: center;
   gap: 8px;
-  padding: 4px 0;
+  padding: 5px 0 5px 8px;
   border-bottom: 0;
   color: var(--muted);
-  font-size: 8px;
+  font-size: 12px;
   transition: opacity .3s;
 }
 .civilization-item i { width: 5px; height: 5px; border-radius: 50%; background: var(--species); box-shadow: 0 0 8px var(--species); }
-.civilization-item b { color: var(--ink); font: 400 8px "Space Mono", monospace; }
+.civilization-item span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.civilization-item b { color: var(--ink); font: 400 10px "Space Mono", monospace; }
 .civilization-item.is-impacted b { color: rgba(255, 155, 121, .88); }
 .civilization-item.is-ascended i { background: #ead9ff; box-shadow: 0 0 12px #c79cff; }
 .civilization-item.is-ascended b { color: #ead9ff; }
+.faction-block { --faction: var(--accent); }
+.faction-block + .faction-block { margin-top: 14px; }
+.faction-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  min-height: 22px;
+  margin-bottom: 2px;
+}
+.faction-identity {
+  display: grid;
+  place-items: center;
+  flex: 0 0 23px;
+  height: 18px;
+  border: 1px solid color-mix(in srgb, var(--faction) 62%, transparent);
+  color: var(--faction);
+  font: 400 9px "Space Mono", monospace;
+  letter-spacing: .04em;
+}
+.faction-relations { display: grid; flex: 1; gap: 2px; min-width: 0; }
+.faction-relation {
+  display: grid;
+  grid-template-columns: 14px 1fr;
+  align-items: start;
+  gap: 4px;
+  min-height: 16px;
+  color: rgba(241, 238, 231, .24);
+}
+.faction-relation > span { display: flex; flex-wrap: wrap; gap: 2px 7px; min-width: 0; }
+.faction-relation b {
+  color: color-mix(in srgb, var(--target-faction) 78%, white);
+  font: 400 8px "Space Mono", monospace;
+}
+.faction-relation svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.35; stroke-linecap: round; }
+.faction-relation.is-conflict { color: rgba(255, 111, 91, .9); }
+.faction-relation.is-friendly { color: rgba(104, 224, 203, .88); }
+.faction-relation.is-neutral { color: rgba(241, 238, 231, .3); }
+.faction-members { border-left: 1px solid color-mix(in srgb, var(--faction) 42%, transparent); }
+.faction-block.is-transcendent { --faction: #d8b8ff; }
+.faction-inactive { margin-top: 14px; opacity: .62; }
 
 .event-feed {
   position: absolute;
@@ -581,8 +622,9 @@ h1 strong {
   .explorer-title h2 { font-size: 13px; }
   .coordinates { display: none; }
   .era-readout { left: 20px; top: auto; bottom: 20vh; }
-  .civilization-legend { top: 10vh; bottom: auto; right: 20px; width: 125px; max-height: 29vh; }
-  .civilization-item { padding: 3px 0; }
+  .civilization-legend { top: 10vh; bottom: auto; right: 14px; width: 210px; max-height: 36vh; }
+  .civilization-item { padding: 5px 0 5px 7px; font-size: 12px; }
+  .civilization-item b { font-size: 9px; }
   .event-feed { left: 20px; right: 20px; bottom: 16vh; width: auto; }
   .explorer-footer { left: 20px; right: 20px; bottom: 2.5vh; }
   .control-hint { display: none; }
