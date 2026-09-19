@@ -291,6 +291,7 @@ h1 strong {
   display: flex;
   align-items: baseline;
   gap: 10px;
+  opacity: var(--cosmic-opacity, 1);
   transition: opacity .35s ease, transform .35s ease;
 }
 .explorer-title .kicker { order: 2; margin: 0; opacity: .6; }
@@ -352,8 +353,20 @@ h1 strong {
   right: 3.4vw;
   display: grid;
   width: 150px;
+  max-height: 38vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+  padding-right: 5px;
+  pointer-events: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(216, 255, 95, .28) transparent;
+  opacity: var(--cosmic-opacity, 0);
   transition: opacity .35s ease, transform .35s ease;
 }
+.civilization-legend::-webkit-scrollbar { width: 3px; }
+.civilization-legend::-webkit-scrollbar-thumb { background: rgba(216, 255, 95, .28); border-radius: 3px; }
 .civilization-item {
   display: grid;
   grid-template-columns: 12px 1fr auto;
@@ -367,6 +380,9 @@ h1 strong {
 }
 .civilization-item i { width: 5px; height: 5px; border-radius: 50%; background: var(--species); box-shadow: 0 0 8px var(--species); }
 .civilization-item b { color: var(--ink); font: 400 8px "Space Mono", monospace; }
+.civilization-item.is-impacted b { color: rgba(255, 155, 121, .88); }
+.civilization-item.is-ascended i { background: #ead9ff; box-shadow: 0 0 12px #c79cff; }
+.civilization-item.is-ascended b { color: #ead9ff; }
 
 .event-feed {
   position: absolute;
@@ -565,7 +581,7 @@ h1 strong {
   .explorer-title h2 { font-size: 13px; }
   .coordinates { display: none; }
   .era-readout { left: 20px; top: auto; bottom: 20vh; }
-  .civilization-legend { top: 10vh; bottom: auto; right: 20px; width: 125px; }
+  .civilization-legend { top: 10vh; bottom: auto; right: 20px; width: 125px; max-height: 29vh; }
   .civilization-item { padding: 3px 0; }
   .event-feed { left: 20px; right: 20px; bottom: 16vh; width: auto; }
   .explorer-footer { left: 20px; right: 20px; bottom: 2.5vh; }
