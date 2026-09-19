@@ -133,6 +133,7 @@ button { font: inherit; }
 .top-action:hover .button-icon { transform: rotate(180deg); }
 
 main { position: relative; z-index: 2; width: 100%; height: 100svh; pointer-events: none; }
+@supports (height: 100dvh) { main { height: 100dvh; } }
 button, a { pointer-events: auto; }
 
 .generator-view,
@@ -298,27 +299,6 @@ h1 strong {
 .explorer-title h2 { margin: 0; font-family: var(--display-font); font-size: 19px; font-weight: 400; letter-spacing: .04em; }
 .explorer-title > p:last-child { display: none; }
 
-.hud-toggle {
-  position: absolute;
-  z-index: 4;
-  top: 28px;
-  right: 34px;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  border: 0;
-  padding: 8px;
-  background: transparent;
-  color: rgba(241,238,231,.42);
-  cursor: pointer;
-  font: 8px "Space Mono", monospace;
-  letter-spacing: .12em;
-  pointer-events: auto;
-  transition: color .25s ease;
-}
-.hud-toggle:hover { color: var(--ink); }
-.hud-toggle span { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); }
-
 .coordinates {
   position: absolute;
   top: 18vh;
@@ -347,12 +327,19 @@ h1 strong {
 .era-readout strong { font: 400 13px var(--display-font); letter-spacing: 0; }
 .era-readout .era-description { display: none; }
 
-.civilization-legend {
+.civilization-panel {
   position: absolute;
   top: 13vh;
   right: 3.4vw;
-  display: block;
   width: 232px;
+  opacity: var(--cosmic-opacity, 0);
+  transition: opacity .35s ease, transform .35s ease;
+  pointer-events: auto;
+}
+.civilization-toggle { display: none; }
+.civilization-legend {
+  display: block;
+  width: 100%;
   max-height: 38vh;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -362,8 +349,6 @@ h1 strong {
   pointer-events: auto;
   scrollbar-width: thin;
   scrollbar-color: rgba(216, 255, 95, .28) transparent;
-  opacity: var(--cosmic-opacity, 0);
-  transition: opacity .35s ease, transform .35s ease;
 }
 .civilization-legend::-webkit-scrollbar { width: 3px; }
 .civilization-legend::-webkit-scrollbar-thumb { background: rgba(216, 255, 95, .28); border-radius: 3px; }
@@ -443,18 +428,6 @@ h1 strong {
 .event-feed b { flex: 0 0 auto; color: var(--accent); font: 400 8px "Space Mono", monospace; }
 .event-feed span:last-child { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-.explorer-footer {
-  position: absolute;
-  left: 4vw;
-  right: 4vw;
-  bottom: 3vh;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.back-arrow { color: var(--accent); font-size: 16px; }
-.explorer-footer .text-button { color: var(--muted); font-size: 10px; }
-
 .star-inspector {
   position: absolute;
   right: 4vw;
@@ -531,24 +504,6 @@ h1 strong {
 .is-exploring .site-header .system-state { display: none; }
 .is-exploring .site-header .brand-mark { width: 34px; height: 34px; }
 
-.is-hud-hidden .site-header,
-.explorer-view.is-hud-hidden .explorer-title,
-.explorer-view.is-hud-hidden .era-readout,
-.explorer-view.is-hud-hidden .civilization-legend,
-.explorer-view.is-hud-hidden .event-feed,
-.explorer-view.is-hud-hidden .explorer-footer,
-.explorer-view.is-hud-hidden .time-console,
-.explorer-view.is-hud-hidden .star-inspector {
-  opacity: 0 !important;
-  visibility: hidden;
-  pointer-events: none;
-}
-.explorer-view.is-hud-hidden .explorer-title,
-.explorer-view.is-hud-hidden .era-readout { transform: translateX(-10px); }
-.explorer-view.is-hud-hidden .civilization-legend,
-.explorer-view.is-hud-hidden .event-feed { transform: translateX(10px); }
-.explorer-view.is-hud-hidden .time-console { transform: translateY(10px); }
-.explorer-view.is-hud-hidden .hud-toggle span { background: var(--muted); box-shadow: none; }
 .star-inspector.is-open { opacity: 1; transform: translateX(0); visibility: visible; }
 .star-inspector h3 { margin: 5px 0 25px; font: 400 32px var(--display-font); }
 .star-inspector dl { margin: 0; }
@@ -617,34 +572,150 @@ h1 strong {
   .enter-button { width: 100%; height: 52px; }
   .primary-actions p { display: none; }
 
-  .hud-toggle { top: 18px; right: 14px; }
-  .explorer-title { top: 10vh; left: 20px; }
-  .explorer-title h2 { font-size: 13px; }
+  .explorer-title {
+    top: calc(env(safe-area-inset-top) + 18px);
+    left: 16px;
+    max-width: calc(100vw - 172px);
+    min-width: 0;
+  }
+  .explorer-title h2 {
+    min-width: 0;
+    overflow: hidden;
+    font-size: 13px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .explorer-title .kicker { display: none; }
   .coordinates { display: none; }
-  .era-readout { left: 20px; top: auto; bottom: 20vh; }
-  .civilization-legend { top: 10vh; bottom: auto; right: 14px; width: 210px; max-height: 36vh; }
-  .civilization-item { padding: 5px 0 5px 7px; font-size: 12px; }
+  .era-readout {
+    left: 16px;
+    right: 16px;
+    top: auto;
+    bottom: calc(env(safe-area-inset-bottom) + 130px);
+  }
+  .civilization-panel {
+    z-index: 6;
+    top: calc(env(safe-area-inset-top) + 12px);
+    right: 14px;
+    display: flex;
+    width: min(276px, calc(100vw - 28px));
+    flex-direction: column;
+    align-items: flex-end;
+  }
+  .civilization-toggle {
+    display: grid;
+    grid-template-columns: auto auto 12px;
+    align-items: center;
+    min-height: 38px;
+    padding: 0 11px 0 13px;
+    border: 1px solid rgba(241, 238, 231, .14);
+    border-radius: 20px;
+    background: rgba(5, 5, 8, .68);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    color: var(--ink);
+    cursor: pointer;
+  }
+  .civilization-toggle-label {
+    padding-right: 8px;
+    color: var(--muted);
+    font-size: 9px;
+    letter-spacing: .1em;
+  }
+  .civilization-toggle b { font: 400 9px "Space Mono", monospace; }
+  .civilization-toggle-icon {
+    color: var(--accent);
+    font: 12px/1 "Space Mono", monospace;
+    text-align: right;
+    transition: transform .25s ease;
+  }
+  .civilization-panel.is-expanded .civilization-toggle-icon { transform: rotate(180deg); }
+  .civilization-legend {
+    width: 100%;
+    max-height: 0;
+    margin-top: 7px;
+    padding: 0 10px;
+    overflow: hidden;
+    border: 1px solid transparent;
+    border-radius: 14px;
+    background: rgba(5, 5, 8, .82);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: max-height .35s cubic-bezier(.2,.8,.2,1), padding .35s ease, opacity .2s ease, visibility 0s .35s, border-color .2s ease;
+  }
+  .civilization-panel.is-expanded .civilization-legend {
+    max-height: min(46dvh, 390px);
+    padding: 10px;
+    overflow-y: auto;
+    border-color: rgba(241, 238, 231, .12);
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transition: max-height .35s cubic-bezier(.2,.8,.2,1), padding .35s ease, opacity .2s ease, visibility 0s, border-color .2s ease;
+  }
+  .civilization-item { padding: 4px 0 4px 7px; font-size: 10px; }
   .civilization-item b { font-size: 9px; }
-  .event-feed { left: 20px; right: 20px; bottom: 16vh; width: auto; }
-  .explorer-footer { left: 20px; right: 20px; bottom: 2.5vh; }
+  .faction-block + .faction-block { margin-top: 10px; }
+  .faction-inactive { margin-top: 10px; }
+  .event-feed {
+    left: 16px;
+    right: 16px;
+    bottom: calc(env(safe-area-inset-bottom) + 168px);
+    width: auto;
+  }
   .control-hint { display: none; }
-  .time-console { left: 20px; right: 20px; bottom: 6vh; }
-  .timeline-head { flex-wrap: wrap; row-gap: 8px; margin-bottom: 11px; }
+  .time-console {
+    left: 16px;
+    right: 16px;
+    bottom: calc(env(safe-area-inset-bottom) + 14px);
+  }
+  .timeline-head { flex-wrap: nowrap; gap: 8px; margin-bottom: 12px; }
   .timeline-head > span { display: none; }
-  .play-button { width: 42px; height: 42px; flex: 0 0 auto; }
-  .speed-controls { order: 3; display: grid; grid-template-columns: repeat(3, 1fr); width: 100%; gap: 7px; margin-left: 0; }
-  .speed-controls button { min-width: 0; min-height: 48px; padding: 8px 10px; border-radius: 24px; font-size: 10px; }
-  .range-wrap { height: 50px; }
-  #cosmic-timeline { top: -24px; height: 52px; }
+  .timeline-head > b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .play-button { width: 38px; height: 38px; flex: 0 0 38px; }
+  .speed-controls { display: flex; gap: 4px; margin-left: auto; }
+  .speed-controls button { min-width: 38px; min-height: 34px; padding: 6px 7px; border-radius: 18px; font-size: 9px; }
+  .range-wrap { height: 42px; }
+  #cosmic-timeline { top: -21px; height: 48px; }
   .range-wrap::before,
   .time-progress { height: 4px; }
   .time-progress::after { right: -8px; top: -7px; width: 18px; height: 18px; }
   .event-marker { width: 12px; height: 12px; top: -1px; }
   .timeline-marks { top: 18px; }
-  .timeline-marks span:nth-child(2), .timeline-marks span:nth-child(4) { display: none; }
-  .star-inspector { top: auto; bottom: 12vh; left: 20px; right: 20px; width: auto; padding: 17px 0 0; }
+  .timeline-marks span:nth-child(2),
+  .timeline-marks span:nth-child(3),
+  .timeline-marks span:nth-child(5),
+  .timeline-marks span:nth-child(6) { display: none; }
+  .timeline-marks span:nth-child(4) { display: block; }
+  .star-inspector {
+    z-index: 7;
+    top: auto;
+    bottom: calc(env(safe-area-inset-bottom) + 126px);
+    left: 16px;
+    right: 16px;
+    width: auto;
+    max-height: min(38dvh, 270px);
+    padding: 16px;
+    overflow-y: auto;
+    border: 1px solid rgba(216, 255, 95, .35);
+    border-radius: 14px;
+    background: rgba(5, 5, 8, .9);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+  }
   .star-inspector h3 { margin-bottom: 14px; font-size: 22px; }
   .star-inspector dl { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+}
+
+@media (max-width: 800px) and (max-height: 700px) {
+  .civilization-panel.is-expanded .civilization-legend { max-height: 34dvh; }
+  .event-feed { display: none; }
+  .era-readout { bottom: calc(env(safe-area-inset-bottom) + 116px); }
+  .time-console { bottom: calc(env(safe-area-inset-bottom) + 10px); }
+  .star-inspector { bottom: calc(env(safe-area-inset-bottom) + 108px); }
 }
 
 @media (hover: none) { .cursor { display: none; } }

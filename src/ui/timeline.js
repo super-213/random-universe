@@ -33,7 +33,14 @@ export function renderCivilizationRows({ position, simulationState, runtimeState
       : position < species.birth ? '未诞生' : '衰亡';
   });
   const activeSpecies = runtimeState.filter((state) => state.alive).length;
-  $('#civilization-legend').style.setProperty('--cosmic-opacity', activeSpecies > 0 ? '1' : '0');
+  const occupiedDomains = runtimeState.reduce(
+    (total, state) => total + (state.alive && !state.ascended ? state.count : 0),
+    0
+  );
+  $('#civilization-panel').style.setProperty('--cosmic-opacity', activeSpecies > 0 ? '1' : '0');
+  $('#civilization-summary').textContent = activeSpecies > 0
+    ? `${activeSpecies} 种 · ${occupiedDomains} 域`
+    : '尚未出现';
 }
 
 export function renderTimelineEvent(event, force = false) {

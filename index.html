@@ -154,10 +154,6 @@
       </section>
 
       <section class="explorer-view" id="explorer-view" aria-label="宇宙探索器">
-        <button class="hud-toggle" id="toggle-hud" type="button" aria-label="隐藏观察界面" aria-pressed="false">
-          <span></span> HUD
-        </button>
-
         <div class="explorer-title">
           <p class="kicker"><span id="explore-id">#739184</span></p>
           <h2 id="galaxy-name">赫利俄斯星系</h2>
@@ -179,7 +175,20 @@
           <p class="era-description" id="era-description">恒星照亮宇宙，复杂生命与文明开始扩张。</p>
         </div>
 
-        <div class="civilization-legend" id="civilization-legend" aria-label="文明种群"></div>
+        <div class="civilization-panel" id="civilization-panel">
+          <button
+            class="civilization-toggle"
+            id="toggle-civilizations"
+            type="button"
+            aria-expanded="false"
+            aria-controls="civilization-legend"
+          >
+            <span class="civilization-toggle-label">种群</span>
+            <b id="civilization-summary">尚未出现</b>
+            <span class="civilization-toggle-icon" aria-hidden="true">⌄</span>
+          </button>
+          <div class="civilization-legend" id="civilization-legend" aria-label="文明种群"></div>
+        </div>
 
         <div class="event-feed" id="event-feed" aria-live="polite">
           <span class="event-signal"></span>
@@ -197,10 +206,6 @@
             <div><dt>生命信号</dt><dd id="star-life">未检出</dd></div>
           </dl>
         </aside>
-
-        <div class="explorer-footer">
-          <button class="text-button" id="leave-universe" type="button"><span class="back-arrow">←</span> 返回</button>
-        </div>
 
         <div class="time-console" aria-label="宇宙时间控制">
           <div class="timeline-head">

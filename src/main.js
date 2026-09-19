@@ -1053,6 +1053,8 @@ function enterUniverse() {
   $('#mode-label').textContent = '深空航行中';
   $('#regenerate-top').style.opacity = '0';
   $('#regenerate-top').style.pointerEvents = 'none';
+  $('#civilization-panel').classList.remove('is-expanded');
+  $('#toggle-civilizations').setAttribute('aria-expanded', 'false');
   galaxyGroup.visible = true;
   galaxyGroup.scale.setScalar(0.02);
   controls.enabled = true;
@@ -1069,13 +1071,12 @@ function enterUniverse() {
 function leaveUniverse() {
   if (mode !== 'explorer') return;
   mode = 'generator';
-  document.body.classList.remove('is-exploring', 'is-hud-hidden');
-  $('#explorer-view').classList.remove('is-hud-hidden');
-  $('#toggle-hud').setAttribute('aria-pressed', 'false');
-  $('#toggle-hud').setAttribute('aria-label', '隐藏观察界面');
+  document.body.classList.remove('is-exploring');
   $('#explorer-view').classList.remove('is-active');
   $('#generator-view').classList.add('is-active');
   $('#star-inspector').classList.remove('is-open');
+  $('#civilization-panel').classList.remove('is-expanded');
+  $('#toggle-civilizations').setAttribute('aria-expanded', 'false');
   $('#mode-label').textContent = '创世引擎在线';
   $('#regenerate-top').style.opacity = '';
   $('#regenerate-top').style.pointerEvents = '';
@@ -1154,13 +1155,12 @@ function advanceCosmicTime(deltaSeconds) {
 
 
 
-function toggleHud() {
+function toggleCivilizations() {
   if (mode !== 'explorer') return;
-  const hidden = !$('#explorer-view').classList.contains('is-hud-hidden');
-  $('#explorer-view').classList.toggle('is-hud-hidden', hidden);
-  document.body.classList.toggle('is-hud-hidden', hidden);
-  $('#toggle-hud').setAttribute('aria-pressed', String(hidden));
-  $('#toggle-hud').setAttribute('aria-label', hidden ? '显示观察界面' : '隐藏观察界面');
+  const panel = $('#civilization-panel');
+  const expanded = !panel.classList.contains('is-expanded');
+  panel.classList.toggle('is-expanded', expanded);
+  $('#toggle-civilizations').setAttribute('aria-expanded', String(expanded));
 }
 
 
@@ -1320,9 +1320,8 @@ window.addEventListener('resize', () => {
 canvas.addEventListener('click', inspectStar);
 $('#regenerate-top').addEventListener('click', regenerate);
 $('#enter-universe').addEventListener('click', enterUniverse);
-$('#leave-universe').addEventListener('click', leaveUniverse);
 $('#close-inspector').addEventListener('click', () => $('#star-inspector').classList.remove('is-open'));
-$('#toggle-hud').addEventListener('click', toggleHud);
+$('#toggle-civilizations').addEventListener('click', toggleCivilizations);
 $('#toggle-time').addEventListener('click', () => {
   if (cosmicPosition >= 1000) updateCosmicTime(0, true);
   timePlaying = !timePlaying;
@@ -1346,8 +1345,15 @@ document.querySelectorAll('.speed-controls button').forEach((button) => {
 });
 document.addEventListener('keydown', (event) => {
   if (event.key.toLowerCase() === 'r' && mode === 'generator') regenerate();
-  if (event.key.toLowerCase() === 'h' && mode === 'explorer') toggleHud();
-  if (event.key === 'Escape' && mode === 'explorer') leaveUniverse();
+  if (event.key === 'Escape' && mode === 'explorer') {
+    const civilizationPanel = $('#civilization-panel');
+    if (civilizationPanel.classList.contains('is-expanded')) {
+      civilizationPanel.classList.remove('is-expanded');
+      $('#toggle-civilizations').setAttribute('aria-expanded', 'false');
+    } else {
+      leaveUniverse();
+    }
+  }
 });
 
 universe = createUniverse();
