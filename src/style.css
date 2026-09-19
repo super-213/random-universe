@@ -1,8 +1,13 @@
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;600&family=Space+Mono:wght@400;700&display=swap');
 
+/* Smiley Sans is distributed under the SIL Open Font License 1.1. */
 @font-face {
   font-family: "Smiley Sans Display";
-  src: local("Smiley Sans"), local("得意黑"), local("Smiley Sans Oblique");
+  src:
+    local("Smiley Sans"),
+    local("得意黑"),
+    local("Smiley Sans Oblique"),
+    url("./assets/fonts/SmileySans-Oblique.ttf.woff2") format("woff2");
   font-style: normal;
   font-weight: 400;
   font-display: swap;
