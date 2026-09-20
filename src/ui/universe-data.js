@@ -44,8 +44,8 @@ export function updateUniverseData(universe) {
   $('#timeline-late-label').textContent = fate.type === 'heat-death' ? '黑洞时代' : '临界阶段';
   $('#timeline-final-label').textContent = fate.shortLabel;
   $('#cosmic-timeline').setAttribute('aria-label', `从大爆炸到${fate.label}的宇宙时间`);
-  $('#universe-note').textContent = notes[universe.seed % notes.length];
-  $('#galaxy-name').textContent = `${galaxyRoots[universe.seed % galaxyRoots.length]}星系`;
+  $('#universe-note').textContent = notes[universe.seedValue % notes.length];
+  $('#galaxy-name').textContent = `${galaxyRoots[universe.seedValue % galaxyRoots.length]}星系`;
   const diameter = (8 + universe.stars * 4.7).toFixed(1);
   $('#galaxy-meta').textContent = `${galaxyTypes[universe.galaxyType]} · 直径 ${diameter} 万光年`;
 }

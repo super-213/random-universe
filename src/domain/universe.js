@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { galaxyTypes } from './catalog.js';
 import { createCosmicFate } from './cosmic-fate.js';
 import { cosmicYearsToTimelinePosition } from './cosmic-time.js';
-import { mulberry32, randomBetween } from './random.js';
+import { createSeededRandom, generateSeedCode, normalizeSeedCode, randomBetween, seedToUint32 } from './random.js';
 
 export function formatGalaxyHue(hue) {
   const degrees = Math.round(hue * 360);
@@ -38,8 +38,10 @@ export function formatStars(value) {
   return value >= 1 ? `${value.toFixed(1)} 万亿颗` : `${Math.round(value * 10000)} 亿颗`;
 }
 
-export function createUniverse(seed = Math.floor(Math.random() * 900000) + 100000) {
-  const random = mulberry32(seed);
+export function createUniverse(seed = generateSeedCode()) {
+  const seedCode = normalizeSeedCode(seed);
+  const seedValue = seedToUint32(seedCode);
+  const random = createSeededRandom(seedCode);
   const speed = randomBetween(random, 0.38, 1.84);
   const gravity = randomBetween(random, 0.52, 1.76);
   const fineStructure = randomBetween(random, 0.72, 1.28);
@@ -62,15 +64,15 @@ export function createUniverse(seed = Math.floor(Math.random() * 900000) + 10000
   const civilizations = Math.max(speciesCount, Math.floor(stars * 1e5 * lifeProbability * randomBetween(random, 0.02, 0.7)));
   const lifetime = Math.round(Math.pow(10, lastStarDeathExponent - 8) / 10) * 10;
   const armCount = Math.floor(randomBetween(random, 3, 7));
-  const galaxyType = seed % galaxyTypes.length;
+  const galaxyType = seedValue % galaxyTypes.length;
   const blackHoleProbability = [.96, .92, .72, .99, .34][galaxyType];
   const hasCentralBlackHole = random() < blackHoleProbability;
   const activeNucleus = hasCentralBlackHole && random() < [.1, .07, .05, .045, .025][galaxyType];
   const blackHoleEvaporationExponent = Math.floor(randomBetween(random, 97, 103));
   const hue = randomBetween(random, 0.48, 0.76);
-  const cosmicFate = createCosmicFate(seed, { expansionRate, darkEnergyDensity });
+  const cosmicFate = createCosmicFate(seedCode, { expansionRate, darkEnergyDensity });
   return {
-    seed, speed, gravity, fineStructure, massRatio, expansionRate, darkEnergyDensity,
+    seed: seedCode, seedValue, speed, gravity, fineStructure, massRatio, expansionRate, darkEnergyDensity,
     primordialFluctuation, cmbTemperature, chemistryStability, structureEfficiency,
     stellarFormationEndExponent, lastStarDeathExponent, elements, stars, lifeProbability,
     civilizations, speciesCount, lifetime, blackHoleEvaporationExponent, armCount, galaxyType,

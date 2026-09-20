@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import './style.css';
 import { erasForUniverse, galaxyTypes, speciesColors, speciesNames } from './domain/catalog.js';
-import { mulberry32, randomBetween, gaussianRandom } from './domain/random.js';
+import { createSeededRandom, randomBetween, gaussianRandom } from './domain/random.js';
 import { createUniverse, stellarEndTimelinePosition } from './domain/universe.js';
 import { cosmicTimeLabel, cosmicYearsToTimelinePosition, createCosmicTimelineState, selectTimelineNarrative, timelineUnitsPerSecond } from './domain/cosmic-time.js';
 import { getPointTexture, makeGlowTexture, makeRingTexture } from './rendering/textures.js';
@@ -100,7 +100,7 @@ function disposeGroup(group) {
 
 function buildUniverseObject() {
   disposeGroup(universeGroup);
-  const random = mulberry32(universe.seed);
+  const random = createSeededRandom(universe.seed);
 
   const count = Math.min(10500, Math.floor(5200 + universe.stars * 900));
   const positions = new Float32Array(count * 3);
@@ -160,7 +160,7 @@ function buildGalaxy() {
   civilizationData = [];
   civilizationRuntimeState = [];
   civilizationSimulation = null;
-  const random = mulberry32(universe.seed + 91);
+  const random = createSeededRandom(universe.seed, 91);
   const count = 17000;
   const positions = new Float32Array(count * 3);
   const colors = new Float32Array(count * 3);
@@ -169,7 +169,7 @@ function buildGalaxy() {
   const edge = new THREE.Color().setHSL(universe.hue, 0.65, 0.56);
   const stellarEnd = stellarEndTimelinePosition(universe);
   const stellarDeathStart = Math.min(stellarEnd, cosmicYearsToTimelinePosition(4e10, universe));
-  const irregularClumps = Array.from({ length: 4 + universe.seed % 3 }, (_, index) => ({
+  const irregularClumps = Array.from({ length: 4 + universe.seedValue % 3 }, (_, index) => ({
     x: randomBetween(random, -8, 8) + index * .35,
     y: randomBetween(random, -.6, .6),
     z: randomBetween(random, -6, 6),
@@ -201,7 +201,7 @@ function buildGalaxy() {
         y = gaussianRandom(random) * (.12 + radius * .018);
       }
     } else if (universe.galaxyType === 1) {
-      const arms = 7 + universe.seed % 5;
+      const arms = 7 + universe.seedValue % 5;
       const radius = Math.pow(random(), .68) * 14;
       const arm = i % arms;
       const angle = arm / arms * Math.PI * 2 + radius * .31 + gaussianRandom(random) * (.26 + radius * .018);
@@ -305,7 +305,7 @@ function buildGalaxy() {
 }
 
 function buildEpochEffects(starPositions) {
-  const random = mulberry32(universe.seed + 771);
+  const random = createSeededRandom(universe.seed, 771);
   blackHoleRemnants = [];
 
   const primordialCount = 4800;
@@ -564,7 +564,7 @@ function buildEpochEffects(starPositions) {
 }
 
 function buildCosmicEvents(starPositions) {
-  const random = mulberry32(universe.seed + 1447);
+  const random = createSeededRandom(universe.seed, 1447);
   cosmicEvents = [];
 
   const nucleusEvent = universe.hasCentralBlackHole
@@ -769,7 +769,7 @@ function buildCosmicEvents(starPositions) {
       if (distance > .12 && distance <= waveRadius) candidates.push({ index, dx, dy, dz, distance });
     }
 
-    const sampleRandom = mulberry32(universe.seed + 9107 + eventIndex * 97);
+    const sampleRandom = createSeededRandom(universe.seed, 9107 + eventIndex * 97);
     const sampleCount = Math.min(1800, candidates.length);
     const stride = candidates.length / Math.max(1, sampleCount);
     const indices = new Uint16Array(sampleCount);
@@ -1041,7 +1041,7 @@ function renderCosmicEventMarkers() {
 
 function buildCivilizations() {
   resetCivilizationLegend();
-  const random = mulberry32(universe.seed + 410);
+  const random = createSeededRandom(universe.seed, 410);
   const speciesCount = universe.speciesCount;
   const remnantCount = originalRemnantPositions.length / 3;
   const habitatCount = Math.min(720, remnantCount);
@@ -1126,7 +1126,7 @@ function buildCivilizations() {
     const highDimensional = random() < .01;
     const ascensionAt = highDimensional ? birth + Math.round(randomBetween(random, 130, 205)) : Infinity;
     civilizationData.push({
-      name: speciesNames[(universe.seed + speciesIndex) % speciesNames.length],
+      name: speciesNames[(universe.seedValue + speciesIndex) % speciesNames.length],
       color: speciesColor,
       home,
       homeNodeIndex,
@@ -1258,7 +1258,7 @@ function inspectStar(event) {
   const hits = raycaster.intersectObject(clickableStars);
   if (!hits.length) return;
   const index = hits[0].index;
-  const random = mulberry32(universe.seed + index * 31);
+  const random = createSeededRandom(universe.seed, index * 31);
   const classes = ['M4 V', 'K1 III', 'G2 V', 'F8 V', 'A3 V', 'B1 Ia'];
   const type = classes[Math.floor(random() * classes.length)];
   const temps = { M: [2400, 3700], K: [3700, 5200], G: [5200, 6000], F: [6000, 7500], A: [7500, 10000], B: [10000, 30000] };

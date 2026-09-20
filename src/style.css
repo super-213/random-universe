@@ -178,8 +178,9 @@ h1 strong {
   margin-left: 0.7em;
   color: transparent;
   -webkit-text-stroke: 1px rgba(241, 238, 231, 0.65);
-  font: 400 clamp(48px, 8vw, 122px)/0.95 var(--display-font);
-  letter-spacing: -0.035em;
+  font: 400 clamp(28px, 2.75vw, 46px)/0.95 "Space Mono", monospace;
+  letter-spacing: -0.055em;
+  white-space: nowrap;
 }
 
 .hero-note {
@@ -555,7 +556,7 @@ h1 strong {
 
   .hero-copy { top: 13vh; left: 20px; }
   h1 span { font-size: 42px; }
-  h1 strong { margin: 4px 0 0; font-size: 56px; }
+  h1 strong { margin: 8px 0 0; font-size: clamp(15px, 4.5vw, 23px); }
   .hero-note { display: none; }
   .orbit-label { display: none; }
 

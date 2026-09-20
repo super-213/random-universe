@@ -1,4 +1,4 @@
-import { mulberry32, randomBetween } from './random.js';
+import { createSeededRandom, randomBetween } from './random.js';
 
 const PRESENT_AGE_YEARS = 1.38e10;
 const HUBBLE_TIME_YEARS = 1.45e10;
@@ -108,7 +108,7 @@ function selectDarkEnergyModel(random) {
 }
 
 export function createCosmicFate(seed, cosmology) {
-  const random = mulberry32(seed + 6029);
+  const random = createSeededRandom(seed, 6029);
   const darkEnergy = selectDarkEnergyModel(random);
   const expansion = integrateExpansion({
     ...darkEnergy,

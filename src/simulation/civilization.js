@@ -1,10 +1,10 @@
 import * as THREE from 'three';
-import { mulberry32, randomBetween } from '../domain/random.js';
+import { createSeededRandom, randomBetween } from '../domain/random.js';
 
 export function buildCivilizationSimulation({ universe, civilizationData, civilizationSimulation, cosmicEvents }) {
   if (!civilizationSimulation || civilizationData.length === 0) return;
   const simulation = civilizationSimulation;
-  const random = mulberry32(universe.seed + 9241);
+  const random = createSeededRandom(universe.seed, 9241);
   const nodeCount = simulation.habitatRemnantIndices.length;
   const speciesCount = civilizationData.length;
   const neighborsPerNode = 6;
