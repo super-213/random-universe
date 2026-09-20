@@ -18,7 +18,15 @@ import {
   describeTransientSimulation
 } from './simulation/transient-events.js';
 import { updateUniverseData } from './ui/universe-data.js';
-import { renderCivilizationRows, renderTimelineEvent, renderTimelineHeader } from './ui/timeline.js';
+import {
+  focusTimelineScale,
+  renderCivilizationRows,
+  renderTimelineEvent,
+  renderTimelineHeader,
+  renderTimelineScale,
+  resetTimelineScaleFocus,
+  restartTimelineScaleIntro
+} from './ui/timeline.js';
 import { organizeCivilizationLegend, resetCivilizationLegend } from './ui/civilization-legend.js';
 
 const $ = (selector) => document.querySelector(selector);
@@ -312,6 +320,7 @@ function buildGalaxy() {
   buildCosmicEvents(positions);
   buildCivilizationSimulation({ universe, civilizationData, civilizationSimulation, cosmicEvents });
   renderCosmicEventMarkers();
+  renderTimelineScale(universe);
 }
 
 function buildEpochEffects(starPositions) {
@@ -1490,6 +1499,7 @@ function enterUniverse() {
   cosmicPosition = 0;
   $('#cosmic-timeline').value = cosmicPosition;
   updateCosmicTime(cosmicPosition, true);
+  restartTimelineScaleIntro();
   timePlaying = true;
   $('#toggle-time').textContent = 'Ⅱ';
   $('#toggle-time').setAttribute('aria-label', '暂停时间');
@@ -1766,10 +1776,37 @@ $('#toggle-time').addEventListener('click', () => {
   $('#toggle-time').textContent = timePlaying ? 'Ⅱ' : '▶';
   $('#toggle-time').setAttribute('aria-label', timePlaying ? '暂停时间' : '播放时间');
 });
-$('#cosmic-timeline').addEventListener('input', (event) => {
+const timelineInput = $('#cosmic-timeline');
+const timelineWrap = timelineInput.closest('.range-wrap');
+
+function beginTimelineFocus() {
+  timelineWrap.classList.add('is-scrubbing');
+  focusTimelineScale(Number(timelineInput.value));
+}
+
+function endTimelineFocus() {
+  if (!timelineWrap.classList.contains('is-scrubbing')) return;
+  timelineWrap.classList.remove('is-scrubbing');
+  resetTimelineScaleFocus();
+}
+
+timelineInput.addEventListener('pointerdown', beginTimelineFocus);
+window.addEventListener('pointerup', endTimelineFocus);
+window.addEventListener('pointercancel', endTimelineFocus);
+timelineInput.addEventListener('keydown', (event) => {
+  if (['ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown'].includes(event.key)) {
+    beginTimelineFocus();
+  }
+});
+timelineInput.addEventListener('keyup', endTimelineFocus);
+timelineInput.addEventListener('blur', endTimelineFocus);
+timelineInput.addEventListener('input', (event) => {
   timePlaying = false;
   $('#toggle-time').textContent = '▶';
   updateCosmicTime(event.target.value, true);
+  if (timelineWrap.classList.contains('is-scrubbing')) {
+    focusTimelineScale(Number(event.target.value));
+  }
 });
 document.querySelectorAll('.speed-controls button').forEach((button) => {
   button.addEventListener('click', () => {

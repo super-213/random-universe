@@ -3,6 +3,88 @@ const $ = (selector) => document.querySelector(selector);
 let lastEventKey = '';
 let eventFadeTimer = null;
 
+const timelineSegments = [
+  [0, 18],
+  [18, 55],
+  [55, 145],
+  [145, 245],
+  [245, 340],
+  [340, 470]
+];
+
+function addScaleMark(container, position, kind) {
+  const marker = document.createElement('i');
+  marker.className = `scale-${kind}`;
+  marker.style.left = `${position / 10}%`;
+  marker.dataset.position = position.toFixed(3);
+  container.appendChild(marker);
+}
+
+export function renderTimelineScale(universe) {
+  const container = $('#timeline-scale');
+  if (!container) return;
+
+  const fate = universe?.cosmicFate;
+  const fateOnset = Math.min(999, Math.max(471, fate?.onsetAt || 850));
+  const futureSegments = fate?.type === 'heat-death'
+    ? [[470, 570], [570, 650], [650, 680], [680, 845], [845, 950], [950, 1000]]
+    : [[470, fateOnset], [fateOnset, 1000]];
+  const segments = [...timelineSegments, ...futureSegments]
+    .filter(([start, end]) => end > start);
+
+  container.replaceChildren();
+  segments.forEach(([start, end], segmentIndex) => {
+    const span = end - start;
+    const cellCount = Math.max(1, Math.min(4, Math.round(span / 48)));
+    const cellWidth = span / cellCount;
+
+    if (segmentIndex > 0) addScaleMark(container, start, 'break');
+    for (let cell = 0; cell < cellCount; cell++) {
+      const cellStart = start + cell * cellWidth;
+      if (segmentIndex === 0 || cell > 0) addScaleMark(container, cellStart, 'tick scale-tick--major');
+      if (cellWidth < 20) continue;
+      for (let mantissa = 2; mantissa <= 9; mantissa++) {
+        const position = cellStart + Math.log10(mantissa) * cellWidth;
+        const kind = mantissa === 2 || mantissa === 5
+          ? 'tick scale-tick--mid'
+          : 'tick scale-tick--minor';
+        addScaleMark(container, position, kind);
+      }
+    }
+  });
+  addScaleMark(container, 1000, 'tick scale-tick--major');
+}
+
+export function restartTimelineScaleIntro() {
+  const scale = $('#timeline-scale');
+  if (!scale) return;
+  scale.classList.remove('is-entering');
+  void scale.offsetWidth;
+  scale.classList.add('is-entering');
+}
+
+export function focusTimelineScale(position) {
+  const scale = $('#timeline-scale');
+  if (!scale || scale.clientWidth === 0) return;
+  const focusX = position / 1000 * scale.clientWidth;
+  const radius = Math.min(58, scale.clientWidth * .09);
+
+  scale.querySelectorAll('.scale-tick').forEach((tick) => {
+    const tickX = Number(tick.dataset.position) / 1000 * scale.clientWidth;
+    const distance = tickX - focusX;
+    const proximity = Math.max(0, 1 - Math.abs(distance) / radius);
+    const shift = Math.sign(distance) * proximity * radius * .34;
+    const stretch = 1 + proximity * 1.35;
+    tick.style.transform = `translateX(calc(-50% + ${shift.toFixed(2)}px)) scaleY(${stretch.toFixed(3)})`;
+  });
+}
+
+export function resetTimelineScaleFocus() {
+  $('#timeline-scale')?.querySelectorAll('.scale-tick').forEach((tick) => {
+    tick.style.transform = '';
+  });
+}
+
 export function renderTimelineHeader(state) {
   $('#cosmic-timeline').value = state.position;
   $('#time-progress').style.width = `${state.position / 10}%`;
