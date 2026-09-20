@@ -47,12 +47,29 @@ import {
 import { civilizationObservation } from '../src/simulation/observation.js';
 import { shuttleTrafficAt } from '../src/simulation/intergalactic-travel.js';
 import {
+  formatTimeSpeed,
+  snapSpeedExponent,
+  speedFromExponent
+} from '../src/ui/speed-control.js';
+import {
   advanceTechnologyTree,
   technologyBits,
   technologyPath
 } from '../src/simulation/technology-tree.js';
 
 const seedFor = (index) => index.toString(36).toUpperCase().padStart(16, '0');
+
+test('time speed uses a logarithmic range with deliberate snap points', () => {
+  assert.equal(speedFromExponent(-2), .01);
+  assert.equal(speedFromExponent(0), 1);
+  assert.equal(speedFromExponent(2), 100);
+  assert.equal(snapSpeedExponent(-.96), -1);
+  assert.equal(snapSpeedExponent(.95), 1);
+  assert.equal(snapSpeedExponent(.9), .9);
+  assert.equal(formatTimeSpeed(.01), '0.01×');
+  assert.equal(formatTimeSpeed(1), '1×');
+  assert.equal(formatTimeSpeed(100), '100×');
+});
 
 test('intergalactic shuttle traffic eases between both ends of a route', () => {
   assert.deepEqual(shuttleTrafficAt(0, 0, 1), { progress: 0, direction: 1 });

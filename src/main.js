@@ -14,6 +14,13 @@ import {
   renderMultiverseComparison
 } from './ui/civilization-chronicle.js';
 import { updateUniverseData } from './ui/universe-data.js';
+import {
+  formatTimeSpeed,
+  snapSpeedExponent,
+  speedExponentMax,
+  speedExponentMin,
+  speedFromExponent
+} from './ui/speed-control.js';
 
 let erasForUniverse;
 let galaxyTypes;
@@ -3835,16 +3842,62 @@ timelineInput.addEventListener('input', (event) => {
     focusTimelineScale(Number(event.target.value), timelineViewport);
   }
 });
-document.querySelectorAll('.speed-controls button').forEach((button) => {
-  button.addEventListener('click', () => {
-    timeSpeed = Number(button.dataset.speed);
-    document.querySelectorAll('.speed-controls button').forEach((item) => {
-      const active = item === button;
-      item.classList.toggle('is-active', active);
-      item.setAttribute('aria-pressed', String(active));
-    });
+const speedControl = $('#speed-control');
+const speedToggle = $('#speed-toggle');
+const speedInput = $('#time-speed');
+
+function updateSpeedToggleLabel() {
+  const action = speedControl.classList.contains('is-collapsed') ? '展开' : '收起';
+  const currentSpeed = $('#time-speed-value').textContent.slice(0, -1);
+  speedToggle.setAttribute('aria-label', `${action}时间倍率调节，当前 ${currentSpeed} 倍`);
+}
+
+function setSpeedControlOpen(open, restoreFocus = false) {
+  speedControl.classList.toggle('is-collapsed', !open);
+  speedToggle.setAttribute('aria-expanded', String(open));
+  $('#speed-slider-panel').setAttribute('aria-hidden', String(!open));
+  updateSpeedToggleLabel();
+  if (open) speedInput.focus({ preventScroll: true });
+  if (!open && restoreFocus) speedToggle.focus({ preventScroll: true });
+}
+
+function updateTimeSpeed(exponent, snap = true) {
+  const nextExponent = THREE.MathUtils.clamp(
+    snap ? snapSpeedExponent(exponent) : Number(exponent),
+    speedExponentMin,
+    speedExponentMax
+  );
+  timeSpeed = speedFromExponent(nextExponent);
+  const label = formatTimeSpeed(timeSpeed);
+  speedInput.value = String(nextExponent);
+  speedInput.style.setProperty('--speed-progress', `${(nextExponent - speedExponentMin) / (speedExponentMax - speedExponentMin) * 100}%`);
+  speedInput.setAttribute('aria-valuetext', `${label.slice(0, -1)} 倍`);
+  $('#time-speed-value').textContent = label;
+  $('#speed-panel-value').textContent = label;
+  updateSpeedToggleLabel();
+  speedControl.querySelectorAll('[data-speed-exponent]').forEach((marker) => {
+    marker.classList.toggle('is-active', Number(marker.dataset.speedExponent) === nextExponent);
+  });
+}
+
+speedToggle.addEventListener('click', () => {
+  const open = speedControl.classList.contains('is-collapsed');
+  setSpeedControlOpen(open, !open);
+});
+speedInput.addEventListener('input', (event) => updateTimeSpeed(event.target.value));
+speedInput.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') {
+    event.stopPropagation();
+    setSpeedControlOpen(false, true);
+  }
+});
+speedControl.querySelectorAll('[data-speed-exponent]').forEach((marker) => {
+  marker.addEventListener('click', () => {
+    updateTimeSpeed(marker.dataset.speedExponent, false);
+    speedInput.focus({ preventScroll: true });
   });
 });
+updateTimeSpeed(speedInput.value, false);
 document.addEventListener('keydown', (event) => {
   if (immersiveMode) showImmersiveUi();
   if (event.key.toLowerCase() === 'r' && mode === 'generator') regenerate();

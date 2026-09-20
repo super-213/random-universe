@@ -205,7 +205,9 @@
                 aria-controls="galaxy-submenu"
               >
                 <span id="galaxy-name">赫利俄斯星系</span>
-                <span class="galaxy-menu-indicator" aria-hidden="true">⌄</span>
+                <svg class="galaxy-menu-indicator disclosure-indicator" viewBox="0 0 12 8" aria-hidden="true">
+                  <path d="M1 1.5 6 6.5 11 1.5" />
+                </svg>
               </button>
             </h2>
             <nav class="galaxy-submenu" id="galaxy-submenu" aria-label="星系视图" hidden>
@@ -272,7 +274,9 @@
                 <b id="civilization-population-count">0.0 万亿</b>
               </span>
             </span>
-            <span class="civilization-toggle-icon" aria-hidden="true">⌄</span>
+            <svg class="civilization-toggle-icon disclosure-indicator" viewBox="0 0 12 8" aria-hidden="true">
+              <path d="M1 1.5 6 6.5 11 1.5" />
+            </svg>
           </button>
           <div class="civilization-legend" id="civilization-legend" aria-label="文明种群" aria-hidden="true"></div>
         </div>
@@ -376,10 +380,45 @@
                 title="放大运输船并增强引擎辉光"
               ><span>凸显飞船</span></button>
             </div>
-            <div class="speed-controls" aria-label="时间速度">
-              <button type="button" data-speed="1" aria-pressed="false" aria-label="沉浸速度，完整旅程约三十五分钟" title="完整旅程约 35 分钟">1×</button>
-              <button type="button" data-speed="10" class="is-active" aria-pressed="true" aria-label="十倍速，完整旅程约三分半" title="完整旅程约 3 分 30 秒">10×</button>
-              <button type="button" data-speed="100" aria-pressed="false" aria-label="一百倍速，完整旅程约二十一秒" title="完整旅程约 21 秒">100×</button>
+            <div class="speed-control is-collapsed" id="speed-control" data-timeline-control>
+              <div class="speed-slider-panel" id="speed-slider-panel" aria-hidden="true">
+                <div class="speed-slider-heading">
+                  <output id="speed-panel-value" for="time-speed">10×</output>
+                </div>
+                <div class="speed-slider-track">
+                  <input
+                    id="time-speed"
+                    type="range"
+                    min="-2"
+                    max="2"
+                    step="0.001"
+                    value="1"
+                    aria-label="时间倍率，范围从 0.01 倍到 100 倍"
+                    aria-valuetext="10 倍"
+                  />
+                  <div class="speed-snap-points" aria-label="常用时间倍率">
+                    <button type="button" data-speed-exponent="-1" style="--speed-point:25%" aria-label="设置为 0.1 倍"><i></i><span>0.1×</span></button>
+                    <button type="button" data-speed-exponent="0" style="--speed-point:50%" aria-label="设置为 1 倍"><i></i><span>1×</span></button>
+                    <button type="button" data-speed-exponent="1" style="--speed-point:75%" aria-label="设置为 10 倍"><i></i><span>10×</span></button>
+                  </div>
+                  <span class="speed-bound speed-bound--min" aria-hidden="true">0.01×</span>
+                  <span class="speed-bound speed-bound--max" aria-hidden="true">100×</span>
+                </div>
+              </div>
+              <button
+                class="speed-toggle"
+                id="speed-toggle"
+                type="button"
+                aria-expanded="false"
+                aria-controls="speed-slider-panel"
+                aria-label="展开时间倍率调节，当前 10 倍"
+              >
+                <svg class="speed-toggle-symbol" viewBox="0 0 14 10" aria-hidden="true">
+                  <path d="M1 1.2 6 5 1 8.8ZM7 1.2 12 5 7 8.8Z" />
+                </svg>
+                <output id="time-speed-value" for="time-speed">10×</output>
+                <i aria-hidden="true"></i>
+              </button>
             </div>
           </div>
           <div class="range-wrap">
