@@ -7,13 +7,14 @@ const smoothstep = (value, min, max) => {
 };
 
 export function cosmicYearsToTimelinePosition(years, universe) {
-  const exponent = Math.log10(Math.max(1.38e10, years));
-  const presentExponent = Math.log10(1.38e10);
+  const presentAgeYears = universe?.presentAgeYears || 1.38e10;
+  const exponent = Math.log10(Math.max(presentAgeYears, years));
+  const presentExponent = Math.log10(presentAgeYears);
   const fate = universe?.cosmicFate;
   if (fate && Number.isFinite(fate.outcomeYears)) {
     if (years >= fate.outcomeYears) return 1000;
     const progress = (exponent - presentExponent) / (fate.outcomeExponent - presentExponent);
-    return clamp(470 + progress * (fate.onsetAt - 470), 470, fate.onsetAt);
+    return clamp(470 + progress * 530, 470, 1000);
   }
   if (exponent < 12) return 470 + (exponent - presentExponent) / (12 - presentExponent) * 100;
   if (exponent < 14) return 570 + (exponent - 12) / 2 * 80;
@@ -142,18 +143,23 @@ export function cosmicTimeLabel(position, universe) {
   };
   if (position < 18) return `T+${Math.max(.001, logLerp(.001, 1, position / 18)).toFixed(3)} 秒`;
   if (position < 55) return `T+${Math.max(1, Math.round(logLerp(1, 180, (position - 18) / 37)))} 秒`;
-  if (position < 145) return `T+${formatYears(logLerp(180 / 31557600, 380000, (position - 55) / 90))}`;
-  if (position < 245) return `T+${formatYears(logLerp(380000, 1.8e8, (position - 145) / 100))}`;
-  if (position < 340) return `T+${formatYears(logLerp(1.8e8, 1e9, (position - 245) / 95))}`;
-  if (position < 470) return `T+${formatYears(logLerp(1e9, 1.38e10, (position - 340) / 130))}`;
+  const milestones = universe?.cosmicMilestones || {};
+  const recombinationYears = milestones.recombinationYears || 380000;
+  const firstStarsYears = Math.max(recombinationYears * 1.1, milestones.firstStarsYears || 1.8e8);
+  const matureGalaxiesYears = Math.max(firstStarsYears * 1.1, milestones.matureGalaxiesYears || 1e9);
+  const presentAgeYears = Math.max(matureGalaxiesYears * 1.1, universe?.presentAgeYears || 1.38e10);
+  if (position < 145) return `T+${formatYears(logLerp(180 / 31557600, recombinationYears, (position - 55) / 90))}`;
+  if (position < 245) return `T+${formatYears(logLerp(recombinationYears, firstStarsYears, (position - 145) / 100))}`;
+  if (position < 340) return `T+${formatYears(logLerp(firstStarsYears, matureGalaxiesYears, (position - 245) / 95))}`;
+  if (position < 470) return `T+${formatYears(logLerp(matureGalaxiesYears, presentAgeYears, (position - 340) / 130))}`;
   const fate = universe?.cosmicFate;
   if (fate && Number.isFinite(fate.outcomeYears)) {
-    if (position >= 999) return fate.label;
-    const progress = clamp((position - 470) / (fate.onsetAt - 470), 0, 1);
-    const years = logLerp(1.38e10, fate.outcomeYears, progress);
+    if (position >= 1000) return fate.label;
+    const progress = clamp((position - 470) / 530, 0, 1);
+    const years = logLerp(presentAgeYears, fate.outcomeYears, progress);
     return `T+${formatYears(years)}`;
   }
-  if (position < 570) return `T+${formatYears(logLerp(1.38e10, 1e12, (position - 470) / 100))}`;
+  if (position < 570) return `T+${formatYears(logLerp(presentAgeYears, 1e12, (position - 470) / 100))}`;
   if (position < 650) return `T+10^${(12 + (position - 570) / 80 * 2).toFixed(1)} 年`;
   if (position < 680) return `T+10^${(14 + (position - 650) / 30).toFixed(1)} 年`;
   if (position < 845) return `T+10^${Math.round(15 + (position - 680) / 165 * 23)} 年`;

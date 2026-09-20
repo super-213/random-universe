@@ -29,7 +29,8 @@ export function updateEpochVisuals(position, context) {
     // The compact origin represents our observable patch, not a privileged
     // centre of the entire universe. Every sampled point then separates from
     // every other point as the metric expands.
-    const radius = .06 + Math.pow(rapidExpansion, .62) * 32 + plasmaExpansion * 7;
+    const causalScale = Math.sqrt(universe.speed);
+    const radius = (.06 + Math.pow(rapidExpansion, .62) * 32 + plasmaExpansion * 7) * causalScale;
     const array = primordialParticles.geometry.attributes.position.array;
     for (let i = 0; i < primordialFactors.length; i++) {
       const r = radius * primordialFactors[i];
@@ -44,7 +45,7 @@ export function updateEpochVisuals(position, context) {
     const streakArray = expansionStreaks.geometry.attributes.position.array;
     for (let i = 0; i < expansionDirections.length / 4; i++) {
       const factor = expansionDirections[i * 4 + 3];
-      const head = (.04 + Math.pow(rapidExpansion, .5) * 31 + plasmaExpansion * 5) * factor;
+      const head = (.04 + Math.pow(rapidExpansion, .5) * 31 + plasmaExpansion * 5) * factor * causalScale;
       const tail = Math.max(0, head - (1.2 + expansion * 5.5) * factor);
       for (let axis = 0; axis < 3; axis++) {
         const direction = expansionDirections[i * 4 + axis];

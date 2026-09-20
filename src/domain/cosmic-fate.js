@@ -1,6 +1,5 @@
 import { createSeededRandom, randomBetween } from './random.js';
 
-const PRESENT_AGE_YEARS = 1.38e10;
 const HUBBLE_TIME_YEARS = 1.45e10;
 const INTEGRATION_STEP = .012;
 
@@ -47,41 +46,125 @@ const outcomeCatalog = {
 };
 
 export function darkEnergyEquationOfState(scaleFactor, w0, wa) {
-  // Bounded future extension of the common w0/wa idea. It agrees with w(a=1)=w0
-  // without letting a linear CPL extrapolation diverge as a approaches infinity.
-  return w0 + wa * (1 - scaleFactor) / (1 + scaleFactor);
+  // Barboza-Alcaniz-style bounded w0/wa evolution written in scale factor.
+  // It keeps w(a=1)=w0 and the same local slope as CPL without diverging in
+  // either the early universe or the far future.
+  const denominator = scaleFactor * scaleFactor + (1 - scaleFactor) ** 2;
+  return w0 + wa * (1 - scaleFactor) / denominator;
 }
 
-function integrateExpansion({ model, w0, wa, expansionRate, darkEnergyDensity, turnScale }) {
+function integrateContraction({
+  scaleFactor,
+  darkEnergyEvolution,
+  rateSquared,
+  ageYears,
+  w0,
+  wa,
+  expansionRate,
+  darkEnergyDensity,
+  omegaMatter,
+  turnScale,
+  history
+}) {
+  let currentScale = scaleFactor;
+  let currentDarkEnergy = darkEnergyEvolution;
+  let currentRateSquared = rateSquared;
+  let currentAge = ageYears;
+
+  for (let step = 1; step <= 3200; step++) {
+    const nextScale = currentScale * Math.exp(-INTEGRATION_STEP);
+    const midpointScale = Math.sqrt(currentScale * nextScale);
+    const midpointW = darkEnergyEquationOfState(midpointScale, w0, wa);
+    const nextDarkEnergy = currentDarkEnergy * Math.exp(3 * (1 + midpointW) * INTEGRATION_STEP);
+    const negativePotential = .22 * darkEnergyDensity * Math.pow(nextScale / turnScale, 2.35);
+    const nextRateSquared = omegaMatter / Math.pow(nextScale, 3)
+      + darkEnergyDensity * nextDarkEnergy
+      - negativePotential;
+    const rate = Math.sqrt(Math.max(1e-18, (currentRateSquared + nextRateSquared) * .5));
+    currentAge += HUBBLE_TIME_YEARS / expansionRate * INTEGRATION_STEP / rate;
+    currentScale = nextScale;
+    currentDarkEnergy = nextDarkEnergy;
+    currentRateSquared = nextRateSquared;
+    if (step % 80 === 0) {
+      history.push({
+        ageYears: currentAge,
+        scaleFactor: currentScale,
+        expansionRatio: -Math.sqrt(Math.max(0, currentRateSquared)),
+        w: midpointW,
+        phase: 'contraction'
+      });
+    }
+    if (currentScale < 1e-8) break;
+  }
+
+  return currentAge;
+}
+
+function integrateExpansion({
+  model,
+  w0,
+  wa,
+  expansionRate,
+  darkEnergyDensity,
+  turnScale,
+  presentAgeYears
+}) {
   const omegaMatter = Math.max(.06, 1 - darkEnergyDensity);
   let scaleFactor = 1;
   let darkEnergyEvolution = 1;
-  let ageYears = PRESENT_AGE_YEARS;
+  let ageYears = presentAgeYears;
   let previousRateSquared = 1;
-  const history = [{ ageYears, scaleFactor, expansionRatio: 1, w: w0 }];
+  const history = [{ ageYears, scaleFactor, expansionRatio: 1, w: w0, phase: 'expansion' }];
 
   for (let step = 1; step <= 2400; step++) {
-    const w = darkEnergyEquationOfState(scaleFactor, w0, wa);
-    darkEnergyEvolution *= Math.exp(-3 * (1 + w) * INTEGRATION_STEP);
-    scaleFactor *= Math.exp(INTEGRATION_STEP);
+    const previousScaleFactor = scaleFactor;
+    const nextScaleFactor = scaleFactor * Math.exp(INTEGRATION_STEP);
+    const midpointScaleFactor = Math.sqrt(scaleFactor * nextScaleFactor);
+    const w = darkEnergyEquationOfState(midpointScaleFactor, w0, wa);
+    const nextDarkEnergyEvolution = darkEnergyEvolution * Math.exp(-3 * (1 + w) * INTEGRATION_STEP);
     const negativePotential = model === 'recollapsing'
-      ? .22 * darkEnergyDensity * Math.pow(scaleFactor / turnScale, 2.35)
+      ? .22 * darkEnergyDensity * Math.pow(nextScaleFactor / turnScale, 2.35)
       : 0;
-    const rateSquared = omegaMatter / Math.pow(scaleFactor, 3)
-      + darkEnergyDensity * darkEnergyEvolution
+    const rateSquared = omegaMatter / Math.pow(nextScaleFactor, 3)
+      + darkEnergyDensity * nextDarkEnergyEvolution
       - negativePotential;
 
     if (rateSquared <= 0) {
-      return { history, turnaroundYears: ageYears, finalRateSquared: rateSquared };
+      const turnaroundYears = ageYears;
+      const crunchYears = integrateContraction({
+        scaleFactor: previousScaleFactor,
+        darkEnergyEvolution,
+        rateSquared: previousRateSquared,
+        ageYears,
+        w0,
+        wa,
+        expansionRate,
+        darkEnergyDensity,
+        omegaMatter,
+        turnScale,
+        history
+      });
+      return { history, turnaroundYears, crunchYears, finalRateSquared: rateSquared };
     }
 
     const rate = Math.sqrt((previousRateSquared + rateSquared) * .5);
     ageYears += HUBBLE_TIME_YEARS / expansionRate * INTEGRATION_STEP / Math.max(rate, 1e-12);
+    scaleFactor = nextScaleFactor;
+    darkEnergyEvolution = nextDarkEnergyEvolution;
     previousRateSquared = rateSquared;
-    if (step % 80 === 0) history.push({ ageYears, scaleFactor, expansionRatio: Math.sqrt(rateSquared), w });
+    if (step % 80 === 0) {
+      history.push({ ageYears, scaleFactor, expansionRatio: Math.sqrt(rateSquared), w, phase: 'expansion' });
+    }
   }
 
-  return { history, asymptoticYears: ageYears, finalRateSquared: previousRateSquared };
+  let asymptoticYears = ageYears;
+  if (model === 'phantom') {
+    const remainingYears = HUBBLE_TIME_YEARS / expansionRate
+      * 2 / (3 * Math.abs(1 + w0))
+      / Math.sqrt(darkEnergyDensity * darkEnergyEvolution);
+    asymptoticYears += remainingYears;
+  }
+  return { history, asymptoticYears, finalRateSquared: previousRateSquared };
 }
 
 function selectDarkEnergyModel(random) {
@@ -113,18 +196,18 @@ export function createCosmicFate(seed, cosmology) {
   const expansion = integrateExpansion({
     ...darkEnergy,
     expansionRate: cosmology.expansionRate,
-    darkEnergyDensity: cosmology.darkEnergyDensity
+    darkEnergyDensity: cosmology.darkEnergyDensity,
+    presentAgeYears: cosmology.presentAgeYears
   });
 
   let baseType = 'heat-death';
   let baseOutcomeYears = Infinity;
   if (darkEnergy.model === 'phantom') {
     baseType = 'big-rip';
-    baseOutcomeYears = Math.max(PRESENT_AGE_YEARS * 1.05, expansion.asymptoticYears);
+    baseOutcomeYears = Math.max(cosmology.presentAgeYears * 1.05, expansion.asymptoticYears);
   } else if (darkEnergy.model === 'recollapsing') {
     baseType = 'big-crunch';
-    const expansionDuration = Math.max(1e9, expansion.turnaroundYears - PRESENT_AGE_YEARS);
-    baseOutcomeYears = expansion.turnaroundYears + expansionDuration * randomBetween(random, .78, 1.08);
+    baseOutcomeYears = expansion.crunchYears;
   }
 
   const metastableVacuum = random() < .16;

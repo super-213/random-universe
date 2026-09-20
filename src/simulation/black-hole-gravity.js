@@ -80,8 +80,10 @@ export function createStellarGravityState(positions, universe) {
     // galactic halo/disc contribution, preventing the outer galaxy from being
     // incorrectly treated as if all its mass belonged to the black hole.
     const compactFrequency = centralMass / Math.pow(radius + .12, 3);
-    const galacticFrequency = .72 / (radius + 1.8);
-    const angularRate = .0055 + .0155 * Math.sqrt(universe.gravity * (compactFrequency + galacticFrequency));
+    // A flat outer rotation curve has Omega^2 proportional to r^-2. The
+    // softening keeps the visual core finite without making outer speeds rise.
+    const galacticFrequency = .72 / Math.pow(radius + 1.8, 2);
+    const angularRate = .055 * Math.sqrt(universe.gravity * (compactFrequency + galacticFrequency));
     orbitRates[index] = orbitDirection * Math.min(.095, angularRate);
   }
 

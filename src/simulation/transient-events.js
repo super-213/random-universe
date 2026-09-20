@@ -14,6 +14,27 @@ const logarithmicRandom = (random, minimumExponent, maximumExponent) => (
   10 ** randomBetween(random, minimumExponent, maximumExponent)
 );
 
+export function blackHoleRecoilKms({
+  massA,
+  massB,
+  alignedSpinA,
+  alignedSpinB,
+  inPlaneSpinA = 0,
+  inPlaneSpinB = 0
+}) {
+  const primaryMass = Math.max(massA, massB);
+  const secondaryMass = Math.min(massA, massB);
+  const q = secondaryMass / primaryMass;
+  const eta = q / (1 + q) ** 2;
+  const massAsymmetryKick = 12000 * eta ** 2 * Math.sqrt(Math.max(0, 1 - 4 * eta)) * (1 - .93 * eta);
+  const alignedSpinKick = 6900 * eta ** 2 / (1 + q) * (alignedSpinB - q * alignedSpinA);
+  const inPlaneSpinKick = 60000 * eta ** 2 / (1 + q) * (inPlaneSpinB - q * inPlaneSpinA);
+  const interferenceAngle = 145 * Math.PI / 180;
+  const orbitalPlaneKickSquared = massAsymmetryKick ** 2 + alignedSpinKick ** 2
+    + 2 * massAsymmetryKick * alignedSpinKick * Math.cos(interferenceAngle);
+  return Math.sqrt(Math.max(0, orbitalPlaneKickSquared) + inPlaneSpinKick ** 2);
+}
+
 function createPulsePhases(random, count, start, end) {
   if (count <= 1) return [start];
   return Array.from({ length: count }, (_, index) => {
@@ -32,13 +53,15 @@ export function createTransientSimulation(event, universe, eventIndex) {
     const heliumCoreMass = randomBetween(random, 64, Math.min(133, progenitorMass * .54));
     const explosionEnergyBethe = clamp(4 + Math.pow((heliumCoreMass - 64) / 69, 1.7) * 72, 4, 76);
     const nickelMass = clamp(.04 + Math.pow((heliumCoreMass - 64) / 69, 2.2) * 38, .04, 38);
+    const radiatedMass = explosionEnergyBethe * 1e51 / 1.788e54;
     return {
       model: 'pair-instability',
       progenitorMass,
       heliumCoreMass,
       explosionEnergyBethe,
       nickelMass,
-      ejectaMass: progenitorMass * randomBetween(random, .82, .96),
+      radiatedMass,
+      ejectaMass: progenitorMass - radiatedMass,
       ejectaVelocityKms: randomBetween(random, 7000, 14500) * Math.pow(explosionEnergyBethe / 20, .18),
       noRemnant: true,
       rangeScale: clamp(.82 + Math.sqrt(explosionEnergyBethe / 20) * .3, .9, 1.62),
@@ -77,14 +100,16 @@ export function createTransientSimulation(event, universe, eventIndex) {
       ? randomBetween(random, 4.8, Math.min(13.5, progenitorMass * .55))
       : randomBetween(random, 1.18, 2.18);
     const explosionEnergyBethe = randomBetween(random, .45, 2.15) * (1 - compactness * .28);
+    const neutrinoMassLoss = randomBetween(random, .4, Math.min(2.1, progenitorMass - remnantMass - .8));
     return {
       model: 'core-collapse',
       progenitorMass,
       explosionEnergyBethe,
-      ejectaMass: Math.max(.8, progenitorMass - remnantMass - randomBetween(random, .4, 2.1)),
+      ejectaMass: progenitorMass - remnantMass - neutrinoMassLoss,
       ejectaVelocityKms: randomBetween(random, 4500, 11500) * Math.sqrt(explosionEnergyBethe),
       nickelMass: randomBetween(random, .025, .13) * explosionEnergyBethe,
       neutrinoEnergyErg: logarithmicRandom(random, 52.9, 53.5),
+      neutrinoMassLoss,
       remnantType,
       remnantMass,
       natalKickKms: remnantType === 'neutron-star' ? randomBetween(random, 80, 720) : randomBetween(random, 15, 180),
@@ -105,12 +130,14 @@ export function createTransientSimulation(event, universe, eventIndex) {
     const remnantMass = remnantType === 'magnetar'
       ? randomBetween(random, 1.55, 2.35)
       : randomBetween(random, 5.5, 18);
+    const radiatedMass = explosionEnergyBethe * 1e51 / 1.788e54;
     return {
       model: 'superluminous-supernova',
       engine,
       progenitorMass,
       explosionEnergyBethe,
-      ejectaMass: randomBetween(random, 5, Math.max(7, progenitorMass * .62)),
+      radiatedMass,
+      ejectaMass: progenitorMass - remnantMass - radiatedMass,
       ejectaVelocityKms: randomBetween(random, 8000, 18500) * Math.pow(explosionEnergyBethe / 8, .18),
       peakLuminosityErgS: logarithmicRandom(random, 43.7, 45),
       magnetarPeriodMs: engine === 'magnetar' ? randomBetween(random, 1.1, 4.8) : null,
@@ -242,17 +269,26 @@ export function createTransientSimulation(event, universe, eventIndex) {
       : randomBetween(random, 7, Math.min(70, massA));
     const totalMass = massA + massB;
     const symmetricMassRatio = massA * massB / (totalMass * totalMass);
-    const spinA = randomBetween(random, -.82, .94);
-    const spinB = randomBetween(random, -.82, .94);
+    const spinMagnitudeA = randomBetween(random, 0, .94);
+    const spinMagnitudeB = randomBetween(random, 0, .94);
+    const spinTiltCosineA = randomBetween(random, -1, 1);
+    const spinTiltCosineB = randomBetween(random, -1, 1);
+    const spinA = spinMagnitudeA * spinTiltCosineA;
+    const spinB = spinMagnitudeB * spinTiltCosineB;
+    const spinPhaseA = random() * TWO_PI;
+    const spinPhaseB = random() * TWO_PI;
+    const inPlaneSpinA = spinMagnitudeA * Math.sqrt(1 - spinTiltCosineA ** 2) * Math.cos(spinPhaseA);
+    const inPlaneSpinB = spinMagnitudeB * Math.sqrt(1 - spinTiltCosineB ** 2) * Math.cos(spinPhaseB);
     const effectiveSpin = (massA * spinA + massB * spinB) / totalMass;
     const radiatedMassFraction = clamp(.035 + symmetricMassRatio * .11 + Math.max(0, effectiveSpin) * .018, .028, .09);
-    const recoilKms = clamp(
-      randomBetween(random, 80, late ? 1750 : 1050)
-        * (1 + Math.abs(spinA - spinB) * .52)
-        * (.72 + (1 - massB / massA) * .5),
-      40,
-      3200
-    );
+    const recoilKms = clamp(blackHoleRecoilKms({
+      massA,
+      massB,
+      alignedSpinA: spinA,
+      alignedSpinB: spinB,
+      inPlaneSpinA,
+      inPlaneSpinB
+    }), 0, 5000);
     return {
       model: 'black-hole-binary',
       massA,
@@ -260,6 +296,10 @@ export function createTransientSimulation(event, universe, eventIndex) {
       chirpMass: Math.pow(massA * massB, 3 / 5) / Math.pow(totalMass, 1 / 5),
       spinA,
       spinB,
+      spinMagnitudeA,
+      spinMagnitudeB,
+      spinTiltCosineA,
+      spinTiltCosineB,
       effectiveSpin,
       radiatedMassFraction,
       remnantMass: totalMass * (1 - radiatedMassFraction),
@@ -414,15 +454,17 @@ export function createTransientSimulation(event, universe, eventIndex) {
   return null;
 }
 
-export function applyTransientImpactScales(profile, simulation) {
+export function applyTransientImpactScales(profile, simulation, universe = null) {
   if (!simulation) return profile;
+  const causalScale = Math.sqrt(universe?.speed || 1);
+  const localPropagationScale = .82 + causalScale * .18;
   return {
     ...profile,
-    radius: profile.radius * (simulation.rangeScale || 1),
+    radius: profile.radius * (simulation.rangeScale || 1) * localPropagationScale,
     maxStars: Math.max(1, Math.round(profile.maxStars * (simulation.rangeScale || 1))),
     kick: profile.kick * (simulation.kickScale ?? 1),
     civilization: profile.civilization * (simulation.civilizationScale || 1),
-    range: profile.range * (simulation.rangeScale || 1),
+    range: profile.range * (simulation.rangeScale || 1) * causalScale,
     beamAngle: simulation.jetOpeningDeg || simulation.beamOpeningDeg
       ? (simulation.jetOpeningDeg || simulation.beamOpeningDeg) * Math.PI / 180
       : profile.beamAngle

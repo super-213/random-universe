@@ -11,6 +11,7 @@ import { applyCivilizationSnapshot, syncCivilizationHosts } from './rendering/ci
 import { animateCosmicEvents, updateCosmicEvents, updateEpochVisuals } from './rendering/timeline-visuals.js';
 import { createMergerGravityField, createStellarGravityState } from './simulation/black-hole-gravity.js';
 import { buildCivilizationSimulation, civilizationSnapshotAt, deriveCivilizationRuntime, findDominantRelationship } from './simulation/civilization.js';
+import { expandEventSchedule } from './simulation/event-occurrence.js';
 import {
   applyTransientImpactScales,
   createTransientGravityField,
@@ -591,91 +592,92 @@ function buildCosmicEvents(starPositions) {
     ? {
         type: 'quasar-awakening', visual: 'pulsar', label: '类星体短暂苏醒',
         message: '中心黑洞吸积率骤升，相对论喷流穿过星系核', preferCenter: true,
-        start: 480 + random() * 16, duration: 30, color: '#8dd9ff'
+        start: 480 + random() * 16, duration: 30, color: '#8dd9ff', repeatRate: .32, maximumOccurrences: 2
       }
     : {
         type: 'magnetar-flare', visual: 'pulsar', label: '磁星巨型耀斑',
         message: '磁壳重排释放高能辐射，脉冲扫过邻近恒星系',
-        start: 480 + random() * 16, duration: 26, color: '#7dcaff'
+        start: 480 + random() * 16, duration: 26, color: '#7dcaff', repeatRate: .52, maximumOccurrences: 2
       };
 
-  const schedule = [
+  const baseSchedule = [
     {
       type: 'pair-instability-supernova', visual: 'supernova', label: '成对不稳定超新星',
       message: '第一代巨星被完全撕碎，重元素云向外扩散',
-      start: 258 + random() * 18, duration: 28, color: '#ffb36b'
+      start: 258 + random() * 18, duration: 28, color: '#ffb36b', repeatRate: .16, maximumOccurrences: 2
     },
     {
       type: 'young-pulsar-birth', visual: 'pulsar', label: '年轻脉冲星诞生',
       message: '新生中子星高速自转，双极束流开始扫掠星际介质',
-      start: 302 + random() * 18, duration: 27, color: '#68c8ff'
+      start: 302 + random() * 18, duration: 27, color: '#68c8ff', repeatRate: .42, maximumOccurrences: 2
     },
     {
       type: 'classical-nova', visual: 'nova', label: '经典新星爆发',
       message: '白矮星表面的吸积氢发生热核失控，抛出明亮但低质量的壳层',
-      start: 336 + random() * 12, duration: 20, color: '#ffe4a8'
+      start: 336 + random() * 12, duration: 20, color: '#ffe4a8', repeatRate: .9, maximumOccurrences: 3
     },
     {
       type: 'type-ia-supernova', visual: 'supernova', label: 'Ia 型超新星爆发',
       message: '白矮星发生热核失控，将铁族元素抛入星际空间',
-      start: 368 + random() * 22, duration: 25, color: '#ffd08a'
+      start: 368 + random() * 22, duration: 25, color: '#ffd08a', repeatRate: .66, maximumOccurrences: 3
     },
     {
       type: 'red-dwarf-superflare', visual: 'stellar-flare', label: '红矮星超级耀斑',
       message: '磁场突然重联，高能辐射与带电粒子冲击近轨行星',
-      start: 396 + random() * 12, duration: 21, color: '#ffcb72'
+      start: 396 + random() * 12, duration: 21, color: '#ffcb72', repeatRate: 1.05, maximumOccurrences: 3
     },
     {
       type: 'gamma-ray-burst', visual: 'pulsar', label: '长伽马射线暴',
       message: '垂死巨星坍缩，狭窄高能喷流贯穿恒星外层',
-      start: 420 + random() * 20, duration: 24, color: '#89b9ff'
+      start: 420 + random() * 20, duration: 24, color: '#89b9ff', repeatRate: .2, maximumOccurrences: 2
     },
     {
       type: 'neutron-star-kilonova', visual: 'kilonova', label: '中子星并合千新星',
       message: '双中子星旋近并合，短伽马射线束与富含重元素的抛射物同时释放',
-      start: 450 + random() * 12, duration: 25, color: '#caa5ff'
+      start: 450 + random() * 12, duration: 25, color: '#caa5ff', repeatRate: .28, maximumOccurrences: 2
     },
     nucleusEvent,
     {
       type: 'tidal-disruption-event', visual: 'tidal-disruption', label: '潮汐瓦解事件',
       message: '恒星掠过中央黑洞的潮汐半径，被拉成长流并逐步吸积', preferCenter: true,
       requiresCentralBlackHole: true,
-      start: 502 + random() * 10, duration: 30, color: '#72e4ff'
+      start: 502 + random() * 10, duration: 30, color: '#72e4ff', repeatRate: .28, maximumOccurrences: 2
     },
     {
       type: 'core-collapse-supernova', visual: 'supernova', label: '核坍缩超新星',
       message: '恒星核心坍缩，冲击波把新合成元素送入星际云',
-      start: 518 + random() * 20, duration: 27, color: '#ff875c'
+      start: 518 + random() * 20, duration: 27, color: '#ff875c', repeatRate: .86, maximumOccurrences: 3
     },
     {
       type: 'pulsar-glitch', visual: 'pulsar', label: '脉冲星自转突变',
       message: '中子星内部角动量重分配，脉冲节律突然跃迁',
-      start: 548 + random() * 18, duration: 22, color: '#8ba8ff'
+      start: 548 + random() * 18, duration: 22, color: '#8ba8ff', repeatRate: .72, maximumOccurrences: 3
     },
     {
       type: 'superluminous-supernova', visual: 'supernova', label: '超亮超新星',
       message: '磁星引擎持续注入能量，爆发亮度超过普通超新星',
-      start: 552 + random() * 16, duration: 26, color: '#ff6b52'
+      start: 552 + random() * 16, duration: 26, color: '#ff6b52', repeatRate: .2, maximumOccurrences: 2
     },
     {
       type: 'failed-supernova', visual: 'stellar-collapse', label: '失败超新星',
       message: '冲击波未能掀开恒星外层，亮度短暂上升后整体坍缩为黑洞',
-      start: 586 + random() * 14, duration: 29, color: '#b87958'
+      start: 586 + random() * 14, duration: 29, color: '#b87958', repeatRate: .38, maximumOccurrences: 2
     },
     {
       type: 'stellar-black-hole-merger', visual: 'black-hole-merger', label: '双黑洞合并',
       message: '时空啁啾达到峰值，引力波波前穿过局部星域（形变已视觉放大）', preferCenter: true,
-      start: 616 + random() * 18, duration: 38, persistUntil: Math.min(845, universe.cosmicFate.onsetAt || 845), persistenceFadeDuration: 24, color: '#c897ff'
+      start: 616 + random() * 18, duration: 38, persistUntil: Math.min(845, universe.cosmicFate.onsetAt || 845), persistenceFadeDuration: 24, color: '#c897ff', repeatRate: .36, maximumOccurrences: 2
     },
     {
       type: 'late-black-hole-merger', visual: 'black-hole-merger', label: '孤立黑洞捕获合并',
       message: '漫长引力散射后完成并合，残余黑洞在阻尼振铃中反冲', preferCenter: true,
-      start: 872 + random() * 18, duration: 42, persistUntil: 950, persistenceFadeDuration: 18, color: '#9bb8ff'
+      start: 872 + random() * 18, duration: 42, persistUntil: 950, persistenceFadeDuration: 18, color: '#9bb8ff', repeatRate: .14, maximumOccurrences: 2
     }
   ].filter((event) => (!event.requiresCentralBlackHole || universe.hasCentralBlackHole)
     && (event.type !== 'late-black-hole-merger'
       || universe.cosmicFate.type === 'heat-death'
-      || universe.cosmicFate.outcomeExponent > 45))
+      || universe.cosmicFate.outcomeExponent > 45));
+  const schedule = expandEventSchedule(baseSchedule, universe, random)
     .map((event, eventIndex) => {
       const simulation = createTransientSimulation(event, universe, eventIndex);
       const simulatedEvent = {
@@ -730,7 +732,7 @@ function buildCosmicEvents(starPositions) {
   };
 
   const deriveConsequences = (data, location) => {
-    const profile = applyTransientImpactScales(impactProfiles[data.type], data.simulation);
+    const profile = applyTransientImpactScales(impactProfiles[data.type], data.simulation, universe);
     const impactPhases = {
       supernova: .08,
       nova: .14,
@@ -814,7 +816,7 @@ function buildCosmicEvents(starPositions) {
 
   const deriveCivilizationNodeImpacts = (data, location, consequences, gravityField, eventIndex) => {
     if (!civilizationSimulation || !remnantDynamics) return [];
-    const profile = applyTransientImpactScales(impactProfiles[data.type], data.simulation);
+    const profile = applyTransientImpactScales(impactProfiles[data.type], data.simulation, universe);
     const impactRandom = createSeededRandom(universe.seed, 6203 + eventIndex * 131);
     const impactMap = new Map();
     const addImpact = (nodeIndex, at, severity, permanent = false, kind = 'damage') => {

@@ -22,6 +22,7 @@ export function updateUniverseData(universe) {
   $('#stars-value').textContent = formatStars(universe.stars);
   $('#life-probability-value').textContent = formatProbability(universe.lifeProbability);
   $('#civilizations-value').textContent = formatCivilizations(universe.civilizations);
+  $('#civilizations-value').title = `宏观估算值；时间轴固定跟踪 ${universe.trackedSpeciesCount} 个主要文明样本，以保证每个种子都有可观察的文明演化`;
   $('#galaxy-type-value').textContent = galaxyTypes[universe.galaxyType];
   $('#arm-count-value').textContent = formatArmStructure(universe.galaxyType, universe.armCount);
   $('#black-hole-value').textContent = universe.hasCentralBlackHole ? '存在' : '未形成';
@@ -35,7 +36,7 @@ export function updateUniverseData(universe) {
     : `约 10^${universe.blackHoleEvaporationExponent} 年`;
   $('#dark-energy-model-value').textContent = fate.modelLabel;
   $('#dark-energy-model-value').title = fate.modelDescription;
-  $('#dark-energy-eos-value').textContent = `w₀ ${fate.w0.toFixed(2)} · wₐ ${fate.wa.toFixed(2)}`;
+  $('#dark-energy-eos-value').textContent = `w₀ ${fate.w0.toFixed(2)} · wₐ ${fate.wa.toFixed(2)} · 有界 BA`;
   $('#vacuum-value').textContent = formatVacuumState(fate);
   $('#lifetime-value').textContent = `${fate.label} · ${formatOutcomeTime(fate)}`;
   $('#timeline-stellar-label').textContent = fate.outcomeExponent <= universe.lastStarDeathExponent

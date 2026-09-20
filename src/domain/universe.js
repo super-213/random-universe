@@ -4,6 +4,58 @@ import { createCosmicFate } from './cosmic-fate.js';
 import { cosmicYearsToTimelinePosition } from './cosmic-time.js';
 import { createSeededRandom, generateSeedCode, normalizeSeedCode, randomBetween, seedToUint32 } from './random.js';
 
+const REFERENCE_AGE_YEARS = 1.38e10;
+const REFERENCE_CMB_TEMPERATURE = 2.725;
+const REFERENCE_MATTER_DENSITY = .315;
+
+export function estimatePresentAgeYears(expansionRate, darkEnergyDensity) {
+  const omegaMatter = Math.max(.06, 1 - darkEnergyDensity);
+  const omegaLambda = Math.max(1e-6, darkEnergyDensity);
+  const dimensionlessAge = 2 / (3 * Math.sqrt(omegaLambda))
+    * Math.asinh(Math.sqrt(omegaLambda / omegaMatter));
+  const referenceDimensionlessAge = 2 / (3 * Math.sqrt(1 - REFERENCE_MATTER_DENSITY))
+    * Math.asinh(Math.sqrt((1 - REFERENCE_MATTER_DENSITY) / REFERENCE_MATTER_DENSITY));
+  return REFERENCE_AGE_YEARS * dimensionlessAge / referenceDimensionlessAge / expansionRate;
+}
+
+export function deriveCosmicMilestones({
+  speed,
+  fineStructure,
+  massRatio,
+  expansionRate,
+  darkEnergyDensity,
+  primordialFluctuation,
+  cmbTemperature,
+  structureEfficiency
+}) {
+  const omegaMatter = Math.max(.06, 1 - darkEnergyDensity);
+  const atomicBindingScale = fineStructure ** 2 * speed ** 2 / massRatio;
+  const recombinationYears = THREE.MathUtils.clamp(
+    380000
+      * Math.pow(cmbTemperature / REFERENCE_CMB_TEMPERATURE / atomicBindingScale, 1.5)
+      / expansionRate
+      * Math.sqrt(REFERENCE_MATTER_DENSITY / omegaMatter),
+    40000,
+    4e6
+  );
+  const firstStarsYears = THREE.MathUtils.clamp(
+    1.8e8
+      / Math.pow(structureEfficiency, .7)
+      / Math.pow(primordialFluctuation, .35)
+      / Math.sqrt(expansionRate),
+    3e7,
+    9e8
+  );
+  const matureGalaxiesYears = THREE.MathUtils.clamp(firstStarsYears * 5.4, firstStarsYears * 1.8, 3.2e9);
+  return {
+    atomicBindingScale,
+    recombinationYears,
+    firstStarsYears,
+    matureGalaxiesYears,
+    presentAgeYears: estimatePresentAgeYears(expansionRate, darkEnergyDensity)
+  };
+}
+
 export function formatGalaxyHue(hue) {
   const degrees = Math.round(hue * 360);
   const name = degrees < 190 ? '青白' : degrees < 225 ? '蓝白' : degrees < 250 ? '靛蓝' : '紫白';
@@ -61,7 +113,8 @@ export function createUniverse(seed = generateSeedCode()) {
   const habitability = chemistryStability * THREE.MathUtils.clamp(1 - Math.abs(cmbTemperature - 2.725) / 3.5, .12, 1);
   const lifeProbability = Math.pow(random(), 4) * .08 * habitability;
   const speciesCount = Math.floor(randomBetween(random, 5, 16));
-  const civilizations = Math.max(speciesCount, Math.floor(stars * 1e5 * lifeProbability * randomBetween(random, 0.02, 0.7)));
+  const estimatedCivilizations = Math.floor(stars * 1e5 * lifeProbability * randomBetween(random, 0.02, 0.7));
+  const civilizations = Math.max(speciesCount, estimatedCivilizations);
   const lifetime = Math.round(Math.pow(10, lastStarDeathExponent - 8) / 10) * 10;
   const armCount = Math.floor(randomBetween(random, 3, 7));
   const galaxyType = seedValue % galaxyTypes.length;
@@ -70,12 +123,28 @@ export function createUniverse(seed = generateSeedCode()) {
   const activeNucleus = hasCentralBlackHole && random() < [.1, .07, .05, .045, .025][galaxyType];
   const blackHoleEvaporationExponent = Math.floor(randomBetween(random, 97, 103));
   const hue = randomBetween(random, 0.48, 0.76);
-  const cosmicFate = createCosmicFate(seedCode, { expansionRate, darkEnergyDensity });
+  const cosmicMilestones = deriveCosmicMilestones({
+    speed,
+    fineStructure,
+    massRatio,
+    expansionRate,
+    darkEnergyDensity,
+    primordialFluctuation,
+    cmbTemperature,
+    structureEfficiency
+  });
+  const cosmicFate = createCosmicFate(seedCode, {
+    expansionRate,
+    darkEnergyDensity,
+    presentAgeYears: cosmicMilestones.presentAgeYears
+  });
   return {
     seed: seedCode, seedValue, speed, gravity, fineStructure, massRatio, expansionRate, darkEnergyDensity,
     primordialFluctuation, cmbTemperature, chemistryStability, structureEfficiency,
     stellarFormationEndExponent, lastStarDeathExponent, elements, stars, lifeProbability,
-    civilizations, speciesCount, lifetime, blackHoleEvaporationExponent, armCount, galaxyType,
-    hasCentralBlackHole, activeNucleus, hue, cosmicFate
+    civilizations, estimatedCivilizations, speciesCount, trackedSpeciesCount: speciesCount,
+    lifetime, blackHoleEvaporationExponent, armCount, galaxyType,
+    hasCentralBlackHole, activeNucleus, hue, cosmicMilestones,
+    presentAgeYears: cosmicMilestones.presentAgeYears, cosmicFate
   };
 }
