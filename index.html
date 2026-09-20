@@ -314,6 +314,24 @@
           <div class="timeline-head">
             <button class="play-button" id="toggle-time" type="button" aria-label="播放时间">▶</button>
             <b id="timeline-value">T+0.001 s</b>
+            <div class="timeline-tools" data-timeline-control>
+              <div class="timeline-filter">
+                <button
+                  class="timeline-tool-button"
+                  id="timeline-filter-toggle"
+                  type="button"
+                  aria-expanded="false"
+                  aria-controls="timeline-filter-menu"
+                >事件：全部</button>
+                <div class="timeline-filter-menu" id="timeline-filter-menu" role="menu" hidden>
+                  <button type="button" role="menuitemradio" aria-checked="true" data-event-filter="all"><span>全部事件</span><small>0</small></button>
+                  <button type="button" role="menuitemradio" aria-checked="false" data-event-filter="astro"><span>天体事件</span><small>0</small></button>
+                  <button type="button" role="menuitemradio" aria-checked="false" data-event-filter="civilization"><span>文明事件</span><small>0</small></button>
+                  <button type="button" role="menuitemradio" aria-checked="false" data-event-filter="speculative"><span>科幻假设</span><small>0</small></button>
+                </div>
+              </div>
+              <button class="timeline-tool-button is-active" id="toggle-timeline-snap" type="button" aria-pressed="true">吸附</button>
+            </div>
             <div class="speed-controls" aria-label="时间速度">
               <button type="button" data-speed="1" aria-pressed="false" aria-label="沉浸速度，完整旅程约三十五分钟" title="完整旅程约 35 分钟">1×</button>
               <button type="button" data-speed="10" class="is-active" aria-pressed="true" aria-label="十倍速，完整旅程约三分半" title="完整旅程约 3 分 30 秒">10×</button>
@@ -321,19 +339,20 @@
             </div>
           </div>
           <div class="range-wrap">
-            <input id="cosmic-timeline" type="range" min="0" max="1000" value="0" aria-label="从大爆炸到条件结局的宇宙时间" />
+            <input id="cosmic-timeline" type="range" min="0" max="1000" step="0.001" value="0" aria-label="从大爆炸到条件结局的宇宙时间" />
             <div class="timeline-scale" id="timeline-scale" aria-hidden="true"></div>
             <div class="time-progress" id="time-progress"></div>
             <div class="cosmic-event-markers" id="cosmic-event-markers" aria-label="宇宙事件"></div>
             <output class="timeline-scrub-value is-at-start" id="timeline-scrub-value" aria-hidden="true">T+0.001 s</output>
+            <button class="timeline-zoom-reset" id="timeline-zoom-reset" type="button" data-timeline-control hidden>1× · 重置</button>
             <div class="timeline-marks" aria-hidden="true">
-              <span style="left:0%">大爆炸</span>
-              <span style="left:14.5%">复合</span>
-              <span style="left:34%">恒星时代</span>
-              <span style="left:47%">当今</span>
-              <span id="timeline-stellar-label" style="left:65%">恒星熄灭</span>
-              <span id="timeline-late-label" style="left:84.5%">黑洞时代</span>
-              <span id="timeline-final-label" style="left:100%">渐近热寂</span>
+              <span data-position="0" style="left:0%">大爆炸</span>
+              <span data-position="145" style="left:14.5%">复合</span>
+              <span data-position="340" style="left:34%">恒星时代</span>
+              <span data-position="470" style="left:47%">当今</span>
+              <span id="timeline-stellar-label" data-position="650" style="left:65%">恒星熄灭</span>
+              <span id="timeline-late-label" data-position="845" style="left:84.5%">黑洞时代</span>
+              <span id="timeline-final-label" data-position="1000" style="left:100%">渐近热寂</span>
             </div>
           </div>
         </div>

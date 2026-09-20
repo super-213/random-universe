@@ -62,7 +62,11 @@ let renderTimelineScale;
 let resetTimelineScaleFocus;
 let restartTimelineScaleIntro;
 let clusterTimelineEvents;
+let nearestTimelineEvent;
 let timelineDetailWindow;
+let timelinePercentAt;
+let timelinePositionAtPercent;
+let zoomTimelineViewport;
 let organizeCivilizationLegend;
 let resetCivilizationLegend;
 
@@ -141,6 +145,9 @@ let lastTimelineUpdateAt = 0;
 let lastCoordinateUpdateAt = 0;
 let cosmicEvents = [];
 let timelineMarkerResizeFrame = null;
+let timelineViewport = { start: 0, end: 1000 };
+let timelineEventFilter = 'all';
+let timelineSnapEnabled = true;
 let currentEras = null;
 let cachedTimelineVisualContext = null;
 let lastCivilizationSnapshot = null;
@@ -212,7 +219,11 @@ function loadExplorer() {
       resetTimelineScaleFocus,
       restartTimelineScaleIntro,
       clusterTimelineEvents,
+      nearestTimelineEvent,
       timelineDetailWindow,
+      timelinePercentAt,
+      timelinePositionAtPercent,
+      zoomTimelineViewport,
       organizeCivilizationLegend,
       resetCivilizationLegend
     } = explorer);
@@ -508,6 +519,7 @@ async function buildGalaxy() {
   activeSpeciesCount = 0;
   ascendedSpeciesCount = 0;
   activeCivilizationRelationship = null;
+  timelineViewport = { start: 0, end: 1000 };
   const random = createSeededRandom(universe.seed, 91);
   const count = 17000;
   const positions = new Float32Array(count * 3);
@@ -739,7 +751,8 @@ async function buildGalaxy() {
   applyAccessibilityPalette(colorblindMode);
   updatePerformanceStatus();
   renderCosmicEventMarkers();
-  renderTimelineScale(universe);
+  renderTimelineScale(universe, timelineViewport);
+  updateTimelineZoomControl();
 }
 
 function buildEpochEffects(starPositions) {
@@ -1871,6 +1884,63 @@ function timelineEventPosition(event) {
   return Number.isFinite(event.impactAt) ? event.impactAt : event.start;
 }
 
+const timelineFilterLabels = {
+  all: '事件：全部',
+  astro: '事件：天体',
+  civilization: '事件：文明',
+  speculative: '事件：科幻'
+};
+
+function timelineEventMatchesFilter(event, filter = timelineEventFilter) {
+  if (filter === 'astro') return event.category !== 'civilization';
+  if (filter === 'civilization') return event.category === 'civilization';
+  if (filter === 'speculative') return event.confidence === 'science-fiction';
+  return true;
+}
+
+function filteredTimelineEvents() {
+  return cosmicEvents.filter((event) => timelineEventMatchesFilter(event));
+}
+
+function renderTimelineFilterCounts() {
+  document.querySelectorAll('[data-event-filter]').forEach((button) => {
+    const count = cosmicEvents.filter((event) => timelineEventMatchesFilter(
+      event,
+      button.dataset.eventFilter
+    )).length;
+    const countElement = button.querySelector('small');
+    if (countElement) countElement.textContent = String(count);
+  });
+}
+
+function timelineViewportIsZoomed() {
+  return timelineViewport.end - timelineViewport.start < 999.5;
+}
+
+function updateTimelineZoomControl() {
+  const button = $('#timeline-zoom-reset');
+  if (!button) return;
+  const zoom = 1000 / (timelineViewport.end - timelineViewport.start);
+  button.hidden = !timelineViewportIsZoomed();
+  button.textContent = `${zoom.toFixed(zoom >= 10 ? 0 : 1)}× · 重置`;
+  button.setAttribute(
+    'aria-label',
+    `时间轴已放大 ${zoom.toFixed(1)} 倍，点击恢复完整时间轴`
+  );
+}
+
+function refreshTimelineViewport() {
+  if (!universe || !renderTimelineScale) return;
+  renderTimelineScale(universe, timelineViewport);
+  renderCosmicEventMarkers();
+  currentEras ||= erasForUniverse(universe);
+  renderTimelineHeader(
+    createCosmicTimelineState(cosmicPosition, universe, currentEras),
+    timelineViewport
+  );
+  updateTimelineZoomControl();
+}
+
 function jumpToTimelineEvent(event) {
   pauseTimelineForScrubbing();
   updateCosmicTime(timelineEventPosition(event), true);
@@ -1904,7 +1974,7 @@ function renderTimelineEventDetail(entries, sourceMarker) {
   });
   sourceMarker.setAttribute('aria-expanded', 'true');
   sourceMarker.classList.add('is-expanded');
-  panel.style.setProperty('--timeline-detail-origin', `${sourceMarker.dataset.position / 10}%`);
+  panel.style.setProperty('--timeline-detail-origin', sourceMarker.style.left || '50%');
   $('#timeline-event-detail-title').textContent = `${events.length} 个事件 · ${rangeLabel}`;
   $('#timeline-event-detail-start').textContent = cosmicTimeLabel(detailWindow.start, universe);
   $('#timeline-event-detail-end').textContent = cosmicTimeLabel(detailWindow.end, universe);
@@ -1968,12 +2038,23 @@ function renderCosmicEventMarkers() {
   container.replaceChildren();
   const trackWidth = container.clientWidth || Math.max(1, innerWidth * .56);
   const minimumGap = compactCivilizationLayout.matches ? 18 : 14;
-  const groups = clusterTimelineEvents(cosmicEvents, trackWidth, minimumGap);
+  const groups = clusterTimelineEvents(
+    filteredTimelineEvents(),
+    trackWidth,
+    minimumGap,
+    timelineViewport
+  );
+  groups.forEach((group) => {
+    group.entries.forEach((entry) => {
+      entry.index = cosmicEvents.indexOf(entry.event);
+    });
+  });
+  renderTimelineFilterCounts();
 
   groups.forEach((group) => {
     const marker = document.createElement('button');
     marker.type = 'button';
-    marker.style.left = `${group.position / 10}%`;
+    marker.style.left = `${timelinePercentAt(group.position, timelineViewport)}%`;
     marker.dataset.position = group.position.toFixed(3);
 
     if (group.entries.length === 1) {
@@ -2716,7 +2797,7 @@ function updateCosmicTime(value, force = false) {
   currentEras ||= erasForUniverse(universe);
   const timelineState = createCosmicTimelineState(value, universe, currentEras);
   cosmicPosition = timelineState.position;
-  renderTimelineHeader(timelineState);
+  renderTimelineHeader(timelineState, timelineViewport);
 
   if (!clickableStars) return;
 
@@ -2912,7 +2993,7 @@ window.addEventListener('resize', () => {
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   cancelAnimationFrame(timelineMarkerResizeFrame);
   timelineMarkerResizeFrame = requestAnimationFrame(() => {
-    if (mode === 'explorer' && cosmicEvents.length > 0) renderCosmicEventMarkers();
+    if (mode === 'explorer' && cosmicEvents.length > 0) refreshTimelineViewport();
   });
 });
 
@@ -3042,6 +3123,11 @@ $('#export-universe-history').addEventListener('click', () => {
 $('#toggle-civilizations').addEventListener('click', toggleCivilizations);
 $('#close-timeline-event-detail').addEventListener('click', closeTimelineEventDetail);
 $('#toggle-time').addEventListener('click', () => {
+  const willPlay = !timePlaying;
+  if (willPlay && timelineViewportIsZoomed()) {
+    timelineViewport = { start: 0, end: 1000 };
+    refreshTimelineViewport();
+  }
   if (cosmicPosition >= 1000) updateCosmicTime(0, true);
   timePlaying = !timePlaying;
   if (timePlaying) lastTimelineUpdateAt = 0;
@@ -3050,11 +3136,78 @@ $('#toggle-time').addEventListener('click', () => {
 });
 const timelineInput = $('#cosmic-timeline');
 const timelineWrap = timelineInput.closest('.range-wrap');
+const timelineFilterToggle = $('#timeline-filter-toggle');
+const timelineFilterMenu = $('#timeline-filter-menu');
 let timelinePointerId = null;
+let timelineSnapTarget = null;
+
+function setTimelineFilterMenuOpen(open) {
+  timelineFilterMenu.hidden = !open;
+  timelineFilterToggle.setAttribute('aria-expanded', String(open));
+  if (open) {
+    closeTimelineEventDetail();
+    timelineFilterMenu.querySelector('[aria-checked="true"]')?.focus({ preventScroll: true });
+  }
+}
+
+timelineFilterToggle.addEventListener('click', () => {
+  setTimelineFilterMenuOpen(timelineFilterMenu.hidden);
+});
+document.addEventListener('pointerdown', (event) => {
+  if (!timelineFilterMenu.hidden && !event.target.closest('.timeline-filter')) {
+    setTimelineFilterMenuOpen(false);
+  }
+});
+timelineFilterMenu.querySelectorAll('[data-event-filter]').forEach((button) => {
+  button.addEventListener('click', () => {
+    timelineEventFilter = button.dataset.eventFilter;
+    timelineFilterMenu.querySelectorAll('[data-event-filter]').forEach((item) => {
+      item.setAttribute('aria-checked', String(item === button));
+    });
+    timelineFilterToggle.textContent = timelineFilterLabels[timelineEventFilter];
+    setTimelineFilterMenuOpen(false);
+    renderCosmicEventMarkers();
+    timelineFilterToggle.focus({ preventScroll: true });
+  });
+});
+$('#toggle-timeline-snap').addEventListener('click', (event) => {
+  timelineSnapEnabled = !timelineSnapEnabled;
+  event.currentTarget.classList.toggle('is-active', timelineSnapEnabled);
+  event.currentTarget.setAttribute('aria-pressed', String(timelineSnapEnabled));
+});
+$('#timeline-zoom-reset').addEventListener('click', () => {
+  timelineViewport = { start: 0, end: 1000 };
+  refreshTimelineViewport();
+});
+
+function resetTimelineSnapTarget() {
+  timelineSnapTarget = null;
+  document.querySelectorAll('.event-marker.is-snap-target').forEach((marker) => {
+    marker.classList.remove('is-snap-target');
+  });
+}
+
+function updateTimelineSnapTarget(position, trackWidth) {
+  resetTimelineSnapTarget();
+  if (!timelineSnapEnabled || !nearestTimelineEvent) return null;
+  const tolerance = (timelineViewport.end - timelineViewport.start)
+    / Math.max(1, trackWidth)
+    * (compactCivilizationLayout.matches ? 18 : 12);
+  timelineSnapTarget = nearestTimelineEvent(filteredTimelineEvents(), position, tolerance);
+  if (!timelineSnapTarget) return null;
+  const eventIndex = cosmicEvents.indexOf(timelineSnapTarget.event);
+  document.querySelectorAll('.event-marker').forEach((marker) => {
+    const indices = marker.dataset.eventIndices
+      ? marker.dataset.eventIndices.split(',').map(Number)
+      : [Number(marker.dataset.eventIndex)];
+    if (indices.includes(eventIndex)) marker.classList.add('is-snap-target');
+  });
+  return timelineSnapTarget;
+}
 
 function beginTimelineFocus() {
   timelineWrap.classList.add('is-scrubbing');
-  focusTimelineScale(Number(timelineInput.value));
+  focusTimelineScale(Number(timelineInput.value), timelineViewport);
 }
 
 function endTimelineFocus() {
@@ -3073,13 +3226,18 @@ function updateTimelineFromPointer(event) {
   const bounds = timelineWrap.getBoundingClientRect();
   if (bounds.width <= 0) return;
   const progress = THREE.MathUtils.clamp((event.clientX - bounds.left) / bounds.width, 0, 1);
-  const position = Math.round(progress * 10000) / 10;
+  const position = Math.round(timelinePositionAtPercent(progress * 100, timelineViewport) * 10) / 10;
   updateCosmicTime(position, true);
-  focusTimelineScale(position);
+  focusTimelineScale(position, timelineViewport);
+  const snapTarget = updateTimelineSnapTarget(position, bounds.width);
+  if (snapTarget) {
+    $('#timeline-scrub-value').textContent = `吸附 · ${cosmicTimeLabel(snapTarget.position, universe)}`;
+  }
+  return snapTarget;
 }
 
 function beginTimelineScrub(event) {
-  if (event.button !== 0 || event.target.closest('.event-marker')) return;
+  if (event.button !== 0 || event.target.closest('.event-marker, [data-timeline-control]')) return;
   event.preventDefault();
   closeTimelineEventDetail();
   timelinePointerId = event.pointerId;
@@ -3096,23 +3254,48 @@ function moveTimelineScrub(event) {
   updateTimelineFromPointer(event);
 }
 
-function endTimelineScrub(event) {
+function endTimelineScrub(event, allowSnap = true) {
   if (event.pointerId !== timelinePointerId) return;
+  const snapTarget = allowSnap ? updateTimelineFromPointer(event) : null;
+  if (snapTarget) updateCosmicTime(snapTarget.position, true);
   timelinePointerId = null;
   if (timelineWrap.hasPointerCapture(event.pointerId)) {
     timelineWrap.releasePointerCapture(event.pointerId);
   }
+  resetTimelineSnapTarget();
   endTimelineFocus();
 }
 
 timelineWrap.addEventListener('pointerdown', beginTimelineScrub);
 timelineWrap.addEventListener('pointermove', moveTimelineScrub);
 timelineWrap.addEventListener('pointerup', endTimelineScrub);
-timelineWrap.addEventListener('pointercancel', endTimelineScrub);
+timelineWrap.addEventListener('pointercancel', (event) => endTimelineScrub(event, false));
 timelineWrap.addEventListener('lostpointercapture', (event) => {
   if (event.pointerId !== timelinePointerId) return;
   timelinePointerId = null;
+  resetTimelineSnapTarget();
   endTimelineFocus();
+});
+timelineWrap.addEventListener('wheel', (event) => {
+  if (event.target.closest('[data-timeline-control]')) return;
+  event.preventDefault();
+  closeTimelineEventDetail();
+  const bounds = timelineWrap.getBoundingClientRect();
+  const percent = THREE.MathUtils.clamp((event.clientX - bounds.left) / bounds.width, 0, 1) * 100;
+  const anchor = timelinePositionAtPercent(percent, timelineViewport);
+  const scale = Math.exp(THREE.MathUtils.clamp(event.deltaY, -240, 240) * .0024);
+  timelineViewport = zoomTimelineViewport(
+    timelineViewport,
+    anchor,
+    scale,
+    compactCivilizationLayout.matches ? 80 : 55
+  );
+  refreshTimelineViewport();
+}, { passive: false });
+timelineWrap.addEventListener('dblclick', (event) => {
+  if (event.target.closest('[data-timeline-control], .event-marker')) return;
+  timelineViewport = { start: 0, end: 1000 };
+  refreshTimelineViewport();
 });
 timelineInput.addEventListener('focus', () => {
   if (timelinePointerId === null) timelineWrap.classList.add('is-keyboard-focus');
@@ -3131,7 +3314,7 @@ timelineInput.addEventListener('input', (event) => {
   pauseTimelineForScrubbing();
   updateCosmicTime(event.target.value, true);
   if (timelineWrap.classList.contains('is-scrubbing')) {
-    focusTimelineScale(Number(event.target.value));
+    focusTimelineScale(Number(event.target.value), timelineViewport);
   }
 });
 document.querySelectorAll('.speed-controls button').forEach((button) => {
@@ -3151,6 +3334,11 @@ document.addEventListener('keydown', (event) => {
     return;
   }
   if (event.key === 'Escape' && mode === 'explorer') {
+    if (!timelineFilterMenu.hidden) {
+      setTimelineFilterMenuOpen(false);
+      timelineFilterToggle.focus({ preventScroll: true });
+      return;
+    }
     if (!$('#timeline-event-detail').hidden) {
       closeTimelineEventDetail();
       return;

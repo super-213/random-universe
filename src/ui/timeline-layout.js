@@ -6,14 +6,60 @@ const eventPosition = (event) => clamp(
   1000
 );
 
-export function clusterTimelineEvents(events, trackWidth, minimumGap = 14) {
+export function normalizeTimelineViewport(viewport = {}) {
+  const rawStart = Number(viewport.start);
+  const rawEnd = Number(viewport.end);
+  const start = clamp(Number.isFinite(rawStart) ? rawStart : 0, 0, 999);
+  const end = clamp(Number.isFinite(rawEnd) ? rawEnd : 1000, start + 1, 1000);
+  return { start, end, span: end - start };
+}
+
+export function timelinePercentAt(position, viewport) {
+  const normalized = normalizeTimelineViewport(viewport);
+  return (position - normalized.start) / normalized.span * 100;
+}
+
+export function timelinePositionAtPercent(percent, viewport) {
+  const normalized = normalizeTimelineViewport(viewport);
+  return normalized.start + clamp(percent, 0, 100) / 100 * normalized.span;
+}
+
+export function zoomTimelineViewport(viewport, anchor, scale, minimumSpan = 60) {
+  const current = normalizeTimelineViewport(viewport);
+  const nextSpan = clamp(current.span * scale, minimumSpan, 1000);
+  const clampedAnchor = clamp(anchor, current.start, current.end);
+  const anchorRatio = (clampedAnchor - current.start) / current.span;
+  let start = clampedAnchor - nextSpan * anchorRatio;
+  start = clamp(start, 0, 1000 - nextSpan);
+  return { start, end: start + nextSpan };
+}
+
+export function nearestTimelineEvent(events, position, maximumDistance = Infinity) {
+  let nearest = null;
+  events.forEach((event, index) => {
+    const eventAt = eventPosition(event);
+    const distance = Math.abs(eventAt - position);
+    if (distance > maximumDistance || (nearest && distance >= nearest.distance)) return;
+    nearest = { event, index, position: eventAt, distance };
+  });
+  return nearest;
+}
+
+export function clusterTimelineEvents(events, trackWidth, minimumGap = 14, viewport) {
   const width = Math.max(1, Number(trackWidth) || 1);
   const gap = Math.max(1, Number(minimumGap) || 1);
+  const normalized = normalizeTimelineViewport(viewport);
   const entries = events
     .map((event, index) => {
       const position = eventPosition(event);
-      return { event, index, position, x: position / 1000 * width };
+      return {
+        event,
+        index,
+        position,
+        x: (position - normalized.start) / normalized.span * width
+      };
     })
+    .filter((entry) => entry.position >= normalized.start && entry.position <= normalized.end)
     .sort((a, b) => a.x - b.x || a.index - b.index);
 
   const groups = [];

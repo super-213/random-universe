@@ -36,7 +36,14 @@ import {
 import { expandEventSchedule } from '../src/simulation/event-occurrence.js';
 import { blackHoleRecoilKms, createTransientSimulation } from '../src/simulation/transient-events.js';
 import { civilizationHistory, historyExportPayload } from '../src/ui/civilization-chronicle.js';
-import { clusterTimelineEvents, timelineDetailWindow } from '../src/ui/timeline-layout.js';
+import {
+  clusterTimelineEvents,
+  nearestTimelineEvent,
+  timelineDetailWindow,
+  timelinePercentAt,
+  timelinePositionAtPercent,
+  zoomTimelineViewport
+} from '../src/ui/timeline-layout.js';
 import { civilizationObservation } from '../src/simulation/observation.js';
 import {
   advanceTechnologyTree,
@@ -71,6 +78,35 @@ test('timeline detail windows include event duration and impact with usable padd
   assert.ok(window.start < 100);
   assert.ok(window.end > 148);
   assert.equal(window.span, window.end - window.start);
+});
+
+test('timeline viewport zoom preserves its pointer anchor and clamps at boundaries', () => {
+  const centered = zoomTimelineViewport({ start: 0, end: 1000 }, 400, .5);
+  assert.deepEqual(centered, { start: 200, end: 700 });
+  assert.equal(timelinePercentAt(400, centered), 40);
+  assert.equal(timelinePositionAtPercent(40, centered), 400);
+
+  const nearStart = zoomTimelineViewport({ start: 0, end: 200 }, 10, .1, 60);
+  assert.equal(nearStart.end - nearStart.start, 60);
+  assert.ok(nearStart.start >= 0);
+
+  const reset = zoomTimelineViewport(centered, 400, 100);
+  assert.deepEqual(reset, { start: 0, end: 1000 });
+});
+
+test('timeline snapping selects only an event inside the release tolerance', () => {
+  const events = [
+    { start: 120, impactAt: 125 },
+    { start: 148 },
+    { start: 190, impactAt: 175 }
+  ];
+  assert.deepEqual(nearestTimelineEvent(events, 170, 8), {
+    event: events[2],
+    index: 2,
+    position: 175,
+    distance: 5
+  });
+  assert.equal(nearestTimelineEvent(events, 160, 8), null);
 });
 
 test('finite cosmic outcomes map continuously through the full future timeline', () => {

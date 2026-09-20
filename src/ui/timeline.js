@@ -1,3 +1,5 @@
+import { timelinePercentAt } from './timeline-layout.js';
+
 const $ = (selector) => document.querySelector(selector);
 
 let lastEventKey = '';
@@ -27,15 +29,17 @@ const timelineSegments = [
   [340, 470]
 ];
 
-function addScaleMark(container, position, kind) {
+function addScaleMark(container, position, kind, viewport) {
+  const percent = timelinePercentAt(position, viewport);
+  if (percent < 0 || percent > 100) return;
   const marker = document.createElement('i');
   marker.className = `scale-${kind}`;
-  marker.style.left = `${position / 10}%`;
+  marker.style.left = `${percent}%`;
   marker.dataset.position = position.toFixed(3);
   container.appendChild(marker);
 }
 
-export function renderTimelineScale(universe) {
+export function renderTimelineScale(universe, viewport) {
   const container = $('#timeline-scale');
   if (!container) return;
 
@@ -53,21 +57,23 @@ export function renderTimelineScale(universe) {
     const cellCount = Math.max(1, Math.min(4, Math.round(span / 48)));
     const cellWidth = span / cellCount;
 
-    if (segmentIndex > 0) addScaleMark(container, start, 'break');
+    if (segmentIndex > 0) addScaleMark(container, start, 'break', viewport);
     for (let cell = 0; cell < cellCount; cell++) {
       const cellStart = start + cell * cellWidth;
-      if (segmentIndex === 0 || cell > 0) addScaleMark(container, cellStart, 'tick scale-tick--major');
+      if (segmentIndex === 0 || cell > 0) {
+        addScaleMark(container, cellStart, 'tick scale-tick--major', viewport);
+      }
       if (cellWidth < 20) continue;
       for (let mantissa = 2; mantissa <= 9; mantissa++) {
         const position = cellStart + Math.log10(mantissa) * cellWidth;
         const kind = mantissa === 2 || mantissa === 5
           ? 'tick scale-tick--mid'
           : 'tick scale-tick--minor';
-        addScaleMark(container, position, kind);
+        addScaleMark(container, position, kind, viewport);
       }
     }
   });
-  addScaleMark(container, 1000, 'tick scale-tick--major');
+  addScaleMark(container, 1000, 'tick scale-tick--major', viewport);
 }
 
 export function restartTimelineScaleIntro() {
@@ -78,14 +84,14 @@ export function restartTimelineScaleIntro() {
   scale.classList.add('is-entering');
 }
 
-export function focusTimelineScale(position) {
+export function focusTimelineScale(position, viewport) {
   const scale = $('#timeline-scale');
   if (!scale || scale.clientWidth === 0) return;
-  const focusX = position / 1000 * scale.clientWidth;
+  const focusX = timelinePercentAt(position, viewport) / 100 * scale.clientWidth;
   const radius = Math.min(58, scale.clientWidth * .09);
 
   scale.querySelectorAll('.scale-tick').forEach((tick) => {
-    const tickX = Number(tick.dataset.position) / 1000 * scale.clientWidth;
+    const tickX = timelinePercentAt(Number(tick.dataset.position), viewport) / 100 * scale.clientWidth;
     const distance = tickX - focusX;
     const proximity = Math.max(0, 1 - Math.abs(distance) / radius);
     const shift = Math.sign(distance) * proximity * radius * .34;
@@ -97,7 +103,7 @@ export function focusTimelineScale(position) {
   if (!eventTrack || eventTrack.clientWidth === 0) return;
   const eventRadius = Math.min(92, eventTrack.clientWidth * .12);
   eventTrack.querySelectorAll('.event-marker').forEach((marker) => {
-    const markerX = Number(marker.dataset.position) / 1000 * eventTrack.clientWidth;
+    const markerX = timelinePercentAt(Number(marker.dataset.position), viewport) / 100 * eventTrack.clientWidth;
     const distance = markerX - focusX;
     const proximity = Math.max(0, 1 - Math.abs(distance) / eventRadius);
     const shift = Math.sign(distance) * proximity * eventRadius * .52;
@@ -116,20 +122,26 @@ export function resetTimelineScaleFocus() {
   });
 }
 
-export function renderTimelineHeader(state) {
+export function renderTimelineHeader(state, viewport) {
   const timeline = cachedElement('timeline', '#cosmic-timeline');
   const timelineValue = String(state.position);
   if (timeline?.value !== timelineValue) timeline.value = timelineValue;
   if (timeline?.getAttribute('aria-valuetext') !== state.label) {
     timeline?.setAttribute('aria-valuetext', state.label);
   }
-  setStyle(cachedElement('progress', '#time-progress'), 'width', `${state.position / 10}%`);
+  const viewportPercent = Math.max(0, Math.min(100, timelinePercentAt(state.position, viewport)));
+  setStyle(cachedElement('progress', '#time-progress'), 'width', `${viewportPercent}%`);
   setText(cachedElement('timelineValue', '#timeline-value'), state.label);
   const scrubValue = cachedElement('timelineScrubValue', '#timeline-scrub-value');
   setText(scrubValue, state.label);
-  setStyle(scrubValue, 'left', `${state.position / 10}%`);
-  scrubValue?.classList.toggle('is-at-start', state.position < 55);
-  scrubValue?.classList.toggle('is-at-end', state.position > 945);
+  setStyle(scrubValue, 'left', `${viewportPercent}%`);
+  scrubValue?.classList.toggle('is-at-start', viewportPercent < 5.5);
+  scrubValue?.classList.toggle('is-at-end', viewportPercent > 94.5);
+  document.querySelectorAll('.timeline-marks [data-position]').forEach((mark) => {
+    const percent = timelinePercentAt(Number(mark.dataset.position), viewport);
+    mark.hidden = percent < 0 || percent > 100;
+    mark.style.left = `${percent}%`;
+  });
   setText(cachedElement('eraName', '#era-name'), state.era.name);
   setText(cachedElement('cosmicTime', '#cosmic-time'), state.label.replace('T+', ''));
   setText(cachedElement('eraDescription', '#era-description'), state.era.description);
