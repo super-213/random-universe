@@ -6,7 +6,6 @@ import { galaxyTypes as galaxyTypeLabels } from './domain/catalog.js';
 import { createLocalGalaxyGroup } from './domain/local-group.js';
 import { disposeSharedTextures, getPointTexture } from './rendering/textures.js';
 import { createUniverseRenderer } from './rendering/renderer.js';
-import { createCosmicAudio } from './audio/cosmic-audio.js';
 import { civilizationObservation } from './simulation/observation.js';
 import { shuttleTrafficAt } from './simulation/intergalactic-travel.js';
 import {
@@ -83,8 +82,7 @@ const maxVisibleIntergalacticShips = 3;
 const showCivilizationLogistics = false;
 const coordinateElements = [$('#coord-x'), $('#coord-y'), $('#coord-z')];
 
-const { renderer, backend: rendererBackend } = await createUniverseRenderer(canvas);
-const cosmicAudio = createCosmicAudio();
+const { renderer } = await createUniverseRenderer(canvas);
 
 const scene = new THREE.Scene();
 scene.fog = new THREE.FogExp2(0x050508, 0.008);
@@ -170,11 +168,8 @@ let localGroupGalaxies = [];
 let localGroupView = false;
 let localGroupFrameRadius = 36;
 let shipHighlightEnabled = false;
-let simulationBackend = '主线程';
 let keyboardStarIndex = -1;
 let keyboardStarMarker = null;
-let colorblindMode = false;
-const accessibleSpeciesColors = [0x56b4e9, 0xe69f00, 0x009e73, 0xcc79a7, 0xf0e442, 0x0072b2, 0xd55e00];
 const shipForward = new THREE.Vector3(1, 0, 0);
 const shipRouteDirection = new THREE.Vector3();
 const shipRouteStart = new THREE.Vector3();
@@ -871,13 +866,10 @@ async function buildGalaxy() {
     cosmicEvents
   });
   civilizationSimulation = simulationResult.simulation;
-  simulationBackend = simulationResult.backend;
   simulationResult.eventUpdates.forEach((update) => {
     const event = cosmicEvents.find((candidate) => candidate.id === update.id);
     if (event) Object.assign(event, update);
   });
-  applyAccessibilityPalette(colorblindMode);
-  updatePerformanceStatus();
   renderCosmicEventMarkers();
   renderTimelineScale(universe, timelineViewport);
   updateTimelineZoomControl();
@@ -2320,7 +2312,6 @@ function buildCivilizations() {
     civilizationData.push({
       name,
       color: speciesColor,
-      baseColor: speciesColor,
       home,
       homeNodeIndex,
       homeRemnantIndex,
@@ -2517,7 +2508,6 @@ async function enterUniverse() {
   $('#regenerate-top').style.pointerEvents = 'none';
   $('#civilization-panel').classList.remove('is-expanded');
   $('#toggle-civilizations').setAttribute('aria-expanded', 'false');
-  setObservationToolsOpen(false);
   galaxyGroup.visible = true;
   localGroupGroup.visible = true;
   galaxyGroup.scale.setScalar(0.02);
@@ -2553,7 +2543,6 @@ function leaveUniverse() {
   observerSpeciesIndex = null;
   localGroupView = false;
   document.body.classList.remove('is-local-group-view');
-  setObservationToolsOpen(false);
   closeCivilizationChronicle();
   $('#civilization-panel').classList.remove('is-expanded');
   $('#toggle-civilizations').setAttribute('aria-expanded', 'false');
@@ -2661,12 +2650,6 @@ function toggleCivilizations() {
     });
     organizeCivilizationLegend(lastCivilizationSnapshot, civilizationData);
   }
-}
-
-function setObservationToolsOpen(open) {
-  const title = document.querySelector('.explorer-title');
-  title.classList.toggle('is-tools-open', open);
-  $('#toggle-observation-tools').setAttribute('aria-expanded', String(open));
 }
 
 function openCivilizationChronicle(speciesIndex) {
@@ -2860,7 +2843,7 @@ function updateLogisticsVisuals(simulationState) {
     network.geometry.setDrawRange(0, count * 2);
     network.geometry.attributes.position.needsUpdate = true;
     const throughput = simulationState.logisticsThroughput?.[speciesIndex] || 0;
-    network.material.opacity = .018 + throughput * (colorblindMode ? .17 : .11);
+    network.material.opacity = .018 + throughput * .11;
     network.material.color.setHex(species.color);
   });
 }
@@ -3265,34 +3248,6 @@ function updateCosmicTime(value, force = false) {
     narrative.text = `延迟观测 · 置信度 ${confidence}% · ${narrative.text}`;
   }
   renderTimelineEvent(narrative, force);
-  cosmicAudio.update({
-    position: cosmicPosition,
-    activeEvent: observedEvent,
-    activeSpecies: activeSpeciesCount
-  });
-}
-
-function updatePerformanceStatus() {
-  const status = $('#performance-status');
-  if (status) status.textContent = `${rendererBackend} · ${simulationBackend}`;
-}
-
-function applyAccessibilityPalette(enabled) {
-  colorblindMode = enabled;
-  civilizationData.forEach((species, index) => {
-    species.color = enabled
-      ? accessibleSpeciesColors[index % accessibleSpeciesColors.length]
-      : species.baseColor;
-    civilizationGroups[index]?.material.color.setHex(species.color);
-    logisticsGroups[index]?.material.color.setHex(species.color);
-    localGroupRoutes[index]?.material.color.setHex(species.color);
-    intergalacticMarkers[index]?.userData.hullMaterial.color.setHex(species.color);
-    intergalacticMarkers[index]?.userData.engineMaterial.color.setHex(species.color);
-    intergalacticMarkers[index]?.userData.highlightMaterial.color.setHex(species.color);
-    const row = document.querySelector(`.civilization-item[data-species="${index}"]`);
-    row?.style.setProperty('--species', `#${species.color.toString(16).padStart(6, '0')}`);
-  });
-  if (selectedChronicleIndex !== null) openCivilizationChronicle(selectedChronicleIndex);
 }
 
 function selectKeyboardStar(direction) {
@@ -3404,7 +3359,6 @@ function disposePageResources() {
     timelineMarkerResizeFrame = null;
   }
   controls?.dispose();
-  cosmicAudio.dispose();
   [
     universeGroup,
     galaxyGroup,
@@ -3463,34 +3417,6 @@ canvas.addEventListener('keydown', (event) => {
   if (event.key === 'Home') { keyboardStarIndex = -1; selectKeyboardStar(1); }
   if (event.key === 'End') { keyboardStarIndex = 0; selectKeyboardStar(-1); }
   if ((event.key === 'Enter' || event.key === ' ') && keyboardStarIndex >= 0) showStarInspector(keyboardStarIndex);
-});
-$('#toggle-sound').addEventListener('click', async (event) => {
-  const enabled = await cosmicAudio.setEnabled(!cosmicAudio.enabled);
-  event.currentTarget.setAttribute('aria-pressed', String(enabled));
-  event.currentTarget.textContent = `声音 ${enabled ? '开' : '关'}`;
-  if (enabled) cosmicAudio.pulse('civilization', .45);
-});
-$('#toggle-contrast').addEventListener('click', (event) => {
-  const enabled = !document.body.classList.contains('is-high-contrast');
-  document.body.classList.toggle('is-high-contrast', enabled);
-  event.currentTarget.setAttribute('aria-pressed', String(enabled));
-  localStorage.setItem('random-universe-high-contrast', String(enabled));
-});
-$('#toggle-colorblind').addEventListener('click', (event) => {
-  const enabled = !document.body.classList.contains('is-colorblind');
-  document.body.classList.toggle('is-colorblind', enabled);
-  event.currentTarget.setAttribute('aria-pressed', String(enabled));
-  applyAccessibilityPalette(enabled);
-  localStorage.setItem('random-universe-colorblind', String(enabled));
-});
-$('#toggle-observation-tools').addEventListener('click', () => {
-  const open = !document.querySelector('.explorer-title').classList.contains('is-tools-open');
-  setObservationToolsOpen(open);
-});
-document.addEventListener('pointerdown', (event) => {
-  if (!document.querySelector('.explorer-title').classList.contains('is-tools-open')) return;
-  if (event.target.closest('#observation-tools, #toggle-observation-tools')) return;
-  setObservationToolsOpen(false);
 });
 $('#regenerate-top').addEventListener('click', regenerate);
 $('#enter-universe').addEventListener('click', enterUniverse);
@@ -3808,10 +3734,6 @@ document.addEventListener('keydown', (event) => {
       closeTimelineEventDetail();
       return;
     }
-    if (document.querySelector('.explorer-title').classList.contains('is-tools-open')) {
-      setObservationToolsOpen(false);
-      return;
-    }
     if ($('#civilization-chronicle').classList.contains('is-open')) {
       closeCivilizationChronicle();
       return;
@@ -3827,14 +3749,6 @@ document.addEventListener('keydown', (event) => {
 });
 
 const requestedSeed = new URLSearchParams(window.location.search).get('seed');
-const savedContrast = localStorage.getItem('random-universe-high-contrast') === 'true';
-const savedColorblind = localStorage.getItem('random-universe-colorblind') === 'true';
-document.body.classList.toggle('is-high-contrast', savedContrast);
-document.body.classList.toggle('is-colorblind', savedColorblind);
-$('#toggle-contrast').setAttribute('aria-pressed', String(savedContrast));
-$('#toggle-colorblind').setAttribute('aria-pressed', String(savedColorblind));
-colorblindMode = savedColorblind;
-updatePerformanceStatus();
 universe = createUniverse(requestedSeed || undefined);
 syncUniverseUrl();
 updateUniverseData(universe);
