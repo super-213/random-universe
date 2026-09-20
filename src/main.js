@@ -150,6 +150,7 @@ let localGalaxyGroup = null;
 let localGroupRoutes = [];
 let intergalacticMarkers = [];
 let localGroupView = false;
+let localGroupFrameRadius = 36;
 let simulationBackend = '主线程';
 let keyboardStarIndex = -1;
 let keyboardStarMarker = null;
@@ -323,18 +324,18 @@ function buildLocalGroupMap() {
   localGalaxyGroup = createLocalGalaxyGroup(universe.seed, $('#galaxy-name').textContent);
   const random = createSeededRandom(universe.seed, 7317);
   localGalaxyGroup.companions.forEach((companion) => {
-    const count = Math.round(260 + companion.radius * 130);
+    const count = Math.round(820 + companion.radius * 260);
     const positions = new Float32Array(count * 3);
     const colors = new Float32Array(count * 3);
-    const tint = new THREE.Color().setHSL(companion.hue, .5, .62);
+    const tint = new THREE.Color().setHSL(companion.hue, .58, .68);
     for (let index = 0; index < count; index++) {
       const offset = index * 3;
-      const radius = Math.pow(random(), .56) * companion.radius;
-      const angle = random() * Math.PI * 2;
+      const radius = Math.pow(random(), .78) * companion.radius;
+      const angle = random() * Math.PI * 2 + radius * 1.35;
       positions[offset] = companion.position[0] + Math.cos(angle) * radius;
       positions[offset + 1] = companion.position[1] + gaussianRandom(random) * companion.radius * .18;
       positions[offset + 2] = companion.position[2] + Math.sin(angle) * radius * .72;
-      const brightness = .42 + random() * .58;
+      const brightness = .68 + random() * .52;
       colors[offset] = tint.r * brightness;
       colors[offset + 1] = tint.g * brightness;
       colors[offset + 2] = tint.b * brightness;
@@ -343,16 +344,17 @@ function buildLocalGroupMap() {
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     const material = new THREE.PointsMaterial({
-      size: .07,
+      size: 1.7,
+      sizeAttenuation: false,
       map: getPointTexture(),
       alphaTest: .01,
       vertexColors: true,
       transparent: true,
-      opacity: .2,
+      opacity: .72,
       depthWrite: false,
       blending: THREE.AdditiveBlending
     });
-    material.userData.baseOpacity = .2;
+    material.userData.baseOpacity = .72;
     const points = new THREE.Points(geometry, material);
     points.userData.companionIndex = companion.index;
     localGroupGroup.add(points);
@@ -361,15 +363,36 @@ function buildLocalGroupMap() {
       map: makeGlowTexture(),
       color: tint,
       transparent: true,
-      opacity: .08,
+      opacity: .42,
+      depthTest: false,
       depthWrite: false,
       blending: THREE.AdditiveBlending
     }));
     core.position.fromArray(companion.position);
-    core.scale.setScalar(companion.radius * 1.65);
-    core.material.userData.baseOpacity = .08;
+    core.scale.setScalar(companion.radius * 1.9);
+    core.material.userData.baseOpacity = .42;
+    core.renderOrder = 3;
     localGroupGroup.add(core);
+
+    const locator = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: makeRingTexture(),
+      color: tint,
+      transparent: true,
+      opacity: .3,
+      depthTest: false,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending
+    }));
+    locator.position.fromArray(companion.position);
+    locator.scale.setScalar(companion.radius * 2.7);
+    locator.material.userData.baseOpacity = .3;
+    locator.renderOrder = 4;
+    localGroupGroup.add(locator);
   });
+
+  localGroupFrameRadius = localGalaxyGroup.companions.reduce((radius, companion) => (
+    Math.max(radius, Math.hypot(companion.position[0], companion.position[2]) + companion.radius * 2.2)
+  ), 36);
 
   civilizationData.forEach((species) => {
     const destination = localGalaxyGroup.companions[species.color % localGalaxyGroup.companions.length];
@@ -2347,10 +2370,23 @@ function toggleLocalGroupView() {
   document.body.classList.toggle('is-local-group-view', localGroupView);
   $('#toggle-local-group').setAttribute('aria-pressed', String(localGroupView));
   $('#toggle-local-group').textContent = localGroupView ? '返回主星系' : '查看局部星系群';
-  const direction = camera.position.clone().normalize();
-  camera.position.copy(direction.multiplyScalar(localGroupView ? 64 : 24));
-  controls.maxDistance = localGroupView ? 82 : 46;
+  if (localGroupView) {
+    const verticalFov = THREE.MathUtils.degToRad(camera.fov);
+    const horizontalFov = 2 * Math.atan(Math.tan(verticalFov / 2) * camera.aspect);
+    const widthDistance = localGroupFrameRadius / Math.tan(horizontalFov / 2);
+    const heightDistance = localGroupFrameRadius * .62 / Math.tan(verticalFov / 2);
+    const frameDistance = Math.max(64, widthDistance, heightDistance) * 1.12;
+    camera.far = Math.max(240, frameDistance + localGroupFrameRadius * 2);
+    camera.position.set(0, frameDistance * .46, frameDistance * .89);
+    controls.maxDistance = frameDistance * 1.35;
+  } else {
+    camera.far = 200;
+    camera.position.set(0, 5.6, 23.3);
+    controls.maxDistance = 46;
+  }
+  camera.updateProjectionMatrix();
   controls.target.set(0, 0, 0);
+  controls.update();
   updateLocalGroupVisuals(lastCivilizationSnapshot);
 }
 
