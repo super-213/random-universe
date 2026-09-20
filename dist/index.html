@@ -6,9 +6,9 @@
     <meta name="theme-color" content="#050508" />
     <meta name="description" content="每一次刷新，都会诞生一个独一无二的宇宙。" />
     <title>随机宇宙发生器</title>
-    <script type="module" crossorigin src="/assets/index-hUUAo2z9.js"></script>
+    <script type="module" crossorigin src="/assets/index-ciR4W9rh.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/three-core-HQt76mAO.js">
-    <link rel="stylesheet" crossorigin href="/assets/index-D2p6hKGP.css">
+    <link rel="stylesheet" crossorigin href="/assets/index-DxiExv8b.css">
   </head>
   <body>
     <canvas id="universe" aria-hidden="true"></canvas>
@@ -167,7 +167,16 @@
             <span>进入宇宙</span>
             <span class="enter-arrow">↗</span>
           </button>
+          <button class="text-button compare-button" id="compare-universes" type="button">比较邻近宇宙</button>
         </div>
+
+        <aside class="multiverse-lab" id="multiverse-lab" aria-hidden="true" aria-label="多宇宙对比实验室">
+          <button class="inspector-close" id="close-multiverse" aria-label="关闭多宇宙对比">×</button>
+          <p class="kicker">多宇宙对比实验室</p>
+          <h2>相同规则，不同常数</h2>
+          <p>选择一个确定性邻近种子，比较星系、文明样本与宇宙结局。</p>
+          <div class="multiverse-list" id="multiverse-list"></div>
+        </aside>
       </section>
 
       <section class="explorer-view" id="explorer-view" aria-label="宇宙探索器">
@@ -221,6 +230,25 @@
             <div><dt>行星</dt><dd id="star-planets">6</dd></div>
             <div><dt>生命信号</dt><dd id="star-life">未检出</dd></div>
           </dl>
+        </aside>
+
+        <aside class="civilization-chronicle" id="civilization-chronicle" aria-label="文明编年史">
+          <button class="inspector-close" id="close-chronicle" aria-label="关闭文明编年史">×</button>
+          <p class="kicker">文明编年史</p>
+          <h3 id="chronicle-name">未选择文明</h3>
+          <p class="chronicle-form" id="chronicle-form">—</p>
+          <dl class="chronicle-meta">
+            <div><dt>生物圈路径</dt><dd id="chronicle-biosphere">—</dd></div>
+            <div><dt>费米情景</dt><dd id="chronicle-fermi">—</dd></div>
+          </dl>
+          <div class="chronicle-actions">
+            <button type="button" id="observe-civilization">以此文明观察</button>
+            <button type="button" id="bookmark-cosmic-time">保存当前时刻</button>
+            <button type="button" id="copy-universe-link">复制宇宙链接</button>
+            <button type="button" id="export-universe-history">导出历史</button>
+          </div>
+          <p class="chronicle-status" id="chronicle-status" aria-live="polite"></p>
+          <ol class="chronicle-events" id="chronicle-events"></ol>
         </aside>
 
         <div class="time-console" aria-label="宇宙时间控制">

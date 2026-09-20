@@ -34,6 +34,7 @@ import {
 } from '../src/simulation/compact-objects.js';
 import { expandEventSchedule } from '../src/simulation/event-occurrence.js';
 import { blackHoleRecoilKms, createTransientSimulation } from '../src/simulation/transient-events.js';
+import { civilizationHistory, historyExportPayload } from '../src/ui/civilization-chronicle.js';
 
 const seedFor = (index) => index.toString(36).toUpperCase().padStart(16, '0');
 
@@ -418,7 +419,10 @@ test('causal evolution chains update biosphere, morphology, engineering, migrati
     makeEvent('cosmic-archaeology', 460, 0, { artifactType: '星图档案', artifactOutcome: '继承' }),
     makeEvent('ghost-signal', 470, 1, { delayUnits: 42 }),
     makeEvent('exposure-response', 480, 2, { responsePolicy: '跨文明验证协议' }),
-    makeEvent('galactic-aftermath', 490, 3, { galacticStage: '潮汐尾与恒星形成潮' })
+    makeEvent('galactic-aftermath', 490, 3, { galacticStage: '潮汐尾与恒星形成潮' }),
+    makeEvent('intergalactic-diaspora', 510, 1, { diasporaMode: '星系桥殖民地', diasporaSuccess: true }),
+    makeEvent('black-hole-civilization', 520, 2, { blackHoleMethod: '旋转能提取', blackHoleStable: true }),
+    makeEvent('universe-escape-project', 530, 3, { escapeMode: '人造婴儿宇宙', escapeSuccess: true })
   ];
   buildCivilizationSimulation({
     universe,
@@ -426,7 +430,7 @@ test('causal evolution chains update biosphere, morphology, engineering, migrati
     civilizationSimulation: simulation,
     cosmicEvents: events
   });
-  const snapshot = simulation.snapshots.find((item) => item.time === 500);
+  const snapshot = simulation.snapshots.find((item) => item.time === 540);
   assert.equal(snapshot.biosphereStages[0], 5);
   assert.equal(snapshot.filterStates[0], 1);
   assert.equal(snapshot.migrationModes[1], 1);
@@ -436,8 +440,32 @@ test('causal evolution chains update biosphere, morphology, engineering, migrati
   assert.equal(snapshot.artifacts[0], 1);
   assert.equal(snapshot.signalDelays[1], 42);
   assert.equal(snapshot.causalResponses[2], 1);
+  assert.equal(snapshot.diasporaModes[1], 1);
+  assert.equal(snapshot.blackHoleHabitats[2], 1);
+  assert.equal(snapshot.escapeProjects[3], 1);
+  assert.equal(snapshot.energyTiers[2], 3);
+  assert.equal(snapshot.energyTiers[3], 4);
   assert.ok(snapshot.fermiAwareness.some((value) => value === 1));
   assert.ok(events.every((event) => event.outcome !== '事件仍在演化'));
+});
+
+test('civilization chronicles preserve roles and causal event links for export', () => {
+  const universe = createUniverse('CHRONICLETEST001');
+  const civilizations = [
+    { name: '甲', birth: 400, morphology: '生物共同体', biospherePath: ['原始生命', '技术物种'], fermiScenario: '大过滤器' },
+    { name: '乙', birth: 410, morphology: '机器文明', biospherePath: ['化能生态', '技术物种'], fermiScenario: '短暂技术窗口' }
+  ];
+  const events = [
+    { id: 'signal', type: 'first-signal', label: '信号', impactAt: 430, targetSpeciesIndex: 0, secondarySpeciesIndex: 1, outcome: '建立链路' },
+    { id: 'response', sourceEventId: 'signal', causalRootId: 'signal', type: 'exposure-response', label: '响应', impactAt: 450, targetSpeciesIndex: 0, outcome: '建立验证协议' }
+  ];
+  const history = civilizationHistory(0, events);
+  assert.deepEqual(history.map(({ role }) => role), ['主体', '主体']);
+  assert.equal(history[1].event.sourceEventId, 'signal');
+  const exported = historyExportPayload({ universe, civilizationData: civilizations, cosmicEvents: events });
+  assert.equal(exported.format, 'random-universe-history-v1');
+  assert.equal(exported.civilizations[0].history[1].causalRootId, 'signal');
+  assert.equal(exported.civilizations[1].history[0].role, '接触方');
 });
 
 test('event repeats respect a universe-specific latest start boundary', () => {

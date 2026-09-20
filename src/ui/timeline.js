@@ -4,6 +4,7 @@ let lastEventKey = '';
 let eventFadeTimer = null;
 let civilizationRows = [];
 const compactLayout = window.matchMedia('(max-width: 800px)');
+const energyTierLabels = ['', '行星能源', '恒星能源', '黑洞能源', '熵管理'];
 
 const ui = {};
 const cachedElement = (key, selector) => {
@@ -151,13 +152,15 @@ export function renderCivilizationRows({ position, simulationState, runtimeState
     if (state.eventState.causes.length) details.push(`受 ${state.eventState.causes.join('、')} 影响`);
     if (state.statuses.length) details.push(state.statuses.join('、'));
     if (state.alive) {
-      details.push(`技术 ${(state.technology * 100).toFixed(0)} · 凝聚 ${(state.cohesion * 100).toFixed(0)} · 可见度 ${(state.visibility * 100).toFixed(0)}`);
+      details.push(`${energyTierLabels[state.energyTier] || '前工业能源'} · 技术 ${(state.technology * 100).toFixed(0)} · 凝聚 ${(state.cohesion * 100).toFixed(0)} · 可见度 ${(state.visibility * 100).toFixed(0)}`);
     }
     const title = state.ascended ? '1% 概率的高维转化：已脱离普通物质宿主' : details.join('；');
     if (row.title !== title) row.title = title;
     setText(row.querySelector('b'), state.alive
       ? (state.ascended
           ? '超维存续'
+          : state.escaped
+            ? '母宇宙外存续'
           : `${state.count} 域${state.trend > 0 ? ' ↑' : state.trend < 0 ? ' ↓' : ''}${state.statuses[0] ? ` · ${state.statuses[0]}` : ''}`)
       : position < species.birth ? '未诞生' : '衰亡');
   });

@@ -107,6 +107,9 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
   const signalDelays = new Uint8Array(speciesCount);
   const fermiAwareness = new Uint8Array(speciesCount);
   const causalResponses = new Int8Array(speciesCount);
+  const diasporaModes = new Int8Array(speciesCount);
+  const blackHoleHabitats = new Int8Array(speciesCount);
+  const escapeProjects = new Int8Array(speciesCount);
   const archiveReadyAt = new Float32Array(speciesCount);
   archiveReadyAt.fill(Infinity);
   civilizationData.forEach((species, index) => {
@@ -630,6 +633,59 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       }
       lastCauses[targetIndex] = event.responsePolicy;
       event.outcome = `${target.name} 的${event.responsePolicy}成为早期接触事件的长期制度后果`;
+      return;
+    }
+
+    if (event.type === 'intergalactic-diaspora') {
+      if (event.diasporaSuccess) {
+        diasporaModes[targetIndex] = event.diasporaMode === '星系桥殖民地' ? 1 : 2;
+        technology[targetIndex] = Math.min(1, technology[targetIndex] + .1);
+        visibility[targetIndex] = event.diasporaMode === '星系际流浪社会'
+          ? Math.max(0, visibility[targetIndex] - .08)
+          : Math.min(1, visibility[targetIndex] + .04);
+        lastCauses[targetIndex] = event.diasporaMode;
+        event.outcome = `${target.name} 成功越过星系边界，${event.diasporaMode}开始独立存续`;
+      } else {
+        diasporaModes[targetIndex] = -1;
+        cohesion[targetIndex] = Math.max(0, cohesion[targetIndex] - .09);
+        lastCauses[targetIndex] = '跨星系舰队失联';
+        event.outcome = `${target.name} 的跨星系舰队越过观测极限后失联，只剩引力助推记录`;
+      }
+      return;
+    }
+
+    if (event.type === 'black-hole-civilization') {
+      if (event.blackHoleStable) {
+        blackHoleHabitats[targetIndex] = 1;
+        technology[targetIndex] = Math.min(1, technology[targetIndex] + .16);
+        visibility[targetIndex] = Math.min(1, visibility[targetIndex] + .08);
+        lastCauses[targetIndex] = event.blackHoleMethod;
+        event.outcome = `${target.name} 建成稳定的${event.blackHoleMethod}网络，进入黑洞能源阶段`;
+      } else {
+        blackHoleHabitats[targetIndex] = -1;
+        for (let node = 0; node < nodeCount; node++) {
+          if (owners[node] === targetIndex && (node + targetIndex) % 8 === 0) strength[node] *= .4;
+        }
+        lastCauses[targetIndex] = '黑洞能源站失稳';
+        event.outcome = `${target.name} 的黑洞能源站出现吸积反馈，多处设施被迫抛离`;
+      }
+      return;
+    }
+
+    if (event.type === 'universe-escape-project') {
+      if (event.escapeSuccess) {
+        escapeProjects[targetIndex] = 1;
+        technology[targetIndex] = 1;
+        visibility[targetIndex] = 0;
+        lastCauses[targetIndex] = `通过${event.escapeMode}脱离母宇宙`;
+        event.outcome = `${target.name} 的${event.escapeMode}形成不可回传的逃逸通道，母宇宙只能记录其消失`;
+      } else {
+        escapeProjects[targetIndex] = -1;
+        cohesion[targetIndex] = Math.max(0, cohesion[targetIndex] - .14);
+        technology[targetIndex] = Math.max(.18, technology[targetIndex] - .06);
+        lastCauses[targetIndex] = `${event.escapeMode}失败`;
+        event.outcome = `${target.name} 未能稳定${event.escapeMode}，工程被终止并留下长期资源赤字`;
+      }
     }
   };
 
@@ -685,7 +741,8 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       const species = civilizationData[owner];
       const infrastructure = 1 + megastructures[owner] * .34 + technology[owner] * .16
         + terraforming[owner] * .1 + substrateModes[owner] * .12 + precursorKnowledge[owner] * .08
-        + Math.max(0, engineeringModes[owner]) * .1 + Math.max(0, artifacts[owner]) * .045;
+        + Math.max(0, engineeringModes[owner]) * .1 + Math.max(0, artifacts[owner]) * .045
+        + Math.max(0, blackHoleHabitats[owner]) * .28;
       const socialStability = .82 + cohesion[owner] * .3;
       const morphologySupport = morphologyModes[owner] === 2 || morphologyModes[owner] === 4
         ? 1.08
@@ -745,9 +802,10 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       const precursorBonus = precursorKnowledge[speciesIndex] > 0 ? .32 : 0;
       const migrationBonus = migrationModes[speciesIndex] > 0 ? .34 : 0;
       const engineeringBonus = engineeringModes[speciesIndex] > 0 ? .38 : 0;
+      const diasporaBonus = diasporaModes[speciesIndex] > 0 ? .42 : 0;
       const attempts = 1 + Math.floor(
         species.expansionRate + friendlyCounts[speciesIndex] * .34 + probeBonus + frontierBonus
-          + substrateBonus + precursorBonus + migrationBonus + engineeringBonus
+          + substrateBonus + precursorBonus + migrationBonus + engineeringBonus + diasporaBonus
           + technology[speciesIndex] * .28
       );
       for (let attempt = 0; attempt < attempts; attempt++) {
@@ -847,6 +905,7 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       for (let node = 0; node < nodeCount; node++) {
         const owner = owners[node];
         if (owner < 0 || civilizationData[owner].highDimensional && time >= civilizationData[owner].ascensionAt) continue;
+        if (escapeProjects[owner] > 0) continue;
         const lateEnergyRefuge = (substrateModes[owner] || engineeringModes[owner] > 0) && fateDecline === 0;
         const refugeFactor = substrateModes[owner] && engineeringModes[owner] > 0
           ? .28
@@ -874,10 +933,18 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
     const trends = new Int8Array(speciesCount);
     const active = new Uint8Array(speciesCount);
     const ascended = new Uint8Array(speciesCount);
+    const energyTiers = new Uint8Array(speciesCount);
     for (let speciesIndex = 0; speciesIndex < speciesCount; speciesIndex++) {
       trends[speciesIndex] = Math.sign(counts[speciesIndex] - lastCounts[speciesIndex]);
       active[speciesIndex] = seeded[speciesIndex] && counts[speciesIndex] > 0 ? 1 : 0;
       ascended[speciesIndex] = civilizationData[speciesIndex].highDimensional && time >= civilizationData[speciesIndex].ascensionAt ? 1 : 0;
+      energyTiers[speciesIndex] = !active[speciesIndex]
+        ? 0
+        : escapeProjects[speciesIndex] > 0 || technology[speciesIndex] >= .92 && substrateModes[speciesIndex]
+          ? 4
+          : blackHoleHabitats[speciesIndex] > 0
+            ? 3
+            : megastructures[speciesIndex] || engineeringModes[speciesIndex] > 0 ? 2 : 1;
       lastCounts[speciesIndex] = counts[speciesIndex];
     }
     simulation.snapshots.push({
@@ -911,6 +978,10 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       signalDelays: signalDelays.slice(),
       fermiAwareness: fermiAwareness.slice(),
       causalResponses: causalResponses.slice(),
+      diasporaModes: diasporaModes.slice(),
+      blackHoleHabitats: blackHoleHabitats.slice(),
+      escapeProjects: escapeProjects.slice(),
+      energyTiers,
       relations: relationStates.slice(),
       relationScores: relationScores.slice(),
       causes: lastCauses.slice()
@@ -1021,15 +1092,24 @@ export function deriveCivilizationRuntime(position, simulationState, civilizatio
     if (morphology) statuses.push(morphology);
     if (simulationState?.biosphereStages[index] >= 5) statuses.push('复杂生物圈');
     if (simulationState?.fermiAwareness[index]) statuses.push(`费米：${species.fermiScenario}`);
+    if (simulationState?.diasporaModes[index] === 1) statuses.push('星系桥殖民地');
+    if (simulationState?.diasporaModes[index] === 2) statuses.push('星系际流浪');
+    if (simulationState?.diasporaModes[index] < 0) statuses.push('跨星系失联');
+    if (simulationState?.blackHoleHabitats[index] > 0) statuses.push('黑洞能源');
+    if (simulationState?.blackHoleHabitats[index] < 0) statuses.push('黑洞设施失稳');
+    if (simulationState?.escapeProjects[index] > 0) statuses.push('母宇宙外存续');
+    if (simulationState?.escapeProjects[index] < 0) statuses.push('逃逸工程失败');
     return {
       alive,
       ascended,
+      escaped: simulationState?.escapeProjects[index] > 0,
       count: simulationState?.counts[index] || 0,
       trend: simulationState?.trends[index] || 0,
       technology: simulationState?.technology[index] || 0,
       visibility: simulationState?.visibility[index] || 0,
       cohesion: simulationState?.cohesion[index] || 0,
       machineAutonomy: simulationState?.machineAutonomy[index] || 0,
+      energyTier: simulationState?.energyTiers[index] || 0,
       statuses,
       eventState,
       friendlyNames,

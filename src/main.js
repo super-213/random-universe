@@ -2,7 +2,13 @@ import * as THREE from 'three';
 import './style.css';
 import { createSeededRandom } from './domain/random.js';
 import { createUniverse } from './domain/universe.js';
+import { galaxyTypes as galaxyTypeLabels } from './domain/catalog.js';
 import { getPointTexture } from './rendering/textures.js';
+import {
+  historyExportPayload,
+  renderCivilizationChronicle,
+  renderMultiverseComparison
+} from './ui/civilization-chronicle.js';
 import { updateUniverseData } from './ui/universe-data.js';
 
 let erasForUniverse;
@@ -137,6 +143,8 @@ let lastCivilizationSnapshot = null;
 let activeSpeciesCount = 0;
 let ascendedSpeciesCount = 0;
 let activeCivilizationRelationship = null;
+let selectedChronicleIndex = null;
+let observerSpeciesIndex = null;
 
 function loadExplorer() {
   if (explorerLoadPromise) return explorerLoadPromise;
@@ -1688,15 +1696,17 @@ function buildCosmicEvents(starPositions) {
 function renderCosmicEventMarkers() {
   const container = $('#cosmic-event-markers');
   container.innerHTML = '';
-  cosmicEvents.forEach((event) => {
+  cosmicEvents.forEach((event, eventIndex) => {
     const marker = document.createElement('button');
     marker.type = 'button';
+    marker.dataset.eventIndex = String(eventIndex);
     const confidenceClass = event.confidence === 'science-fiction'
       ? ' is-speculative'
       : event.confidence === 'astrophysical-model' || event.confidence === 'astrobiology-model'
         ? ' is-hypothesis'
         : '';
     marker.className = `event-marker${confidenceClass}`;
+    marker.classList.toggle('is-beyond-lightcone', !observerCanSeeEvent(event));
     marker.style.left = `${event.start / 10}%`;
     marker.style.setProperty('--event-color', event.color);
     const eventKind = event.confidence === 'science-fiction'
@@ -1842,7 +1852,7 @@ function buildCivilizations() {
     const origin = originType ? ` data-origin="${originType}"` : '';
     legend.insertAdjacentHTML(
       'beforeend',
-      `<div class="civilization-item" style="--species:${color}" data-species="${speciesIndex}"${origin}><i></i><span>${name}</span><b>未诞生</b></div>`
+      `<div class="civilization-item" role="button" tabindex="0" style="--species:${color}" data-species="${speciesIndex}"${origin}><i></i><span>${name}</span><b>未诞生</b></div>`
     );
   };
 
@@ -1911,26 +1921,66 @@ function buildCivilizations() {
   civilizationEvents = plan.events;
 }
 
+function syncUniverseUrl() {
+  const url = new URL(window.location.href);
+  url.searchParams.set('seed', universe.seed);
+  window.history.replaceState(null, '', url);
+}
 
+function neighboringSeed(seed, offset) {
+  const alphabet = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const raw = seed.replaceAll('-', '').padEnd(16, '0').slice(0, 16).split('');
+  const position = raw.length - 1 - (offset % 4);
+  const current = Math.max(0, alphabet.indexOf(raw[position]));
+  raw[position] = alphabet[(current + offset * 7) % alphabet.length];
+  return raw.join('').match(/.{1,4}/g).join('-');
+}
 
-function regenerate() {
-  if (mode !== 'generator') return;
-  universe = createUniverse();
+function installUniverse(nextUniverse, flash = true) {
+  observerSpeciesIndex = null;
+  selectedChronicleIndex = null;
+  closeCivilizationChronicle();
+  universe = nextUniverse;
+  syncUniverseUrl();
   updateUniverseData(universe);
   buildUniverseObject();
   galaxyBuiltForSeed = null;
   currentEras = null;
   cachedTimelineVisualContext = null;
   $('.universe-data').scrollTop = 0;
-  const flash = $('#creation-flash');
-  flash.classList.remove('is-flashing');
-  void flash.offsetWidth;
-  flash.classList.add('is-flashing');
+  if (flash) {
+    const creationFlash = $('#creation-flash');
+    creationFlash.classList.remove('is-flashing');
+    void creationFlash.offsetWidth;
+    creationFlash.classList.add('is-flashing');
+  }
   document.querySelectorAll('.metric').forEach((metric) => {
     metric.style.animation = 'none';
     void metric.offsetWidth;
     metric.style.animation = '';
   });
+}
+
+function toggleMultiverseLab(open = !$('#multiverse-lab').classList.contains('is-open')) {
+  if (mode !== 'generator') return;
+  const lab = $('#multiverse-lab');
+  lab.classList.toggle('is-open', open);
+  lab.setAttribute('aria-hidden', String(!open));
+  if (!open) return;
+  const candidates = [universe, ...[1, 2, 3].map((offset) => createUniverse(neighboringSeed(universe.seed, offset)))]
+    .map((candidate) => ({
+      ...candidate,
+      galaxyTypeLabel: galaxyTypeLabels[candidate.galaxyType]
+    }));
+  renderMultiverseComparison(candidates);
+}
+
+
+
+function regenerate() {
+  if (mode !== 'generator') return;
+  toggleMultiverseLab(false);
+  installUniverse(createUniverse());
 }
 
 async function enterUniverse() {
@@ -1972,14 +2022,17 @@ async function enterUniverse() {
   galaxyGroup.scale.setScalar(0.02);
   controls.enabled = true;
   controls.target.set(0, 0, 0);
-  cosmicPosition = 0;
+  const linkedPosition = Number(new URLSearchParams(window.location.search).get('t'));
+  cosmicPosition = Number.isFinite(linkedPosition)
+    ? THREE.MathUtils.clamp(linkedPosition, 0, 1000)
+    : 0;
   $('#cosmic-timeline').value = cosmicPosition;
   updateCosmicTime(cosmicPosition, true);
   restartTimelineScaleIntro();
-  timePlaying = true;
+  timePlaying = cosmicPosition === 0;
   lastTimelineUpdateAt = 0;
-  $('#toggle-time').textContent = 'Ⅱ';
-  $('#toggle-time').setAttribute('aria-label', '暂停时间');
+  $('#toggle-time').textContent = timePlaying ? 'Ⅱ' : '▶';
+  $('#toggle-time').setAttribute('aria-label', timePlaying ? '暂停时间' : '播放时间');
   transition = { type: 'enter', start: performance.now(), duration: prefersReducedMotion ? 1 : 2100 };
 }
 
@@ -1990,6 +2043,8 @@ function leaveUniverse() {
   $('#explorer-view').classList.remove('is-active');
   $('#generator-view').classList.add('is-active');
   $('#star-inspector').classList.remove('is-open');
+  observerSpeciesIndex = null;
+  closeCivilizationChronicle();
   $('#civilization-panel').classList.remove('is-expanded');
   $('#toggle-civilizations').setAttribute('aria-expanded', 'false');
   $('#mode-label').textContent = '创世引擎在线';
@@ -2090,6 +2145,69 @@ function toggleCivilizations() {
   }
 }
 
+function openCivilizationChronicle(speciesIndex) {
+  if (!civilizationData[speciesIndex]) return;
+  selectedChronicleIndex = speciesIndex;
+  $('#star-inspector').classList.remove('is-open');
+  document.body.classList.add('is-chronicle-open');
+  renderCivilizationChronicle({
+    speciesIndex,
+    civilizationData,
+    runtimeState: civilizationRuntimeState,
+    cosmicEvents,
+    universe,
+    timeLabel: cosmicTimeLabel
+  });
+  const observing = observerSpeciesIndex === speciesIndex;
+  $('#observe-civilization').classList.toggle('is-active', observing);
+  $('#observe-civilization').textContent = observing ? '退出观察者模式' : '以此文明观察';
+}
+
+function closeCivilizationChronicle() {
+  selectedChronicleIndex = null;
+  document.body.classList.remove('is-chronicle-open');
+  $('#civilization-chronicle').classList.remove('is-open');
+}
+
+function observerDelayForEvent(event) {
+  if (observerSpeciesIndex === null || event.targetSpeciesIndex === null) return 0;
+  if (event.targetSpeciesIndex === observerSpeciesIndex) return 0;
+  const observerNode = civilizationData[observerSpeciesIndex]?.homeNodeIndex;
+  const eventNode = event.targetNodeIndex;
+  if (observerNode === undefined || eventNode === undefined) return 0;
+  const positions = civilizationSimulation.habitatPositions;
+  const observerOffset = observerNode * 3;
+  const eventOffset = eventNode * 3;
+  const distance = Math.hypot(
+    positions[observerOffset] - positions[eventOffset],
+    positions[observerOffset + 1] - positions[eventOffset + 1],
+    positions[observerOffset + 2] - positions[eventOffset + 2]
+  );
+  return distance / Math.max(.38, universe.speed) * 3.2;
+}
+
+function observerCanSeeEvent(event, position = cosmicPosition) {
+  return observerSpeciesIndex === null || position >= event.impactAt + observerDelayForEvent(event);
+}
+
+function updateObserverMarkers() {
+  document.querySelectorAll('.event-marker[data-event-index]').forEach((marker) => {
+    const event = cosmicEvents[Number(marker.dataset.eventIndex)];
+    marker.classList.toggle('is-beyond-lightcone', !observerCanSeeEvent(event));
+  });
+}
+
+function toggleObserverMode() {
+  if (selectedChronicleIndex === null) return;
+  observerSpeciesIndex = observerSpeciesIndex === selectedChronicleIndex ? null : selectedChronicleIndex;
+  $('#mode-label').textContent = observerSpeciesIndex === null
+    ? '宇宙观测模式'
+    : `${civilizationData[observerSpeciesIndex].name} · 有限光锥`;
+  openCivilizationChronicle(selectedChronicleIndex);
+  updateObserverMarkers();
+  updateCosmicTime(cosmicPosition, true);
+}
+
 
 
 
@@ -2122,7 +2240,14 @@ function applyCivilizationVisuals(runtimeState) {
     const group = civilizationGroups[index];
     const species = civilizationData[index];
     group.visible = state.alive && state.count > 0;
-    group.material.opacity = (state.ascended ? .88 : .98) * (1 - fateFade);
+    let observerOpacity = 1;
+    if (observerSpeciesIndex !== null && index !== observerSpeciesIndex) {
+      const observerState = runtimeState[observerSpeciesIndex];
+      const known = observerState?.friendlyNames.includes(species.name)
+        || observerState?.conflictNames.includes(species.name);
+      observerOpacity = known ? .62 : .12;
+    }
+    group.material.opacity = (state.ascended ? .88 : .98) * (1 - fateFade) * observerOpacity;
     group.material.size = state.ascended ? .31 : .24;
     group.material.color.setHex(state.ascended ? 0xe9d7ff : species.color);
   });
@@ -2168,6 +2293,8 @@ function updateCosmicTime(value, force = false) {
       civilizationRuntimeState,
       civilizationData.length
     );
+    if (selectedChronicleIndex !== null) openCivilizationChronicle(selectedChronicleIndex);
+    if (observerSpeciesIndex !== null) updateObserverMarkers();
   }
   syncCivilizationHosts({
     clickableStars,
@@ -2180,11 +2307,13 @@ function updateCosmicTime(value, force = false) {
 
   applyCivilizationVisuals(civilizationRuntimeState);
   const activeEvent = updateCosmicEvents(cosmicPosition, timelineVisualContext());
+  const observedEvent = activeEvent && observerCanSeeEvent(activeEvent) ? activeEvent : null;
+  if (activeEvent && !observedEvent) activeEvent.group.visible = false;
   const narrative = selectTimelineNarrative({
     position: cosmicPosition,
     label: timelineState.label,
     universe,
-    activeEvent,
+    activeEvent: observedEvent,
     activeRelationship: activeCivilizationRelationship,
     ascendedSpecies: ascendedSpeciesCount,
     activeSpecies: activeSpeciesCount,
@@ -2278,7 +2407,68 @@ window.addEventListener('resize', () => {
 canvas.addEventListener('click', inspectStar);
 $('#regenerate-top').addEventListener('click', regenerate);
 $('#enter-universe').addEventListener('click', enterUniverse);
+$('#compare-universes').addEventListener('click', () => toggleMultiverseLab());
+$('#close-multiverse').addEventListener('click', () => toggleMultiverseLab(false));
+$('#multiverse-list').addEventListener('click', (event) => {
+  const candidate = event.target.closest('[data-seed]');
+  if (!candidate || mode !== 'generator') return;
+  toggleMultiverseLab(false);
+  installUniverse(createUniverse(candidate.dataset.seed));
+});
 $('#close-inspector').addEventListener('click', () => $('#star-inspector').classList.remove('is-open'));
+$('#close-chronicle').addEventListener('click', closeCivilizationChronicle);
+$('#civilization-legend').addEventListener('click', (event) => {
+  const row = event.target.closest('[data-species]');
+  if (row) openCivilizationChronicle(Number(row.dataset.species));
+});
+$('#civilization-legend').addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  const row = event.target.closest('[data-species]');
+  if (!row) return;
+  event.preventDefault();
+  openCivilizationChronicle(Number(row.dataset.species));
+});
+$('#chronicle-events').addEventListener('click', (event) => {
+  const item = event.target.closest('[data-event-id]');
+  if (!item) return;
+  const cosmicEvent = cosmicEvents.find((entry) => entry.id === item.dataset.eventId);
+  if (cosmicEvent) updateCosmicTime(cosmicEvent.start + cosmicEvent.duration * .56, true);
+});
+$('#observe-civilization').addEventListener('click', toggleObserverMode);
+$('#bookmark-cosmic-time').addEventListener('click', () => {
+  const key = 'random-universe-bookmarks';
+  let bookmarks = [];
+  try {
+    const stored = JSON.parse(localStorage.getItem(key) || '[]');
+    if (Array.isArray(stored)) bookmarks = stored;
+  } catch {
+    bookmarks = [];
+  }
+  bookmarks.unshift({ seed: universe.seed, position: Number(cosmicPosition.toFixed(3)), savedAt: new Date().toISOString() });
+  localStorage.setItem(key, JSON.stringify(bookmarks.slice(0, 20)));
+  $('#chronicle-status').textContent = '当前宇宙时刻已保存在本机';
+});
+$('#copy-universe-link').addEventListener('click', async () => {
+  const url = new URL(window.location.href);
+  url.searchParams.set('seed', universe.seed);
+  url.searchParams.set('t', cosmicPosition.toFixed(3));
+  try {
+    await navigator.clipboard.writeText(url.toString());
+    $('#chronicle-status').textContent = '可回放链接已复制';
+  } catch {
+    $('#chronicle-status').textContent = '浏览器未允许写入剪贴板';
+  }
+});
+$('#export-universe-history').addEventListener('click', () => {
+  const payload = historyExportPayload({ universe, civilizationData, cosmicEvents });
+  const blobUrl = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }));
+  const link = document.createElement('a');
+  link.href = blobUrl;
+  link.download = `random-universe-${universe.seed}.json`;
+  link.click();
+  URL.revokeObjectURL(blobUrl);
+  $('#chronicle-status').textContent = '文明历史已导出';
+});
 $('#toggle-civilizations').addEventListener('click', toggleCivilizations);
 $('#toggle-time').addEventListener('click', () => {
   if (cosmicPosition >= 1000) updateCosmicTime(0, true);
@@ -2331,7 +2521,15 @@ document.querySelectorAll('.speed-controls button').forEach((button) => {
 });
 document.addEventListener('keydown', (event) => {
   if (event.key.toLowerCase() === 'r' && mode === 'generator') regenerate();
+  if (event.key === 'Escape' && mode === 'generator' && $('#multiverse-lab').classList.contains('is-open')) {
+    toggleMultiverseLab(false);
+    return;
+  }
   if (event.key === 'Escape' && mode === 'explorer') {
+    if ($('#civilization-chronicle').classList.contains('is-open')) {
+      closeCivilizationChronicle();
+      return;
+    }
     const civilizationPanel = $('#civilization-panel');
     if (civilizationPanel.classList.contains('is-expanded')) {
       civilizationPanel.classList.remove('is-expanded');
@@ -2342,7 +2540,9 @@ document.addEventListener('keydown', (event) => {
   }
 });
 
-universe = createUniverse();
+const requestedSeed = new URLSearchParams(window.location.search).get('seed');
+universe = createUniverse(requestedSeed || undefined);
+syncUniverseUrl();
 updateUniverseData(universe);
 buildUniverseObject();
 animate(performance.now());

@@ -202,6 +202,33 @@ const eventCatalog = [
     color: '#d6b4ff',
     visual: 'precursor-ruins',
     label: '宇宙考古发现'
+  },
+  {
+    type: 'intergalactic-diaspora',
+    probability: .46,
+    duration: 44,
+    offset: [126, 204],
+    color: '#93baff',
+    visual: 'relativistic-divergence',
+    label: '跨星系迁徙'
+  },
+  {
+    type: 'black-hole-civilization',
+    probability: .42,
+    duration: 42,
+    offset: [118, 198],
+    color: '#ffc978',
+    visual: 'stellar-engine',
+    label: '黑洞能源文明'
+  },
+  {
+    type: 'universe-escape-project',
+    probability: .3,
+    duration: 48,
+    offset: [168, 248],
+    color: '#e4c0ff',
+    visual: 'light-cone',
+    label: '母宇宙逃逸工程'
   }
 ];
 
@@ -357,6 +384,15 @@ function eventMessage(event, target, secondary, child) {
   if (event.type === 'galactic-aftermath') {
     return `伴星系近掠继续演化为${event.galacticStage}，改变星系的恒星形成与轨道环境`;
   }
+  if (event.type === 'intergalactic-diaspora') {
+    return `${target.name} 将航行范围推进到星系引力边界之外，尝试建立${event.diasporaMode}`;
+  }
+  if (event.type === 'black-hole-civilization') {
+    return `${target.name} 围绕黑洞建设${event.blackHoleMethod}能源网络`;
+  }
+  if (event.type === 'universe-escape-project') {
+    return `${target.name} 尝试通过${event.escapeMode}摆脱母宇宙的终局约束`;
+  }
   return event.encounterMode === 'agn-feedback'
     ? '伴星系近掠扰动核区气体，活动星系核反馈开始压制恒星形成'
     : '伴星系近掠压缩气体云，星系尺度的恒星形成潮被触发';
@@ -372,10 +408,12 @@ export function createCivilizationEventPlan({ universe, civilizationData, habita
   const eventBoundary = Math.min(760, stellarEndTimelinePosition(universe) - 18, fateBoundary);
 
   eventCatalog.forEach((definition, catalogIndex) => {
+    if (definition.type === 'black-hole-civilization' && !universe.hasCentralBlackHole) return;
     if (random() > definition.probability) return;
     const targetEntry = chooseSpecies(random, civilizationData, (species) => (
       (definition.type !== 'stellar-megastructure' || species.technology >= .24)
       && (definition.type !== 'stellar-engineering' || species.technology >= .28)
+      && (definition.type !== 'universe-escape-project' || species.technology >= .3)
     ));
     if (!targetEntry) return;
     const target = targetEntry.species;
@@ -452,6 +490,15 @@ export function createCivilizationEventPlan({ universe, civilizationData, habita
       event.artifactType = ['巨构残骸', '休眠探针', '星图档案', '污染隔离区'][Math.floor(random() * 4)];
       const roll = random() + target.technology * .3 - target.aggression * .12;
       event.artifactOutcome = roll > .78 ? '继承' : roll > .38 ? '误读' : '唤醒';
+    } else if (definition.type === 'intergalactic-diaspora') {
+      event.diasporaMode = random() < .54 ? '星系桥殖民地' : '星系际流浪社会';
+      event.diasporaSuccess = random() < .38 + target.resilience * .3 + target.technology * .22;
+    } else if (definition.type === 'black-hole-civilization') {
+      event.blackHoleMethod = ['吸积盘采能', '旋转能提取', '霍金辐射收集'][Math.floor(random() * 3)];
+      event.blackHoleStable = random() < .42 + target.technology * .34 + target.resilience * .18;
+    } else if (definition.type === 'universe-escape-project') {
+      event.escapeMode = ['人造婴儿宇宙', '真空工程', '时空捷径', '因果闭环计算'][Math.floor(random() * 4)];
+      event.escapeSuccess = random() < .12 + target.technology * .42 + target.cohesion * .16;
     } else if (definition.type === 'civilization-fracture'
       || definition.type === 'uplift-experiment'
       || definition.type === 'relativistic-divergence') {
@@ -561,15 +608,24 @@ export function createCivilizationEventPlan({ universe, civilizationData, habita
   const signalEvent = events.find((event) => event.type === 'first-signal');
   if (signalEvent) {
     const ghostTargetIndex = signalEvent.secondarySpeciesIndex ?? signalEvent.targetSpeciesIndex;
+    const senderOffset = civilizationData[signalEvent.targetSpeciesIndex].homeNodeIndex * 3;
+    const receiverOffset = civilizationData[ghostTargetIndex].homeNodeIndex * 3;
+    const signalDistance = Math.hypot(
+      habitatPositions[senderOffset] - habitatPositions[receiverOffset],
+      habitatPositions[senderOffset + 1] - habitatPositions[receiverOffset + 1],
+      habitatPositions[senderOffset + 2] - habitatPositions[receiverOffset + 2]
+    );
+    const lightConeDelay = Math.round(clamp(signalDistance / Math.max(.38, universe.speed) * 3.2, 12, 78));
     const ghostSignal = appendDerivedEvent({
       type: 'ghost-signal',
       label: '光锥中的幽灵信号',
       visual: 'light-cone',
       color: '#8adfff',
-      start: signalEvent.impactAt + randomBetween(random, 18, 34),
+      start: signalEvent.impactAt + lightConeDelay,
       duration: 28,
       targetSpeciesIndex: ghostTargetIndex,
-      delayUnits: Math.round(randomBetween(random, 22, 68)),
+      delayUnits: lightConeDelay,
+      signalDistance,
       sourceEventId: signalEvent.id,
       causalRootId: signalEvent.id
     });
