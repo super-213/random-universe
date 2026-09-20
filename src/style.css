@@ -175,7 +175,7 @@ h1 { margin: 0; font-family: var(--display-font); font-weight: 400; line-height:
 h1 span { display: block; font-size: clamp(40px, 6vw, 92px); }
 h1 strong {
   display: block;
-  margin-left: 0.7em;
+  margin: clamp(14px, 1.3vw, 22px) 0 0 0.7em;
   color: transparent;
   -webkit-text-stroke: 1px rgba(241, 238, 231, 0.65);
   font: 400 clamp(28px, 2.75vw, 46px)/0.95 "Space Mono", monospace;
@@ -600,7 +600,7 @@ h1 strong {
 
   .hero-copy { top: 13vh; left: 20px; }
   h1 span { font-size: 42px; }
-  h1 strong { margin: 8px 0 0; font-size: clamp(15px, 4.5vw, 23px); }
+  h1 strong { margin: 12px 0 0; font-size: clamp(15px, 4.5vw, 23px); }
   .orbit-label { display: none; }
 
   .universe-data {

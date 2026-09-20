@@ -449,4 +449,3 @@ random-universe/
 ```
 
 项目内置得意黑（Smiley Sans）字体，许可证位于 [`public/fonts/SmileySans-OFL.txt`](public/fonts/SmileySans-OFL.txt)。README 截图来自本项目实际运行界面。
-
