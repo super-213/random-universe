@@ -4,6 +4,11 @@ import { cosmicTimeLabel, cosmicYearsToTimelinePosition } from '../src/domain/co
 import { createUniverse } from '../src/domain/universe.js';
 import { createSeededRandom } from '../src/domain/random.js';
 import { createStellarGravityState } from '../src/simulation/black-hole-gravity.js';
+import {
+  blackHoleEvaporationExponent,
+  blackHoleMassFromSimulation,
+  selectBlackHoleProgenitors
+} from '../src/simulation/compact-objects.js';
 import { expandEventSchedule } from '../src/simulation/event-occurrence.js';
 import { blackHoleRecoilKms, createTransientSimulation } from '../src/simulation/transient-events.js';
 
@@ -118,4 +123,43 @@ test('outer galactic potential approaches a flat rotation curve', () => {
   const outerVelocity = dynamics.orbitRates[1] * 16;
   assert.ok(outerVelocity / innerVelocity > .75);
   assert.ok(outerVelocity / innerVelocity < 1.4);
+});
+
+test('black-hole progenitors inherit real stellar death times', () => {
+  const deathThresholds = new Float32Array([640, 510, 590, 530, 620, 550, 570, 610]);
+  const selected = selectBlackHoleProgenitors(
+    deathThresholds,
+    3,
+    createSeededRandom('BHPROGENITOR0001', 17)
+  );
+  assert.equal(selected.length, 3);
+  assert.equal(new Set(selected).size, selected.length);
+  assert.ok(selected.every((index) => deathThresholds[index] <= 570));
+});
+
+test('only simulations that form black holes enter the long-lived population', () => {
+  assert.equal(blackHoleMassFromSimulation({
+    model: 'failed-collapse',
+    remnantType: 'black-hole',
+    remnantMass: 18
+  }), 18);
+  assert.equal(blackHoleMassFromSimulation({
+    model: 'core-collapse',
+    remnantType: 'neutron-star',
+    remnantMass: 1.6
+  }), null);
+  assert.equal(blackHoleMassFromSimulation({
+    model: 'quasar-duty-cycle',
+    blackHoleMass: 1e8
+  }), null);
+});
+
+test('more massive black holes evaporate later without exceeding the universe ceiling', () => {
+  const stellar = blackHoleEvaporationExponent(10, 100);
+  const intermediate = blackHoleEvaporationExponent(1e4, 100);
+  const central = blackHoleEvaporationExponent(1e9, 100);
+  assert.equal(stellar, 67);
+  assert.ok(intermediate > stellar);
+  assert.ok(central > intermediate);
+  assert.ok(central <= 100);
 });

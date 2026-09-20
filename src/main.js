@@ -10,6 +10,11 @@ import { animateBlackHoleVisual, createBlackHoleVisual } from './rendering/black
 import { applyCivilizationSnapshot, syncCivilizationHosts } from './rendering/civilizations.js';
 import { animateCosmicEvents, updateCosmicEvents, updateEpochVisuals } from './rendering/timeline-visuals.js';
 import { createMergerGravityField, createStellarGravityState } from './simulation/black-hole-gravity.js';
+import {
+  blackHoleEvaporationExponent,
+  blackHoleMassFromSimulation,
+  selectBlackHoleProgenitors
+} from './simulation/compact-objects.js';
 import { buildCivilizationSimulation, civilizationSnapshotAt, deriveCivilizationRuntime, findDominantRelationship } from './simulation/civilization.js';
 import { expandEventSchedule } from './simulation/event-occurrence.js';
 import {
@@ -104,6 +109,82 @@ let timePlaying = false;
 let timeSpeed = 1;
 let lastFrame = performance.now();
 let cosmicEvents = [];
+
+function addBlackHoleRemnant({
+  random,
+  massSolar,
+  birthAt,
+  sourceIndex = null,
+  isCentral = false,
+  originEventId = null
+}) {
+  const massScale = THREE.MathUtils.clamp((Math.log10(massSolar) - .6) / 8.4, 0, 1);
+  const baseScale = isCentral ? .9 : .3 + massScale * .34;
+  const hole = createBlackHoleVisual({
+    color: isCentral ? 0xffc996 : (random() > .35 ? 0xffb77c : 0xb9d7ff),
+    tilt: randomBetween(random, -.38, .38),
+    phase: random() * Math.PI * 2,
+    visualScale: isCentral ? 1.14 : 1,
+    intensity: 0
+  });
+  const hawkingGlow = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: makeGlowTexture(),
+    color: 0x6f9fcc,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+  }));
+  hawkingGlow.scale.set(1.2, 1.2, 1);
+  const finalPulse = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: makeGlowTexture(),
+    color: 0xe8f4ff,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+  }));
+  finalPulse.scale.set(.2, .2, 1);
+  hole.add(hawkingGlow, finalPulse);
+
+  if (isCentral) {
+    hole.position.set(0, 0, 0);
+  } else if (Number.isInteger(sourceIndex)) {
+    const offset = sourceIndex * 3;
+    hole.position.set(
+      originalGalaxyPositions[offset],
+      originalGalaxyPositions[offset + 1],
+      originalGalaxyPositions[offset + 2]
+    );
+  }
+
+  const evaporationExponent = blackHoleEvaporationExponent(
+    massSolar,
+    universe.blackHoleEvaporationExponent
+  );
+  hole.scale.setScalar(baseScale);
+  hole.visible = false;
+  Object.assign(hole.userData, {
+    baseScale,
+    birthAt,
+    evaporationAt: cosmicYearsToTimelinePosition(10 ** evaporationExponent, universe),
+    evaporationExponent,
+    massSolar,
+    sourceIndex,
+    isCentral,
+    originEventId,
+    accretionStrength: isCentral
+      ? (universe.activeNucleus ? 1.08 : .56)
+      : .68 + massScale * .18,
+    hawkingGlow,
+    finalPulse,
+    spinDirection: random() < .5 ? -1 : 1
+  });
+  blackHoleRemnants.push(hole);
+  remnantGroup.add(hole);
+  return hole;
+}
+
 function disposeGroup(group) {
   group.traverse((object) => {
     if (object.geometry) object.geometry.dispose();
@@ -482,41 +563,30 @@ function buildEpochEffects(starPositions) {
   remnantGroup.add(stellarRemnants);
   remnantGroup.rotation.copy(galaxyGroup.rotation);
 
-  const blackHoleCount = universe.hasCentralBlackHole ? 9 : 6;
-  for (let i = 0; i < blackHoleCount; i++) {
-    const isCentral = i === 0 && universe.hasCentralBlackHole;
-    const baseScale = isCentral ? .9 : randomBetween(random, .3, .5);
-    const hole = createBlackHoleVisual({
-      color: isCentral ? 0xffc996 : (random() > .35 ? 0xffb77c : 0xb9d7ff),
-      tilt: randomBetween(random, -.38, .38),
-      phase: random() * Math.PI * 2,
-      visualScale: isCentral ? 1.14 : 1,
-      intensity: 0
+  if (universe.hasCentralBlackHole) {
+    const firstStarsYears = universe.cosmicMilestones.firstStarsYears;
+    const longestLivedMass = 10 ** (1 + (universe.blackHoleEvaporationExponent - 67) / 3);
+    addBlackHoleRemnant({
+      random,
+      massSolar: longestLivedMass,
+      birthAt: cosmicYearsToTimelinePosition(firstStarsYears * 1.35, universe),
+      isCentral: true
     });
-    const hawkingGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeGlowTexture(), color: 0x6f9fcc, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
-    hawkingGlow.scale.set(1.2, 1.2, 1);
-    const finalPulse = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeGlowTexture(), color: 0xe8f4ff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
-    finalPulse.scale.set(.2, .2, 1);
-    hole.add(hawkingGlow, finalPulse);
-    if (isCentral) {
-      hole.position.set(0, 0, 0);
-    } else {
-      const source = Math.floor(random() * starPositions.length / 3) * 3;
-      hole.position.set(starPositions[source], starPositions[source + 1], starPositions[source + 2]);
-    }
-    hole.scale.setScalar(baseScale);
-    hole.visible = false;
-    Object.assign(hole.userData, {
-      baseScale,
-      birthAt: 825 + random() * 34,
-      evaporationAt: isCentral ? 949 : 880 + Math.pow(random(), .46) * 64,
-      hawkingGlow,
-      finalPulse,
-      spinDirection: random() < .5 ? -1 : 1
-    });
-    blackHoleRemnants.push(hole);
-    remnantGroup.add(hole);
   }
+
+  const sampledProgenitors = selectBlackHoleProgenitors(
+    starDeathThresholds,
+    universe.hasCentralBlackHole ? 4 : 5,
+    random
+  );
+  sampledProgenitors.forEach((sourceIndex) => {
+    addBlackHoleRemnant({
+      random,
+      massSolar: randomBetween(random, 5, 48),
+      birthAt: starDeathThresholds[sourceIndex],
+      sourceIndex
+    });
+  });
 
   const photonCount = 260;
   const photonPositions = new Float32Array(photonCount * 3);
@@ -1301,6 +1371,29 @@ function buildCosmicEvents(starPositions) {
       gravityField,
       index
     );
+    const id = `${data.type}-${index}-${universe.seed}`;
+    const blackHoleMass = blackHoleMassFromSimulation(data.simulation);
+    if (blackHoleMass) {
+      // Hand the compact remnant from the short-lived event visual to the
+      // long-lived population. Scrubbing now reconstructs the same object on
+      // both sides of the event instead of inventing it in the black-hole era.
+      data.persistUntil = data.start + data.duration;
+      data.persistenceFadeDuration = 8;
+      if (data.simulation.model !== 'black-hole-binary') {
+        starDeathThresholds[location.index] = Math.min(
+          starDeathThresholds[location.index],
+          consequences.impactAt
+        );
+      }
+      addBlackHoleRemnant({
+        random,
+        massSolar: blackHoleMass,
+        birthAt: consequences.impactAt,
+        sourceIndex: location.index,
+        originEventId: id
+      });
+    }
+
     cosmicEvents.push({
       ...data,
       ...consequences,
@@ -1312,7 +1405,7 @@ function buildCosmicEvents(starPositions) {
       transientGravityField,
       group,
       sourceIndex: location.index,
-      id: `${data.type}-${index}-${universe.seed}`,
+      id,
       label: data.label
     });
   });

@@ -245,9 +245,12 @@ export function updateEpochVisuals(position, context) {
     agnJet.material.opacity = activePhase * .18;
   }
 
-  const allowsDeepFuture = !finiteOutcome || fate.outcomeExponent > 38;
-  const remnantsVisible = allowsDeepFuture && position > stellarEnd - 80 && position < 930;
-  const blackHolesVisible = allowsDeepFuture && position > 825 && position < 960;
+  const outcomeVisibility = 1 - fatePhase;
+  const remnantsVisible = outcomeVisibility > .001 && position > stellarEnd - 80 && position < 930;
+  const blackHolesVisible = outcomeVisibility > .001 && blackHoleRemnants.some((hole) => (
+    position >= hole.userData.birthAt
+      && position <= hole.userData.evaporationAt + 7.5
+  ));
   remnantGroup.visible = (remnantsVisible || blackHolesVisible) && mode === 'explorer';
   if (remnantsVisible && stellarRemnants) {
     const remnantBirth = THREE.MathUtils.smoothstep(position, stellarEnd - 80, stellarEnd + 15);
@@ -322,19 +325,38 @@ export function updateEpochVisuals(position, context) {
 
   blackHoleRemnants.forEach((hole) => {
     const data = hole.userData;
+    if (!data.isCentral && Number.isInteger(data.sourceIndex)) {
+      const sourceOffset = data.sourceIndex * 3;
+      hole.position.set(
+        positionArray[sourceOffset],
+        positionArray[sourceOffset + 1],
+        positionArray[sourceOffset + 2]
+      );
+    }
     const born = THREE.MathUtils.smoothstep(position, data.birthAt, data.birthAt + 7);
     const remaining = 1 - THREE.MathUtils.smoothstep(position, data.evaporationAt - 24, data.evaporationAt);
     const lateEvaporation = THREE.MathUtils.smoothstep(position, data.evaporationAt - 15, data.evaporationAt);
+    const isolated = THREE.MathUtils.smoothstep(position, Math.max(data.birthAt + 12, stellarEnd - 50), 825);
+    const hawkingEra = THREE.MathUtils.smoothstep(position, 790, 850);
     const pulseWindow = 7.5;
     const pulseDistance = Math.abs(position - data.evaporationAt);
     const pulse = pulseDistance < pulseWindow ? Math.sin((1 - pulseDistance / pulseWindow) * Math.PI / 2) : 0;
-    hole.visible = allowsDeepFuture && mode === 'explorer' && position >= data.birthAt && position <= data.evaporationAt + pulseWindow;
+    hole.visible = outcomeVisibility > .001
+      && mode === 'explorer'
+      && position >= data.birthAt
+      && position <= data.evaporationAt + pulseWindow;
     const massScale = data.baseScale * (.18 + .82 * Math.cbrt(Math.max(0, remaining)));
     hole.scale.setScalar(Math.max(.035, massScale));
-    const accretionIntensity = born * (.78 + lateEvaporation * .22) * Math.sqrt(Math.max(0, remaining));
-    setBlackHoleIntensity(hole, accretionIntensity);
-    data.hawkingGlow.material.opacity = born * (.07 + lateEvaporation * .62) * Math.sqrt(Math.max(0, remaining));
-    data.finalPulse.material.opacity = pulse * .84;
+    const accretionIntensity = born
+      * THREE.MathUtils.lerp(data.accretionStrength, .24, isolated)
+      * Math.sqrt(Math.max(0, remaining));
+    setBlackHoleIntensity(hole, accretionIntensity, outcomeVisibility);
+    data.hawkingGlow.material.opacity = born
+      * hawkingEra
+      * (.06 + lateEvaporation * .62)
+      * Math.sqrt(Math.max(0, remaining))
+      * outcomeVisibility;
+    data.finalPulse.material.opacity = pulse * .84 * outcomeVisibility;
     const pulseScale = (.22 + pulse * 2.1) / Math.max(.035, massScale);
     data.finalPulse.scale.set(pulseScale, pulseScale, 1);
   });
