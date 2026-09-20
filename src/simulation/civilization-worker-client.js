@@ -7,6 +7,7 @@ function simulationPayload({ universe, civilizationData, civilizationSimulation,
       ...species,
       home: undefined,
       homeOffset: undefined,
+      hostNodeIndices: undefined,
       hostRemnantIndices: undefined,
       hostOffsets: undefined
     })),

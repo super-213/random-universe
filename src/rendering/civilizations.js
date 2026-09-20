@@ -11,6 +11,7 @@ export function applyCivilizationSnapshot(snapshot, {
   snapshot.owners.forEach((owner, node) => {
     if (owner < 0) return;
     const target = writeCounts[owner]++;
+    civilizationData[owner].hostNodeIndices[target] = node;
     civilizationData[owner].hostRemnantIndices[target] = civilizationSimulation.habitatRemnantIndices[node];
   });
   civilizationData.forEach((species, index) => {

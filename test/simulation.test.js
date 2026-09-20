@@ -45,7 +45,15 @@ import {
   zoomTimelineViewport
 } from '../src/ui/timeline-layout.js';
 import { civilizationObservation } from '../src/simulation/observation.js';
-import { shuttleTrafficAt } from '../src/simulation/intergalactic-travel.js';
+import {
+  routeTrafficProfile,
+  routeTrafficSpeedForIdentity,
+  shuttleTrafficAt,
+  stableRouteAssignments,
+  visibleShipCountForRoutes
+} from '../src/simulation/intergalactic-travel.js';
+import { obstacleAvoidingPathPoints } from '../src/simulation/ship-navigation.js';
+import { applyCivilizationSnapshot } from '../src/rendering/civilizations.js';
 import {
   formatTimeSpeed,
   snapSpeedExponent,
@@ -81,6 +89,111 @@ test('intergalactic shuttle traffic eases between both ends of a route', () => {
   assert.ok(Math.abs(returnMidpoint.progress - .5) < Number.EPSILON);
   assert.equal(returnMidpoint.direction, -1);
   assert.deepEqual(shuttleTrafficAt(2, 0, 1), { progress: 0, direction: 1 });
+});
+
+test('ship traffic is limited to one visible ship per five routes', () => {
+  assert.deepEqual(routeTrafficProfile({ established: false }), {
+    cyclesPerTimelineUnit: 0
+  });
+
+  const quietRoute = routeTrafficProfile({ established: true });
+  const busyRoute = routeTrafficProfile({
+    established: true,
+    throughput: 1,
+    population: 10,
+    stability: 1,
+    technology: 1
+  });
+  assert.ok(busyRoute.cyclesPerTimelineUnit > quietRoute.cyclesPerTimelineUnit);
+  assert.equal(
+    routeTrafficSpeedForIdentity(4, 12),
+    routeTrafficSpeedForIdentity(4, 12)
+  );
+  assert.notEqual(
+    routeTrafficSpeedForIdentity(4, 12),
+    routeTrafficSpeedForIdentity(4, 13)
+  );
+  assert.ok(routeTrafficSpeedForIdentity(4, 12) >= .006);
+  assert.ok(routeTrafficSpeedForIdentity(4, 12) <= .014);
+  assert.equal(visibleShipCountForRoutes(0), 0);
+  assert.equal(visibleShipCountForRoutes(1), 1);
+  assert.equal(visibleShipCountForRoutes(5), 1);
+  assert.equal(visibleShipCountForRoutes(6), 2);
+  assert.equal(visibleShipCountForRoutes(10), 2);
+  assert.equal(visibleShipCountForRoutes(12), 3);
+});
+
+test('ship traffic keeps stable route assignments as routes change', () => {
+  const initialRoutes = Array.from({ length: 12 }, (_, index) => `route-${index}`);
+  const initialAssignments = stableRouteAssignments(initialRoutes, [], 5);
+  assert.deepEqual(initialAssignments, ['route-0', 'route-5', 'route-10']);
+
+  const reorderedRoutes = [
+    'route-new',
+    ...initialRoutes.filter((key) => key !== 'route-3')
+  ];
+  assert.deepEqual(
+    stableRouteAssignments(reorderedRoutes, initialAssignments, 5),
+    initialAssignments
+  );
+
+  const removedAssignedRoute = reorderedRoutes.filter((key) => key !== 'route-5');
+  const replacementAssignments = stableRouteAssignments(
+    removedAssignedRoute,
+    initialAssignments,
+    5
+  );
+  assert.deepEqual(replacementAssignments.slice(0, 2), ['route-0', 'route-10']);
+  assert.equal(replacementAssignments.length, 3);
+  assert.ok(removedAssignedRoute.includes(replacementAssignments[2]));
+});
+
+test('civilization rendering preserves permanent node identities for ship routes', () => {
+  const civilizationData = Array.from({ length: 2 }, () => ({
+    displayCount: 0,
+    hostNodeIndices: new Uint16Array(4),
+    hostRemnantIndices: new Uint16Array(4)
+  }));
+  const drawRanges = [];
+  const civilizationGroups = Array.from({ length: 2 }, (_, index) => ({
+    geometry: {
+      setDrawRange(start, count) {
+        drawRanges[index] = [start, count];
+      }
+    }
+  }));
+
+  applyCivilizationSnapshot(
+    { owners: new Int16Array([0, -1, 1, 0]) },
+    {
+      civilizationSimulation: {
+        habitatRemnantIndices: new Uint16Array([10, 11, 12, 13])
+      },
+      civilizationData,
+      civilizationGroups
+    }
+  );
+
+  assert.deepEqual([...civilizationData[0].hostNodeIndices.slice(0, 2)], [0, 3]);
+  assert.deepEqual([...civilizationData[0].hostRemnantIndices.slice(0, 2)], [10, 13]);
+  assert.deepEqual([...civilizationData[1].hostNodeIndices.slice(0, 1)], [2]);
+  assert.deepEqual(drawRanges, [[0, 2], [0, 1]]);
+});
+
+test('ship navigation adds deterministic detours around simulated obstacles', () => {
+  const start = [-4, 0, 0];
+  const end = [4, 0, 0];
+  const obstacle = { position: [0, 0, 0], radius: 1 };
+  const clearPath = obstacleAvoidingPathPoints(start, end, []);
+  const detourPath = obstacleAvoidingPathPoints(start, end, [obstacle], { clearance: .5 });
+
+  assert.deepEqual(clearPath, [start, end]);
+  assert.equal(detourPath.length, 3);
+  assert.deepEqual(
+    detourPath,
+    obstacleAvoidingPathPoints(start, end, [obstacle], { clearance: .5 })
+  );
+  assert.ok(Math.hypot(...detourPath[1]) > obstacle.radius + .5);
 });
 
 test('timeline events cluster by rendered pixel distance using their impact time', () => {
