@@ -1,4 +1,4 @@
-const ORBIT_FORMATION_START = 220;
+const ORBIT_FORMATION_START = 245;
 const ORBIT_FORMATION_END = 340;
 
 // Integrate a smoothstep onset so both orbital phase and angular velocity are

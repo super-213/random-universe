@@ -1,9 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cosmicTimeLabel, cosmicYearsToTimelinePosition } from '../src/domain/cosmic-time.js';
-import { createUniverse } from '../src/domain/universe.js';
+import {
+  cosmicTimeLabel,
+  cosmicYearsToTimelinePosition,
+  referenceFutureYearsAtTimelinePosition,
+  selectTimelineNarrative
+} from '../src/domain/cosmic-time.js';
+import { erasForUniverse } from '../src/domain/catalog.js';
+import {
+  createUniverse,
+  stellarEndTimelinePosition,
+  stellarFormationEndTimelinePosition
+} from '../src/domain/universe.js';
 import { createSeededRandom } from '../src/domain/random.js';
 import { createStellarGravityState } from '../src/simulation/black-hole-gravity.js';
+import { civilizationDeclineWindow } from '../src/simulation/civilization.js';
 import {
   blackHoleEvaporationExponent,
   blackHoleMassFromSimulation,
@@ -43,6 +54,97 @@ test('derived cosmic milestones remain ordered and react to generated constants'
   }
 });
 
+test('physical milestones and their timeline positions round-trip across the early universe', () => {
+  for (let index = 0; index < 100; index++) {
+    const universe = createUniverse(seedFor(index));
+    assert.ok(Math.abs(cosmicYearsToTimelinePosition(
+      universe.cosmicMilestones.recombinationYears,
+      universe
+    ) - 145) < 1e-8);
+    assert.ok(Math.abs(cosmicYearsToTimelinePosition(
+      universe.cosmicMilestones.firstStarsYears,
+      universe
+    ) - 245) < 1e-8);
+    assert.ok(Math.abs(cosmicYearsToTimelinePosition(
+      universe.cosmicMilestones.matureGalaxiesYears,
+      universe
+    ) - 340) < 1e-8);
+    assert.ok(Math.abs(cosmicYearsToTimelinePosition(universe.presentAgeYears, universe) - 470) < 1e-8);
+  }
+});
+
+test('generated stellar and fate eras stay ordered without fixed-era gaps', () => {
+  for (let index = 0; index < 1000; index++) {
+    const universe = createUniverse(seedFor(index));
+    const formationEnd = stellarFormationEndTimelinePosition(universe);
+    const stellarEnd = stellarEndTimelinePosition(universe);
+    assert.ok(formationEnd <= stellarEnd);
+    const boundaries = erasForUniverse(universe).map((era) => era.until);
+    assert.ok(boundaries.every((boundary, eraIndex) => (
+      eraIndex === 0 || boundary > boundaries[eraIndex - 1]
+    )));
+    assert.equal(boundaries.at(-1), 1001);
+  }
+});
+
+test('far-future processes are remapped from physical years in finite universes', () => {
+  const heatDeathUniverse = Array.from({ length: 200 }, (_, index) => createUniverse(seedFor(index)))
+    .find((candidate) => candidate.cosmicFate.type === 'heat-death');
+  [500, 620, 710, 845, 930].forEach((position) => {
+    const years = referenceFutureYearsAtTimelinePosition(position, heatDeathUniverse);
+    assert.ok(Math.abs(cosmicYearsToTimelinePosition(years, heatDeathUniverse) - position) < 1e-8);
+  });
+
+  const finiteUniverse = Array.from({ length: 200 }, (_, index) => createUniverse(seedFor(index)))
+    .find((candidate) => candidate.cosmicFate.outcomeExponent < 19);
+  assert.ok(finiteUniverse);
+  const degenerateProcessYears = referenceFutureYearsAtTimelinePosition(710, finiteUniverse);
+  assert.equal(cosmicYearsToTimelinePosition(degenerateProcessYears, finiteUniverse), 1000);
+});
+
+test('civilizations decline when stellar energy ends even if a finite fate comes later', () => {
+  const universe = Array.from({ length: 5000 }, (_, index) => createUniverse(seedFor(index)))
+    .find((candidate) => (
+      candidate.cosmicFate.type !== 'heat-death'
+      && candidate.cosmicFate.onsetAt > stellarEndTimelinePosition(candidate) + 10
+    ));
+  assert.ok(universe);
+  const window = civilizationDeclineWindow(universe);
+  assert.ok(window.energyStart < window.fateStart);
+  assert.ok(window.energyEnd < 1000);
+});
+
+test('stellar exhaustion does not run before an earlier finite outcome', () => {
+  const universe = Array.from({ length: 500 }, (_, index) => createUniverse(seedFor(index)))
+    .find((candidate) => (
+      candidate.cosmicFate.type !== 'heat-death'
+      && candidate.cosmicFate.outcomeExponent <= candidate.lastStarDeathExponent
+    ));
+  assert.ok(universe);
+  const window = civilizationDeclineWindow(universe);
+  assert.equal(window.energyStart, Infinity);
+  assert.equal(window.energyEnd, Infinity);
+  assert.ok(Number.isFinite(window.fateStart));
+});
+
+test('finite fate narrative overrides local events after the terminal phase begins', () => {
+  const universe = Array.from({ length: 200 }, (_, index) => createUniverse(seedFor(index)))
+    .find((candidate) => candidate.cosmicFate.type !== 'heat-death');
+  const narrative = selectTimelineNarrative({
+    position: universe.cosmicFate.onsetAt + 1,
+    label: '终局',
+    universe,
+    activeEvent: {
+      id: 'late-event', impactAt: 0, label: '局部事件', message: '不应覆盖终局', outcome: '结束'
+    },
+    activeRelationship: null,
+    ascendedSpecies: 0,
+    activeSpecies: 0,
+    civilizationData: []
+  });
+  assert.ok(narrative.key.startsWith('fate-'));
+});
+
 test('tracked civilization samples are explicit and never exceed the estimate floor', () => {
   for (let index = 0; index < 1000; index++) {
     const universe = createUniverse(seedFor(index));
@@ -63,6 +165,18 @@ test('event occurrence sampling preserves one required occurrence and bounded re
   assert.ok(novaEvents.length >= 1 && novaEvents.length <= 3);
   assert.equal(rareEvents.length, 1);
   assert.ok(schedule.every((event) => event.start + event.duration <= 998));
+});
+
+test('event repeats respect a universe-specific latest start boundary', () => {
+  const universe = createUniverse('EVNTBOUND0000001');
+  const schedule = expandEventSchedule([
+    {
+      type: 'late-stellar-event', label: '晚期恒星事件', start: 580, duration: 20,
+      latestStart: 605, repeatRate: 10, maximumOccurrences: 5
+    }
+  ], universe, createSeededRandom(universe.seed, 1001));
+  assert.ok(schedule.length >= 1);
+  assert.ok(schedule.every((event) => event.start <= 605));
 });
 
 test('transient stellar models conserve their declared mass budget', () => {

@@ -1,5 +1,21 @@
 import * as THREE from 'three';
+import { stellarEndTimelinePosition } from '../domain/universe.js';
 import { createSeededRandom, randomBetween } from '../domain/random.js';
+
+export function civilizationDeclineWindow(universe) {
+  const stellarEnd = stellarEndTimelinePosition(universe);
+  const finiteOutcome = universe.cosmicFate?.type !== 'heat-death';
+  const stellarEndReached = !finiteOutcome
+    || universe.cosmicFate.outcomeExponent > universe.lastStarDeathExponent;
+  const energyStart = stellarEndReached ? Math.max(470, stellarEnd - 22) : Infinity;
+  const energyEnd = stellarEndReached ? Math.min(1000, stellarEnd + 55) : Infinity;
+  return {
+    energyStart,
+    energyEnd,
+    fateStart: finiteOutcome ? universe.cosmicFate.onsetAt : Infinity,
+    fateEnd: finiteOutcome ? 1000 : Infinity
+  };
+}
 
 export function buildCivilizationSimulation({ universe, civilizationData, civilizationSimulation, cosmicEvents }) {
   if (!civilizationSimulation || civilizationData.length === 0) return;
@@ -41,10 +57,9 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
   const lastCounts = new Uint16Array(speciesCount);
   const lastCauses = Array(speciesCount).fill('自主扩张');
   const disabledNodes = new Uint8Array(nodeCount);
-  const finiteOutcome = universe.cosmicFate?.type !== 'heat-death';
-  const declineStart = finiteOutcome ? universe.cosmicFate.onsetAt : 620;
-  const declineEnd = finiteOutcome ? 1000 : 710;
-  const declineCause = finiteOutcome ? universe.cosmicFate.label : '恒星能源枯竭';
+  const declineWindow = civilizationDeclineWindow(universe);
+  const expansionEnd = Math.min(declineWindow.energyStart, declineWindow.fateStart);
+  simulation.end = 1000;
   const events = cosmicEvents.slice().sort((a, b) => a.impactAt - b.impactAt);
   const eventImpactStats = new Map(events.map((event) => [event, new Map()]));
   const scheduledImpacts = events.flatMap((event) => {
@@ -220,7 +235,7 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
     }
     civilizationData.forEach((species, speciesIndex) => {
       const territory = ownedBySpecies[speciesIndex];
-      if (!seeded[speciesIndex] || territory.length === 0 || time >= 650) return;
+      if (!seeded[speciesIndex] || territory.length === 0 || time >= expansionEnd) return;
       const attempts = 1 + Math.floor(species.expansionRate + friendlyCounts[speciesIndex] * .34);
       for (let attempt = 0; attempt < attempts; attempt++) {
         const frontier = [];
@@ -270,13 +285,25 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       }
     });
 
-    if (time >= declineStart) {
-      const decline = THREE.MathUtils.smoothstep(time, declineStart, declineEnd);
+    if (time >= Math.min(declineWindow.energyStart, declineWindow.fateStart)) {
+      const energyDecline = THREE.MathUtils.smoothstep(
+        time,
+        declineWindow.energyStart,
+        declineWindow.energyEnd
+      );
+      const fateDecline = Number.isFinite(declineWindow.fateStart)
+        ? THREE.MathUtils.smoothstep(time, declineWindow.fateStart, declineWindow.fateEnd)
+        : 0;
+      const decline = Math.max(energyDecline, fateDecline);
+      const declineFinished = time >= declineWindow.energyEnd || time >= declineWindow.fateEnd;
+      const declineCause = fateDecline > energyDecline
+        ? universe.cosmicFate.label
+        : '恒星能源枯竭';
       for (let node = 0; node < nodeCount; node++) {
         const owner = owners[node];
         if (owner < 0 || civilizationData[owner].highDimensional && time >= civilizationData[owner].ascensionAt) continue;
         strength[node] -= .004 + decline * .052;
-        if (strength[node] <= .035 || time >= declineEnd) {
+        if (strength[node] <= .035 || declineFinished) {
           owners[node] = -1;
           strength[node] = 0;
           lastCauses[owner] = declineCause;

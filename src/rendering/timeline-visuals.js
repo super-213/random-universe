@@ -1,5 +1,12 @@
 import * as THREE from 'three';
-import { stellarEndTimelinePosition } from '../domain/universe.js';
+import {
+  stellarEndTimelinePosition,
+  stellarFormationEndTimelinePosition
+} from '../domain/universe.js';
+import {
+  cosmicYearsToTimelinePosition,
+  referenceFutureYearsAtTimelinePosition
+} from '../domain/cosmic-time.js';
 import { orbitalAngleAt } from '../domain/orbital-motion.js';
 import { applyMergerGravity, applyStellarGravity, mergerPersistenceAt } from '../simulation/black-hole-gravity.js';
 import { applyTransientGravity, transientPersistenceAt } from '../simulation/transient-events.js';
@@ -101,7 +108,17 @@ export function updateEpochVisuals(position, context) {
 
   if (!clickableStars || !originalGalaxyPositions) return;
   const stellarEnd = stellarEndTimelinePosition(universe);
-  const formation = THREE.MathUtils.smoothstep(position, 220, 340);
+  const stellarFormationEnd = stellarFormationEndTimelinePosition(universe);
+  const remapReferencePosition = (referencePosition) => cosmicYearsToTimelinePosition(
+    referenceFutureYearsAtTimelinePosition(referencePosition, universe),
+    universe
+  );
+  const remnantFadeStart = remapReferencePosition(845);
+  const remnantFadeEnd = remapReferencePosition(930);
+  const remnantMotionEnd = remapReferencePosition(900);
+  const hawkingStart = remapReferencePosition(790);
+  const hawkingEstablished = remapReferencePosition(850);
+  const formation = THREE.MathUtils.smoothstep(position, 245, 340);
   const stellarPopulation = 1 - THREE.MathUtils.smoothstep(position, stellarEnd - 75, stellarEnd + 10);
   clickableStars.material.opacity = formation * .9;
   clickableStars.material.size = .09;
@@ -239,24 +256,40 @@ export function updateEpochVisuals(position, context) {
   const agnGlow = galaxyGroup.children.find((item) => item.userData.isAgnGlow);
   const agnJet = galaxyGroup.children.find((item) => item.userData.isAgnJet);
   if (agnGlow) {
-    const activePhase = formation * (1 - THREE.MathUtils.smoothstep(position, 500, 650));
+    const agnFadeStart = Math.min(
+      stellarFormationEnd - 1,
+      cosmicYearsToTimelinePosition(4e10, universe)
+    );
+    const activePhase = formation * (1 - THREE.MathUtils.smoothstep(
+      position,
+      agnFadeStart,
+      stellarFormationEnd
+    ));
     agnGlow.material.opacity = activePhase * .82;
     agnGlow.scale.set(.72, .72, 1);
     agnJet.material.opacity = activePhase * .18;
   }
 
   const outcomeVisibility = 1 - fatePhase;
-  const remnantsVisible = outcomeVisibility > .001 && position > stellarEnd - 80 && position < 930;
+  const remnantsVisible = outcomeVisibility > .001
+    && position >= remnantDynamics.firstBirthAt
+    && position < remnantFadeEnd;
   const blackHolesVisible = outcomeVisibility > .001 && blackHoleRemnants.some((hole) => (
     position >= hole.userData.birthAt
       && position <= hole.userData.evaporationAt + 7.5
   ));
   remnantGroup.visible = (remnantsVisible || blackHolesVisible) && mode === 'explorer';
   if (remnantsVisible && stellarRemnants) {
-    const remnantBirth = THREE.MathUtils.smoothstep(position, stellarEnd - 80, stellarEnd + 15);
-    const remnantFade = 1 - THREE.MathUtils.smoothstep(position, 845, 930);
-    stellarRemnants.material.opacity = remnantBirth * remnantFade * .64 * (1 - fatePhase);
+    const remnantFade = remnantFadeStart >= 999
+      ? 1
+      : 1 - THREE.MathUtils.smoothstep(
+          position,
+          remnantFadeStart,
+          Math.max(remnantFadeStart + 1, remnantFadeEnd)
+        );
+    stellarRemnants.material.opacity = remnantFade * .64 * (1 - fatePhase);
     const remnantArray = stellarRemnants.geometry.attributes.position.array;
+    const remnantColors = stellarRemnants.geometry.attributes.color.array;
     const writeOrbit = (index, samplePosition) => {
       const offset = index * 3;
       const x = originalRemnantPositions[offset];
@@ -276,6 +309,14 @@ export function updateEpochVisuals(position, context) {
 
     for (let index = 0; index < originalRemnantPositions.length / 3; index++) {
       const offset = index * 3;
+      const born = THREE.MathUtils.smoothstep(
+        position,
+        remnantDynamics.birthAt[index],
+        remnantDynamics.birthAt[index] + 8
+      );
+      remnantColors[offset] = remnantDynamics.baseColors[offset] * born;
+      remnantColors[offset + 1] = remnantDynamics.baseColors[offset + 1] * born;
+      remnantColors[offset + 2] = remnantDynamics.baseColors[offset + 2] * born;
       const fate = remnantDynamics.fates[index];
       const transitionAt = remnantDynamics.escapeAt[index];
       if (position < transitionAt || fate === 1) {
@@ -284,7 +325,11 @@ export function updateEpochVisuals(position, context) {
       }
 
       if (fate === 2) {
-        const infall = THREE.MathUtils.smoothstep(position, transitionAt, Math.min(900, transitionAt + 42));
+        const infall = THREE.MathUtils.smoothstep(
+          position,
+          transitionAt,
+          Math.max(transitionAt + 1, Math.min(remnantMotionEnd, transitionAt + 42))
+        );
         writeOrbit(index, position + infall * 150);
         const radiusScale = 1 - infall * .985;
         remnantArray[offset] *= radiusScale;
@@ -312,7 +357,11 @@ export function updateEpochVisuals(position, context) {
       let directionZ = tangentZ * .9 + startZ / radius * .34;
       const directionLength = Math.max(.001, Math.hypot(directionX, directionY, directionZ));
       directionX /= directionLength; directionY /= directionLength; directionZ /= directionLength;
-      const progress = THREE.MathUtils.clamp((position - transitionAt) / Math.max(1, 900 - transitionAt), 0, 1);
+      const progress = THREE.MathUtils.clamp(
+        (position - transitionAt) / Math.max(1, remnantMotionEnd - transitionAt),
+        0,
+        1
+      );
       const distance = fate === 3
         ? Math.pow(progress, .72) * (18 + remnantDynamics.speeds[index] * 7)
         : Math.pow(progress, 1.35) * (6 + remnantDynamics.speeds[index] * 11);
@@ -321,6 +370,7 @@ export function updateEpochVisuals(position, context) {
       remnantArray[offset + 2] = startZ + directionZ * distance;
     }
     stellarRemnants.geometry.attributes.position.needsUpdate = true;
+    stellarRemnants.geometry.attributes.color.needsUpdate = true;
   }
 
   blackHoleRemnants.forEach((hole) => {
@@ -336,8 +386,17 @@ export function updateEpochVisuals(position, context) {
     const born = THREE.MathUtils.smoothstep(position, data.birthAt, data.birthAt + 7);
     const remaining = 1 - THREE.MathUtils.smoothstep(position, data.evaporationAt - 24, data.evaporationAt);
     const lateEvaporation = THREE.MathUtils.smoothstep(position, data.evaporationAt - 15, data.evaporationAt);
-    const isolated = THREE.MathUtils.smoothstep(position, Math.max(data.birthAt + 12, stellarEnd - 50), 825);
-    const hawkingEra = THREE.MathUtils.smoothstep(position, 790, 850);
+    const isolationStart = Math.max(data.birthAt + 12, stellarEnd - 50);
+    const isolated = THREE.MathUtils.smoothstep(
+      position,
+      isolationStart,
+      Math.max(isolationStart + 1, remapReferencePosition(825))
+    );
+    const hawkingEra = THREE.MathUtils.smoothstep(
+      position,
+      hawkingStart,
+      Math.max(hawkingStart + 1, hawkingEstablished)
+    );
     const pulseWindow = 7.5;
     const pulseDistance = Math.abs(position - data.evaporationAt);
     const pulse = pulseDistance < pulseWindow ? Math.sin((1 - pulseDistance / pulseWindow) * Math.PI / 2) : 0;
@@ -406,7 +465,9 @@ export function updateEpochVisuals(position, context) {
 }
 
 export function updateCosmicEvents(position, context) {
-  const { mode, cosmicEvents, cosmicEventGroup } = context;
+  const { mode, cosmicEvents, cosmicEventGroup, universe } = context;
+  const fateStarted = universe.cosmicFate.type !== 'heat-death'
+    && position >= universe.cosmicFate.onsetAt;
   let activeCosmicEvent = null;
   let anyVisible = false;
   cosmicEvents.forEach((event) => {
@@ -418,7 +479,7 @@ export function updateCosmicEvents(position, context) {
     const transientPersistence = transientPersistenceAt(position, event);
     const persistence = Math.max(mergerPersistence, transientPersistence);
     const persistentRemnant = position >= event.impactAt && persistence > 0;
-    const visible = (active || persistentRemnant) && mode === 'explorer';
+    const visible = !fateStarted && (active || persistentRemnant) && mode === 'explorer';
     event.group.visible = visible;
     if (!visible) return;
     anyVisible = true;

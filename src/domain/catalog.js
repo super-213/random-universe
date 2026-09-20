@@ -1,3 +1,5 @@
+import { cosmicYearsToTimelinePosition } from './cosmic-time.js';
+
 export const notes = [
   '一次偶然涨落，一组全新的自然法则。',
   '这里的星光，以陌生的速度穿过真空。',
@@ -37,26 +39,45 @@ export const eras = [
 
 export function erasForUniverse(universe) {
   const fate = universe?.cosmicFate;
-  if (!fate || fate.type === 'heat-death') return eras;
+  const stellarEnd = cosmicYearsToTimelinePosition(10 ** universe.lastStarDeathExponent, universe);
+  const stellarEra = {
+    until: Math.min(stellarEnd, fate?.type === 'heat-death' ? stellarEnd : fate?.onsetAt ?? stellarEnd),
+    name: '恒星时代',
+    description: '恒星、星系与重元素持续演化；生命与文明属于未证实的模型层。'
+  };
+  if (!fate || fate.type === 'heat-death') {
+    return [
+      ...eras.slice(0, 4),
+      stellarEra,
+      ...eras.slice(5)
+    ];
+  }
 
-  const shared = eras.slice(0, 5);
+  const shared = [...eras.slice(0, 4), stellarEra];
+  const preFate = fate.onsetAt > stellarEnd
+    ? [{
+        until: fate.onsetAt,
+        name: '简并时代 · 假说',
+        description: '恒星已经熄灭，白矮星、中子星与黑洞继续经历长期引力演化。'
+      }]
+    : [];
   if (fate.type === 'big-rip') {
     return [
       ...shared,
-      { until: 850, name: '幽灵能量时代 · 假说', description: '暗能量密度随膨胀增长，宇宙在有限时间内加速趋向失稳。' },
+      ...preFate,
       { until: 1001, name: '大撕裂 · 条件结局', description: '在 w < -1 持续成立的假设下，局部引力与微观束缚将被逐层克服。' }
     ];
   }
   if (fate.type === 'big-crunch') {
     return [
       ...shared,
-      { until: 850, name: '膨胀反转 · 假说', description: '动态暗能量的有效势能跨过零点，哈勃参数逐步降低至零。' },
+      ...preFate,
       { until: 1001, name: '大坍缩 · 条件结局', description: '尺度因子反向演化，物质与辐射密度在有限时间内快速上升。' }
     ];
   }
   return [
     ...shared,
-    { until: 875, name: '亚稳真空 · 假说', description: '真空仍位于寿命未知的局部能量最低点，未发生可见跃迁。' },
+    ...preFate,
     { until: 1001, name: '真空衰变 · 条件结局', description: '随机量子隧穿产生低能真空泡，泡壁以近光速改写局部基态。' }
   ];
 }

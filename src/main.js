@@ -4,7 +4,14 @@ import './style.css';
 import { erasForUniverse, galaxyTypes, speciesColors, speciesNames } from './domain/catalog.js';
 import { createSeededRandom, randomBetween, gaussianRandom } from './domain/random.js';
 import { createUniverse, stellarEndTimelinePosition } from './domain/universe.js';
-import { cosmicTimeLabel, cosmicYearsToTimelinePosition, createCosmicTimelineState, selectTimelineNarrative, timelineUnitsPerSecond } from './domain/cosmic-time.js';
+import {
+  cosmicTimeLabel,
+  cosmicYearsToTimelinePosition,
+  createCosmicTimelineState,
+  referenceFutureYearsAtTimelinePosition,
+  selectTimelineNarrative,
+  timelineUnitsPerSecond
+} from './domain/cosmic-time.js';
 import { getPointTexture, makeGlowTexture, makeRingTexture } from './rendering/textures.js';
 import { animateBlackHoleVisual, createBlackHoleVisual } from './rendering/black-hole.js';
 import { applyCivilizationSnapshot, syncCivilizationHosts } from './rendering/civilizations.js';
@@ -506,6 +513,7 @@ function buildEpochEffects(starPositions) {
   originalRemnantPositions = new Float32Array(remnantCount * 3);
   remnantDynamics = {
     sourceIndices: new Uint16Array(remnantCount),
+    birthAt: new Float32Array(remnantCount),
     axes: new Float32Array(remnantCount * 3),
     orbitRates: new Float32Array(remnantCount),
     escapeAt: new Float32Array(remnantCount),
@@ -517,6 +525,7 @@ function buildEpochEffects(starPositions) {
     const source = Math.floor(random() * starPositions.length / 3);
     const sourceOffset = source * 3;
     remnantDynamics.sourceIndices[i] = source;
+    remnantDynamics.birthAt[i] = starDeathThresholds[source];
     const x = starPositions[sourceOffset];
     const y = starPositions[sourceOffset + 1];
     const z = starPositions[sourceOffset + 2];
@@ -538,15 +547,23 @@ function buildEpochEffects(starPositions) {
     remnantDynamics.fates[i] = fate;
     // Most remnants stay bound. Evaporation begins one object at a time near
     // 10^19 years (about timeline position 709), not as a synchronous outflow.
-    remnantDynamics.escapeAt[i] = fate === 1
+    const referenceEscapeAt = fate === 1
       ? 1001
       : (fate === 3 ? 704 : fate === 2 ? 724 : 710) + haloDelay + Math.pow(random(), .68) * (fate === 3 ? 28 : 92);
+    remnantDynamics.escapeAt[i] = referenceEscapeAt > 1000
+      ? referenceEscapeAt
+      : cosmicYearsToTimelinePosition(
+          referenceFutureYearsAtTimelinePosition(referenceEscapeAt, universe),
+          universe
+        );
     remnantDynamics.speeds[i] = fate === 3 ? randomBetween(random, 1.7, 2.6) : randomBetween(random, .55, 1.05);
     const remnantColor = new THREE.Color(random() > .28 ? 0x9bb6d9 : 0x8b3e32);
     remnantColors[i * 3] = remnantColor.r;
     remnantColors[i * 3 + 1] = remnantColor.g;
     remnantColors[i * 3 + 2] = remnantColor.b;
   }
+  remnantDynamics.baseColors = remnantColors.slice();
+  remnantDynamics.firstBirthAt = Math.min(...remnantDynamics.birthAt);
   const remnantGeometry = new THREE.BufferGeometry();
   remnantGeometry.setAttribute('position', new THREE.BufferAttribute(remnantPositions, 3));
   remnantGeometry.setAttribute('color', new THREE.BufferAttribute(remnantColors, 3));
@@ -657,6 +674,23 @@ function buildEpochEffects(starPositions) {
 function buildCosmicEvents(starPositions) {
   const random = createSeededRandom(universe.seed, 1447);
   cosmicEvents = [];
+  const stellarEnd = stellarEndTimelinePosition(universe);
+  const finiteOutcome = universe.cosmicFate.type !== 'heat-death';
+  const eventBoundary = finiteOutcome ? universe.cosmicFate.onsetAt : 1000;
+  const remapEventStart = (position) => position < 470
+    ? position
+    : cosmicYearsToTimelinePosition(
+        referenceFutureYearsAtTimelinePosition(position, universe),
+        universe
+      );
+  const persistentEpochEnd = Math.min(eventBoundary, remapEventStart(845));
+  const livingStarEvents = new Set([
+    'pair-instability-supernova', 'young-pulsar-birth', 'classical-nova',
+    'type-ia-supernova', 'red-dwarf-superflare', 'gamma-ray-burst',
+    'neutron-star-kilonova', 'quasar-awakening', 'magnetar-flare',
+    'tidal-disruption-event', 'core-collapse-supernova', 'pulsar-glitch',
+    'superluminous-supernova', 'failed-supernova'
+  ]);
 
   const nucleusEvent = universe.hasCentralBlackHole
     ? {
@@ -736,18 +770,38 @@ function buildCosmicEvents(starPositions) {
     {
       type: 'stellar-black-hole-merger', visual: 'black-hole-merger', label: '双黑洞合并',
       message: '时空啁啾达到峰值，引力波波前穿过局部星域（形变已视觉放大）', preferCenter: true,
-      start: 616 + random() * 18, duration: 38, persistUntil: Math.min(845, universe.cosmicFate.onsetAt || 845), persistenceFadeDuration: 24, color: '#c897ff', repeatRate: .36, maximumOccurrences: 2
+      start: 616 + random() * 18, duration: 38, persistUntil: persistentEpochEnd, persistenceFadeDuration: 24, color: '#c897ff', repeatRate: .36, maximumOccurrences: 2
     },
     {
       type: 'late-black-hole-merger', visual: 'black-hole-merger', label: '孤立黑洞捕获合并',
       message: '漫长引力散射后完成并合，残余黑洞在阻尼振铃中反冲', preferCenter: true,
-      start: 872 + random() * 18, duration: 42, persistUntil: 950, persistenceFadeDuration: 18, color: '#9bb8ff', repeatRate: .14, maximumOccurrences: 2
+      start: 872 + random() * 18, duration: 42, persistUntil: Math.min(eventBoundary, remapEventStart(950)), persistenceFadeDuration: 18, color: '#9bb8ff', repeatRate: .14, maximumOccurrences: 2
     }
   ].filter((event) => (!event.requiresCentralBlackHole || universe.hasCentralBlackHole)
     && (event.type !== 'late-black-hole-merger'
       || universe.cosmicFate.type === 'heat-death'
-      || universe.cosmicFate.outcomeExponent > 45));
+      || universe.cosmicFate.outcomeExponent > 45))
+    .map((event) => {
+      const requiresLivingStar = livingStarEvents.has(event.type);
+      const start = remapEventStart(event.start);
+      const latestStart = Math.min(
+        eventBoundary - event.duration,
+        requiresLivingStar ? stellarEnd - event.duration : Infinity
+      );
+      return { ...event, start, latestStart, requiresLivingStar };
+    });
   const schedule = expandEventSchedule(baseSchedule, universe, random)
+    .map((event) => {
+      const endBoundary = Math.min(
+        eventBoundary,
+        event.requiresLivingStar ? stellarEnd : Infinity
+      );
+      return {
+        ...event,
+        duration: Math.min(event.duration, endBoundary - event.start)
+      };
+    })
+    .filter((event) => event.duration >= 1)
     .map((event, eventIndex) => {
       const simulation = createTransientSimulation(event, universe, eventIndex);
       const simulatedEvent = {
@@ -760,7 +814,9 @@ function buildCosmicEvents(starPositions) {
         simulatedEvent.recoilKms = simulation.recoilKms;
       }
       if (!simulation?.persistentRemnant) return simulatedEvent;
-      simulatedEvent.persistUntil = Math.min(845, universe.cosmicFate.onsetAt || 845);
+      simulatedEvent.persistUntil = event.type === 'late-black-hole-merger'
+        ? Math.min(eventBoundary, remapEventStart(950))
+        : persistentEpochEnd;
       simulatedEvent.persistenceFadeDuration = 24;
       return simulatedEvent;
     });
@@ -784,11 +840,15 @@ function buildCosmicEvents(starPositions) {
     'late-black-hole-merger': { radius: .08, maxStars: 1, sourceDim: .04, neighborDim: 1, kick: 0, civilization: 0, range: 0, maxSpecies: 0 }
   };
 
-  const pickPosition = (preferCenter = false) => {
-    let source = Math.floor(random() * starPositions.length / 3);
+  const pickPosition = (preferCenter = false, aliveThrough = null) => {
+    let source = aliveThrough === null
+      ? Math.floor(random() * starPositions.length / 3)
+      : starDeathThresholds.findIndex((deathAt) => deathAt > aliveThrough);
+    if (source < 0) source = Math.floor(random() * starPositions.length / 3);
     const maxRadius = preferCenter ? 2.8 : 6.2;
     for (let attempt = 0; attempt < 140; attempt++) {
       const candidate = Math.floor(random() * starPositions.length / 3);
+      if (aliveThrough !== null && starDeathThresholds[candidate] <= aliveThrough) continue;
       const offset = candidate * 3;
       if (Math.hypot(starPositions[offset], starPositions[offset + 1], starPositions[offset + 2]) < maxRadius) {
         source = candidate;
@@ -1026,7 +1086,10 @@ function buildCosmicEvents(starPositions) {
 
   schedule.forEach((data, index) => {
     const group = new THREE.Group();
-    const location = pickPosition(data.preferCenter);
+    const location = pickPosition(
+      data.preferCenter,
+      data.requiresLivingStar ? data.start + data.duration : null
+    );
     group.position.copy(location.position);
     group.visible = false;
     cosmicEventGroup.add(group);
@@ -1373,18 +1436,26 @@ function buildCosmicEvents(starPositions) {
     );
     const id = `${data.type}-${index}-${universe.seed}`;
     const blackHoleMass = blackHoleMassFromSimulation(data.simulation);
+    const sourceDestroyed = profile.sourceDim <= .15
+      && data.visual !== 'black-hole-merger';
+    if (sourceDestroyed) {
+      starDeathThresholds[location.index] = Math.min(
+        starDeathThresholds[location.index],
+        consequences.impactAt
+      );
+      for (let remnantIndex = 0; remnantIndex < remnantDynamics.sourceIndices.length; remnantIndex++) {
+        if (remnantDynamics.sourceIndices[remnantIndex] !== location.index) continue;
+        // The event owns its explicit compact-remnant visual. Suppress the
+        // sampled population point for the same source to avoid a duplicate.
+        remnantDynamics.birthAt[remnantIndex] = 1001;
+      }
+    }
     if (blackHoleMass) {
       // Hand the compact remnant from the short-lived event visual to the
       // long-lived population. Scrubbing now reconstructs the same object on
       // both sides of the event instead of inventing it in the black-hole era.
       data.persistUntil = data.start + data.duration;
       data.persistenceFadeDuration = 8;
-      if (data.simulation.model !== 'black-hole-binary') {
-        starDeathThresholds[location.index] = Math.min(
-          starDeathThresholds[location.index],
-          consequences.impactAt
-        );
-      }
       addBlackHoleRemnant({
         random,
         massSolar: blackHoleMass,
@@ -1409,6 +1480,7 @@ function buildCosmicEvents(starPositions) {
       label: data.label
     });
   });
+  remnantDynamics.firstBirthAt = Math.min(...remnantDynamics.birthAt);
 
   cosmicEventGroup.rotation.copy(galaxyGroup.rotation);
   cosmicEventGroup.visible = false;
@@ -1466,7 +1538,7 @@ function buildCivilizations() {
 
   civilizationSimulation = {
     start: 390,
-    end: universe.cosmicFate.type === 'heat-death' ? 710 : 1000,
+    end: 1000,
     step: 1,
     habitatRemnantIndices,
     habitatPositions,
@@ -1545,7 +1617,6 @@ function buildCivilizations() {
       birth,
       highDimensional,
       ascensionAt,
-      extinction: highDimensional ? 1001 : (universe.cosmicFate.type === 'heat-death' ? 710 : 1000),
       aggression,
       cooperation,
       expansionRate,
@@ -1658,13 +1729,16 @@ function updateTransition(now) {
 }
 
 function inspectStar(event) {
-  if (mode !== 'explorer' || transition || !clickableStars || cosmicPosition < 250 || cosmicPosition > 750) return;
+  if (mode !== 'explorer' || transition || !clickableStars || cosmicPosition < 250) return;
   pointer.x = (event.clientX / innerWidth) * 2 - 1;
   pointer.y = -(event.clientY / innerHeight) * 2 + 1;
   raycaster.setFromCamera(pointer, camera);
   const hits = raycaster.intersectObject(clickableStars);
-  if (!hits.length) return;
-  const index = hits[0].index;
+  const livingHit = hits.find((hit) => (
+    cosmicPosition < starDeathThresholds[hit.index] + 22
+  ));
+  if (!livingHit) return;
+  const index = livingHit.index;
   const random = createSeededRandom(universe.seed, index * 31);
   const classes = ['M4 V', 'K1 III', 'G2 V', 'F8 V', 'A3 V', 'B1 Ia'];
   const type = classes[Math.floor(random() * classes.length)];

@@ -8,8 +8,38 @@ const smoothstep = (value, min, max) => {
 
 export function cosmicYearsToTimelinePosition(years, universe) {
   const presentAgeYears = universe?.presentAgeYears || 1.38e10;
-  const exponent = Math.log10(Math.max(presentAgeYears, years));
-  const presentExponent = Math.log10(presentAgeYears);
+  const milestones = universe?.cosmicMilestones || {};
+  const recombinationYears = milestones.recombinationYears || 380000;
+  const firstStarsYears = Math.max(recombinationYears * 1.1, milestones.firstStarsYears || 1.8e8);
+  const matureGalaxiesYears = Math.max(firstStarsYears * 1.1, milestones.matureGalaxiesYears || 1e9);
+  const clampedPresentYears = Math.max(matureGalaxiesYears * 1.1, presentAgeYears);
+  const targetYears = Math.max(.001 / 31557600, Number(years) || 0);
+  const logProgress = (value, start, end) => clamp(
+    (Math.log10(value) - Math.log10(start)) / (Math.log10(end) - Math.log10(start)),
+    0,
+    1
+  );
+
+  if (targetYears < 180 / 31557600) {
+    const seconds = targetYears * 31557600;
+    if (seconds < 1) return logProgress(seconds, .001, 1) * 18;
+    return 18 + logProgress(seconds, 1, 180) * 37;
+  }
+  if (targetYears < recombinationYears) {
+    return 55 + logProgress(targetYears, 180 / 31557600, recombinationYears) * 90;
+  }
+  if (targetYears < firstStarsYears) {
+    return 145 + logProgress(targetYears, recombinationYears, firstStarsYears) * 100;
+  }
+  if (targetYears < matureGalaxiesYears) {
+    return 245 + logProgress(targetYears, firstStarsYears, matureGalaxiesYears) * 95;
+  }
+  if (targetYears < clampedPresentYears) {
+    return 340 + logProgress(targetYears, matureGalaxiesYears, clampedPresentYears) * 130;
+  }
+
+  const exponent = Math.log10(targetYears);
+  const presentExponent = Math.log10(clampedPresentYears);
   const fate = universe?.cosmicFate;
   if (fate && Number.isFinite(fate.outcomeYears)) {
     if (years >= fate.outcomeYears) return 1000;
@@ -23,6 +53,25 @@ export function cosmicYearsToTimelinePosition(years, universe) {
   const evaporationExponent = universe?.blackHoleEvaporationExponent || 100;
   if (exponent < evaporationExponent) return 845 + (exponent - 38) / (evaporationExponent - 38) * 105;
   return 950;
+}
+
+export function referenceFutureYearsAtTimelinePosition(position, universe) {
+  const clampedPosition = clamp(position, 470, 950);
+  const presentExponent = Math.log10(universe?.presentAgeYears || 1.38e10);
+  let exponent;
+  if (clampedPosition < 570) {
+    exponent = presentExponent + (12 - presentExponent) * (clampedPosition - 470) / 100;
+  } else if (clampedPosition < 650) {
+    exponent = 12 + (clampedPosition - 570) / 80 * 2;
+  } else if (clampedPosition < 680) {
+    exponent = 14 + (clampedPosition - 650) / 30;
+  } else if (clampedPosition < 845) {
+    exponent = 15 + (clampedPosition - 680) / 165 * 23;
+  } else {
+    const evaporationExponent = universe?.blackHoleEvaporationExponent || 100;
+    exponent = 38 + (clampedPosition - 845) / 105 * (evaporationExponent - 38);
+  }
+  return 10 ** exponent;
 }
 
 export function createCosmicTimelineState(value, universe, eras) {
@@ -59,19 +108,10 @@ export function selectTimelineNarrative({
   activeSpecies,
   civilizationData
 }) {
-  if (activeEvent) {
-    const impacted = position >= activeEvent.impactAt;
-    const aftermath = impacted ? `；${activeEvent.outcome}` : '';
-    return {
-      key: `${activeEvent.id}-${impacted ? 'aftermath' : 'forming'}`,
-      time: label,
-      text: `${activeEvent.label}：${activeEvent.message}${aftermath}`
-    };
-  }
   const fate = universe?.cosmicFate;
   if (fate && fate.type !== 'heat-death' && position >= fate.onsetAt) {
     if (fate.type === 'vacuum-decay') {
-      const terminal = position >= 985;
+      const terminal = position >= 995;
       return {
         key: `fate-vacuum-${terminal ? 'terminal' : 'bubble'}`,
         time: label,
@@ -81,7 +121,7 @@ export function selectTimelineNarrative({
       };
     }
     if (fate.type === 'big-rip') {
-      const terminal = position >= 985;
+      const terminal = position >= 995;
       return {
         key: `fate-rip-${terminal ? 'terminal' : 'unbinding'}`,
         time: label,
@@ -90,13 +130,22 @@ export function selectTimelineNarrative({
           : '幽灵暗能量密度持续上升，星系团与星系开始逐层解束缚'
       };
     }
-    const terminal = position >= 985;
+    const terminal = position >= 995;
     return {
       key: `fate-crunch-${terminal ? 'terminal' : 'turnaround'}`,
       time: label,
       text: terminal
         ? '坍缩使物质与辐射密度急剧升高，经典演化在高曲率阶段失效'
         : '宇宙膨胀已经停止，大尺度距离开始反向缩小'
+    };
+  }
+  if (activeEvent) {
+    const impacted = position >= activeEvent.impactAt;
+    const aftermath = impacted ? `；${activeEvent.outcome}` : '';
+    return {
+      key: `${activeEvent.id}-${impacted ? 'aftermath' : 'forming'}`,
+      time: label,
+      text: `${activeEvent.label}：${activeEvent.message}${aftermath}`
     };
   }
   if (activeRelationship) {
@@ -119,9 +168,10 @@ export function selectTimelineNarrative({
   if (activeSpecies > 0) return { key: `life-${activeSpecies}`, time: label, text: `${activeSpecies} 个主要文明种群正在跨越恒星系扩张` };
   if (position < 430) return { key: 'chemistry', time: label, text: '重元素丰度上升，宜居行星开始形成' };
   if (position < Math.min(...civilizationData.map((species) => species.birth), 620)) return { key: 'waiting-life', time: label, text: '宜居世界正在积累复杂化学反应，智慧生命尚未出现' };
-  if (position < 620) return { key: 'silence', time: label, text: '文明信号已经沉寂，只剩无人维护的轨道遗迹' };
-  if (position < 650) return { key: 'last-stars', time: label, text: '恒星形成早已停止，最后的低质量红矮星仍在极缓慢地消耗燃料' };
-  if (position < 710) return { key: 'degenerate', time: label, text: '最后一批红矮星熄灭，恒星残骸仍被星系引力束缚并长期绕核运行' };
+  const stellarFormationEnd = cosmicYearsToTimelinePosition(10 ** universe.stellarFormationEndExponent, universe);
+  const stellarEnd = cosmicYearsToTimelinePosition(10 ** universe.lastStarDeathExponent, universe);
+  if (position < stellarFormationEnd) return { key: 'silence', time: label, text: '文明信号已经沉寂，恒星形成率仍在持续下降' };
+  if (position < stellarEnd) return { key: 'last-stars', time: label, text: '恒星形成已经停止，最后的低质量红矮星仍在极缓慢地消耗燃料' };
   if (position < 845) return { key: 'evaporation', time: label, text: '长期引力近遇持续重分配能量，少数残骸逐个逃离，极少数落向星系中心' };
   if (position < 950) return { key: 'holes', time: label, text: '黑洞通过霍金辐射缓慢蒸发' };
   return { key: 'heatdeath', time: label, text: '最后的黑洞已经蒸发，残余光子持续红移并稀释，可用能量梯度趋近于零' };

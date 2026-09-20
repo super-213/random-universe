@@ -1,5 +1,6 @@
 import {
-  formatArmStructure, formatCivilizations, formatGalaxyHue, formatProbability, formatStars
+  formatArmStructure, formatCivilizations, formatGalaxyHue, formatProbability, formatStars,
+  stellarEndTimelinePosition
 } from '../domain/universe.js';
 import { galaxyRoots, galaxyTypes, notes } from '../domain/catalog.js';
 import { formatOutcomeTime, formatVacuumState } from '../domain/cosmic-fate.js';
@@ -39,10 +40,15 @@ export function updateUniverseData(universe) {
   $('#dark-energy-eos-value').textContent = `w₀ ${fate.w0.toFixed(2)} · wₐ ${fate.wa.toFixed(2)} · 有界 BA`;
   $('#vacuum-value').textContent = formatVacuumState(fate);
   $('#lifetime-value').textContent = `${fate.label} · ${formatOutcomeTime(fate)}`;
-  $('#timeline-stellar-label').textContent = fate.outcomeExponent <= universe.lastStarDeathExponent
-    ? '暗能量分流'
-    : '恒星熄灭';
-  $('#timeline-late-label').textContent = fate.type === 'heat-death' ? '黑洞时代' : '临界阶段';
+  const stellarEnd = stellarEndTimelinePosition(universe);
+  const stellarLabel = $('#timeline-stellar-label');
+  const stellarEndReached = fate.type === 'heat-death' || stellarEnd < fate.onsetAt;
+  stellarLabel.textContent = '恒星熄灭';
+  stellarLabel.style.left = `${stellarEnd / 10}%`;
+  stellarLabel.style.display = stellarEndReached ? '' : 'none';
+  const lateLabel = $('#timeline-late-label');
+  lateLabel.textContent = fate.type === 'heat-death' ? '黑洞时代' : '临界阶段';
+  lateLabel.style.left = `${(fate.type === 'heat-death' ? 845 : fate.onsetAt) / 10}%`;
   $('#timeline-final-label').textContent = fate.shortLabel;
   $('#cosmic-timeline').setAttribute('aria-label', `从大爆炸到${fate.label}的宇宙时间`);
   $('#universe-note').textContent = notes[universe.seedValue % notes.length];

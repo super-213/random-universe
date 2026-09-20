@@ -86,6 +86,14 @@ export function stellarEndTimelinePosition(universe) {
   return THREE.MathUtils.clamp(cosmicYearsToTimelinePosition(10 ** exponent, universe), 478, 1000);
 }
 
+export function stellarFormationEndTimelinePosition(universe) {
+  return THREE.MathUtils.clamp(
+    cosmicYearsToTimelinePosition(10 ** universe.stellarFormationEndExponent, universe),
+    478,
+    1000
+  );
+}
+
 export function formatStars(value) {
   return value >= 1 ? `${value.toFixed(1)} 万亿颗` : `${Math.round(value * 10000)} 亿颗`;
 }

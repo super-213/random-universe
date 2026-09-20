@@ -31,20 +31,30 @@ export function expandEventSchedule(baseEvents, universe, random) {
     const occurrenceCount = 1 + additional;
     const repeatSpacing = event.repeatSpacing || Math.max(12, event.duration * .72);
     const { repeatRate, repeatSpacing: ignoredSpacing, maximumOccurrences: ignoredMaximum, ...eventData } = event;
+    const maximumStart = Math.min(
+      998 - eventData.duration,
+      eventData.latestStart ?? Infinity
+    );
+    if (eventData.start > maximumStart) return [];
 
-    return Array.from({ length: occurrenceCount }, (_, occurrenceIndex) => {
+    const occurrences = Array.from({ length: occurrenceCount }, (_, occurrenceIndex) => {
       if (occurrenceIndex === 0) {
         return { ...eventData, occurrenceIndex, occurrenceCount };
       }
       const spacing = repeatSpacing * occurrenceIndex * (.82 + random() * .36);
-      const maximumStart = Math.max(eventData.start, 998 - eventData.duration);
+      const start = eventData.start + spacing;
+      if (start > maximumStart) return null;
       return {
         ...eventData,
-        start: Math.min(maximumStart, eventData.start + spacing),
+        start,
         label: `${eventData.label}（第 ${occurrenceIndex + 1} 次）`,
         occurrenceIndex,
         occurrenceCount
       };
-    });
+    }).filter(Boolean);
+    return occurrences.map((occurrence) => ({
+      ...occurrence,
+      occurrenceCount: occurrences.length
+    }));
   }).sort((a, b) => a.start - b.start || a.occurrenceIndex - b.occurrenceIndex);
 }

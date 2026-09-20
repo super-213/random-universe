@@ -3,6 +3,15 @@ import { createSeededRandom, randomBetween } from './random.js';
 const HUBBLE_TIME_YEARS = 1.45e10;
 const INTEGRATION_STEP = .012;
 
+const clamp = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, value));
+
+function finiteFuturePosition(years, presentAgeYears, outcomeYears) {
+  const presentExponent = Math.log10(presentAgeYears);
+  const outcomeExponent = Math.log10(outcomeYears);
+  const exponent = Math.log10(clamp(years, presentAgeYears, outcomeYears));
+  return 470 + (exponent - presentExponent) / (outcomeExponent - presentExponent) * 530;
+}
+
 const modelCatalog = {
   lambda: {
     label: '宇宙学常数',
@@ -218,6 +227,21 @@ export function createCosmicFate(seed, cosmology) {
   const outcomeYears = vacuumWins ? vacuumDecayYears : baseOutcomeYears;
   const modelInfo = modelCatalog[darkEnergy.model];
   const outcomeInfo = outcomeCatalog[type];
+  let onsetYears = Infinity;
+  if (type === 'big-crunch') {
+    onsetYears = expansion.turnaroundYears || outcomeYears;
+  } else if (type === 'big-rip') {
+    const presentExponent = Math.log10(cosmology.presentAgeYears);
+    const outcomeExponent = Math.log10(outcomeYears);
+    onsetYears = 10 ** (presentExponent + (outcomeExponent - presentExponent) * .9);
+  } else if (type === 'vacuum-decay') {
+    const presentExponent = Math.log10(cosmology.presentAgeYears);
+    const outcomeExponent = Math.log10(outcomeYears);
+    onsetYears = 10 ** (presentExponent + (outcomeExponent - presentExponent) * .97);
+  }
+  const onsetAt = Number.isFinite(onsetYears)
+    ? clamp(finiteFuturePosition(onsetYears, cosmology.presentAgeYears, outcomeYears), 480, 997)
+    : 930;
 
   return {
     ...darkEnergy,
@@ -233,7 +257,8 @@ export function createCosmicFate(seed, cosmology) {
     description: outcomeInfo.description,
     outcomeYears,
     outcomeExponent: Number.isFinite(outcomeYears) ? Math.log10(outcomeYears) : Infinity,
-    onsetAt: type === 'big-crunch' ? 790 : type === 'big-rip' ? 820 : type === 'vacuum-decay' ? 875 : 930
+    onsetYears,
+    onsetAt
   };
 }
 
