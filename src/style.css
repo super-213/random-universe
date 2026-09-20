@@ -403,6 +403,8 @@ h1 strong {
   z-index: 12;
   top: calc(100% + 10px);
   left: 0;
+  display: grid;
+  gap: 3px;
   min-width: 190px;
   padding: 8px;
   border: 1px solid rgba(241,238,231,.12);
@@ -413,7 +415,7 @@ h1 strong {
   -webkit-backdrop-filter: blur(18px);
 }
 .galaxy-submenu[hidden] { display: none; }
-.local-group-toggle {
+.galaxy-menu-action {
   width: 100%;
   padding: 13px 16px;
   border: 0;
@@ -424,9 +426,9 @@ h1 strong {
   text-align: left;
   cursor: pointer;
 }
-.local-group-toggle:hover,
-.local-group-toggle:focus-visible,
-.local-group-toggle[aria-pressed="true"] { background: rgba(216,255,95,.08); color: var(--accent); outline: none; }
+.galaxy-menu-action:hover,
+.galaxy-menu-action:focus-visible,
+.galaxy-menu-action[aria-pressed="true"] { background: rgba(216,255,95,.08); color: var(--accent); outline: none; }
 .local-group-readout {
   position: absolute;
   top: 19vh;
@@ -1091,6 +1093,20 @@ h1 strong {
 .event-marker.is-uncertain-observation,
 .timeline-detail-event.is-uncertain-observation { opacity: calc(.32 + var(--observation-confidence, .5) * .5); filter: saturate(.55); }
 
+.is-immersive-mode .site-header,
+.is-immersive-mode .explorer-view > * {
+  transition: opacity .5s ease, visibility 0s !important;
+}
+.is-immersive-mode.is-immersive-ui-hidden { cursor: none; }
+.is-immersive-mode.is-immersive-ui-hidden #universe { cursor: none; }
+.is-immersive-mode.is-immersive-ui-hidden .site-header,
+.is-immersive-mode.is-immersive-ui-hidden .explorer-view > * {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  transition: opacity .65s ease, visibility 0s .65s !important;
+}
+
 .creation-flash {
   position: fixed;
   z-index: 20;
@@ -1169,7 +1185,7 @@ h1 strong {
   #galaxy-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .explorer-title .kicker { display: none; }
   .galaxy-submenu { min-width: 174px; }
-  .local-group-toggle { padding: 12px 14px; font-size: 12px; }
+  .galaxy-menu-action { padding: 12px 14px; font-size: 12px; }
   .local-group-readout { top: calc(env(safe-area-inset-top) + 72px); left: 16px; }
   .coordinates { display: none; }
   .era-readout {

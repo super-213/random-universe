@@ -168,8 +168,12 @@ let localGroupGalaxies = [];
 let localGroupView = false;
 let localGroupFrameRadius = 36;
 let shipHighlightEnabled = false;
+let immersiveMode = false;
+let immersiveUiTimer = null;
+let suppressImmersiveCanvasClick = false;
 let keyboardStarIndex = -1;
 let keyboardStarMarker = null;
+const immersiveUiDelayMs = 3500;
 const shipForward = new THREE.Vector3(1, 0, 0);
 const shipRouteDirection = new THREE.Vector3();
 const shipRouteStart = new THREE.Vector3();
@@ -2484,6 +2488,7 @@ async function enterUniverse() {
   enterLabel.textContent = '正在校准';
 
   try {
+    await requestAppFullscreen();
     await loadExplorer();
     if (galaxyBuiltForSeed !== universe.seed) {
       await buildGalaxy();
@@ -2516,6 +2521,7 @@ async function enterUniverse() {
   document.body.classList.remove('is-local-group-view');
   $('#toggle-local-group').setAttribute('aria-pressed', 'false');
   $('#toggle-local-group').textContent = '查看局部星系群';
+  setImmersiveMode(false);
   setGalaxyMenuOpen(false);
   controls.enabled = true;
   controls.target.set(0, 0, 0);
@@ -2536,6 +2542,7 @@ async function enterUniverse() {
 function leaveUniverse() {
   if (mode !== 'explorer') return;
   closeTimelineEventDetail();
+  setImmersiveMode(false);
   mode = 'generator';
   document.body.classList.remove('is-exploring');
   $('#explorer-view').classList.remove('is-active');
@@ -2684,6 +2691,84 @@ function openCivilizationChronicle(speciesIndex) {
 function setGalaxyMenuOpen(open) {
   $('#galaxy-submenu').hidden = !open;
   $('#toggle-galaxy-menu').setAttribute('aria-expanded', String(open));
+}
+
+function fullscreenElement() {
+  return document.fullscreenElement || document.webkitFullscreenElement;
+}
+
+function syncFullscreenState() {
+  const enabled = Boolean(fullscreenElement());
+  const button = $('#toggle-fullscreen');
+  button.setAttribute('aria-pressed', String(enabled));
+  button.textContent = enabled ? '退出全屏' : '全屏模式';
+}
+
+async function requestAppFullscreen() {
+  if (fullscreenElement()) return true;
+  const root = document.documentElement;
+  const request = root.requestFullscreen || root.webkitRequestFullscreen;
+  if (!request) return false;
+  try {
+    await request.call(root);
+    syncFullscreenState();
+    return true;
+  } catch {
+    syncFullscreenState();
+    return false;
+  }
+}
+
+async function toggleFullscreen() {
+  setGalaxyMenuOpen(false);
+  const exit = document.exitFullscreen || document.webkitExitFullscreen;
+  try {
+    if (fullscreenElement()) {
+      if (exit) await exit.call(document);
+    } else if (!await requestAppFullscreen()) {
+      const button = $('#toggle-fullscreen');
+      button.textContent = '无法进入全屏';
+      window.setTimeout(syncFullscreenState, 1600);
+      return;
+    }
+  } catch {
+    const button = $('#toggle-fullscreen');
+    button.textContent = '无法进入全屏';
+    window.setTimeout(syncFullscreenState, 1600);
+    return;
+  }
+  syncFullscreenState();
+}
+
+function clearImmersiveUiTimer() {
+  if (immersiveUiTimer === null) return;
+  window.clearTimeout(immersiveUiTimer);
+  immersiveUiTimer = null;
+}
+
+function showImmersiveUi() {
+  if (!immersiveMode) return false;
+  const wasHidden = document.body.classList.contains('is-immersive-ui-hidden');
+  document.body.classList.remove('is-immersive-ui-hidden');
+  clearImmersiveUiTimer();
+  immersiveUiTimer = window.setTimeout(() => {
+    immersiveUiTimer = null;
+    setGalaxyMenuOpen(false);
+    document.body.classList.add('is-immersive-ui-hidden');
+  }, immersiveUiDelayMs);
+  return wasHidden;
+}
+
+function setImmersiveMode(enabled) {
+  immersiveMode = Boolean(enabled && mode === 'explorer');
+  document.body.classList.toggle('is-immersive-mode', immersiveMode);
+  document.body.classList.remove('is-immersive-ui-hidden');
+  const button = $('#toggle-immersive');
+  button.setAttribute('aria-pressed', String(immersiveMode));
+  button.textContent = immersiveMode ? '退出沉浸模式' : '沉浸式模式';
+  clearImmersiveUiTimer();
+  setGalaxyMenuOpen(false);
+  if (immersiveMode) showImmersiveUi();
 }
 
 function toggleLocalGroupView() {
@@ -3367,6 +3452,7 @@ function disposePageResources() {
     timelineMarkerResizeFrame = null;
   }
   controls?.dispose();
+  clearImmersiveUiTimer();
   [
     universeGroup,
     galaxyGroup,
@@ -3401,7 +3487,22 @@ window.addEventListener('pageshow', (event) => {
 window.addEventListener('pointermove', (event) => {
   pointer.x = (event.clientX / innerWidth) * 2 - 1;
   pointer.y = -(event.clientY / innerHeight) * 2 + 1;
+  showImmersiveUi();
 });
+
+document.addEventListener('pointerdown', () => {
+  if (!immersiveMode) return;
+  suppressImmersiveCanvasClick = showImmersiveUi();
+}, { capture: true });
+
+document.addEventListener('pointerup', () => {
+  if (!suppressImmersiveCanvasClick) return;
+  window.setTimeout(() => { suppressImmersiveCanvasClick = false; }, 0);
+}, { capture: true });
+
+document.addEventListener('pointercancel', () => {
+  suppressImmersiveCanvasClick = false;
+}, { capture: true });
 
 window.addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
@@ -3414,7 +3515,13 @@ window.addEventListener('resize', () => {
   });
 });
 
-canvas.addEventListener('click', inspectStar);
+canvas.addEventListener('click', (event) => {
+  if (suppressImmersiveCanvasClick) {
+    suppressImmersiveCanvasClick = false;
+    return;
+  }
+  inspectStar(event);
+});
 canvas.addEventListener('keydown', (event) => {
   if (!['ArrowLeft', 'ArrowRight', 'Home', 'End', 'Enter', ' '].includes(event.key)) return;
   if (mode !== 'explorer') return;
@@ -3439,6 +3546,10 @@ $('#multiverse-list').addEventListener('click', (event) => {
 $('#close-inspector').addEventListener('click', () => $('#star-inspector').classList.remove('is-open'));
 $('#close-chronicle').addEventListener('click', closeCivilizationChronicle);
 $('#toggle-local-group').addEventListener('click', toggleLocalGroupView);
+$('#toggle-fullscreen').addEventListener('click', toggleFullscreen);
+$('#toggle-immersive').addEventListener('click', () => setImmersiveMode(!immersiveMode));
+document.addEventListener('fullscreenchange', syncFullscreenState);
+document.addEventListener('webkitfullscreenchange', syncFullscreenState);
 $('#toggle-ship-highlight').addEventListener('click', (event) => {
   shipHighlightEnabled = !shipHighlightEnabled;
   event.currentTarget.classList.toggle('is-active', shipHighlightEnabled);
@@ -3733,6 +3844,7 @@ document.querySelectorAll('.speed-controls button').forEach((button) => {
   });
 });
 document.addEventListener('keydown', (event) => {
+  if (immersiveMode) showImmersiveUi();
   if (event.key.toLowerCase() === 'r' && mode === 'generator') regenerate();
   if (event.key === 'Escape' && mode === 'generator' && $('#multiverse-lab').classList.contains('is-open')) {
     toggleMultiverseLab(false);
@@ -3741,6 +3853,11 @@ document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && mode === 'explorer') {
     if (!$('#galaxy-submenu').hidden) {
       setGalaxyMenuOpen(false);
+      $('#toggle-galaxy-menu').focus({ preventScroll: true });
+      return;
+    }
+    if (immersiveMode) {
+      setImmersiveMode(false);
       $('#toggle-galaxy-menu').focus({ preventScroll: true });
       return;
     }
@@ -3768,6 +3885,7 @@ document.addEventListener('keydown', (event) => {
 });
 
 const requestedSeed = new URLSearchParams(window.location.search).get('seed');
+syncFullscreenState();
 universe = createUniverse(requestedSeed || undefined);
 syncUniverseUrl();
 updateUniverseData(universe);
