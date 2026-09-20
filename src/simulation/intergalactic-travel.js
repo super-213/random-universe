@@ -25,6 +25,16 @@ export function fleetProgress(time, departureAt, arrivalAt) {
   return Math.max(0, Math.min(1, (time - departureAt) / Math.max(1, arrivalAt - departureAt)));
 }
 
+export function shuttleTrafficAt(elapsedSeconds, phase = 0, cyclesPerSecond = .025) {
+  const cycle = ((elapsedSeconds * cyclesPerSecond + phase) % 2 + 2) % 2;
+  const outbound = cycle < 1;
+  const linearProgress = outbound ? cycle : 2 - cycle;
+  return {
+    progress: .5 - Math.cos(linearProgress * Math.PI) * .5,
+    direction: outbound ? 1 : -1
+  };
+}
+
 export function fleetStateLabel(state) {
   return fleetStateLabels[state] || fleetStateLabels[0];
 }

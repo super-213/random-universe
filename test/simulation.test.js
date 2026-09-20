@@ -45,6 +45,7 @@ import {
   zoomTimelineViewport
 } from '../src/ui/timeline-layout.js';
 import { civilizationObservation } from '../src/simulation/observation.js';
+import { shuttleTrafficAt } from '../src/simulation/intergalactic-travel.js';
 import {
   advanceTechnologyTree,
   technologyBits,
@@ -52,6 +53,18 @@ import {
 } from '../src/simulation/technology-tree.js';
 
 const seedFor = (index) => index.toString(36).toUpperCase().padStart(16, '0');
+
+test('intergalactic shuttle traffic eases between both ends of a route', () => {
+  assert.deepEqual(shuttleTrafficAt(0, 0, 1), { progress: 0, direction: 1 });
+  const outboundMidpoint = shuttleTrafficAt(.5, 0, 1);
+  assert.ok(Math.abs(outboundMidpoint.progress - .5) < Number.EPSILON);
+  assert.equal(outboundMidpoint.direction, 1);
+  assert.deepEqual(shuttleTrafficAt(1, 0, 1), { progress: 1, direction: -1 });
+  const returnMidpoint = shuttleTrafficAt(1.5, 0, 1);
+  assert.ok(Math.abs(returnMidpoint.progress - .5) < Number.EPSILON);
+  assert.equal(returnMidpoint.direction, -1);
+  assert.deepEqual(shuttleTrafficAt(2, 0, 1), { progress: 0, direction: 1 });
+});
 
 test('timeline events cluster by rendered pixel distance using their impact time', () => {
   const events = [
