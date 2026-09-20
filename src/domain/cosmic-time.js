@@ -184,17 +184,18 @@ export function cosmicTimeLabel(position, universe) {
   const formatYears = (years) => {
     if (years < 1) {
       const seconds = years * 31557600;
-      if (seconds < 3600) return `${Math.round(seconds / 60)} 分钟`;
-      if (seconds < 86400) return `${(seconds / 3600).toFixed(1)} 小时`;
-      return `${(seconds / 86400).toFixed(1)} 天`;
+      if (seconds < 3600) return `${Math.round(seconds / 60)} min`;
+      if (seconds < 86400) return `${(seconds / 3600).toFixed(1)} h`;
+      return `${(seconds / 86400).toFixed(1)} d`;
     }
-    if (years < 1e4) return `${Math.max(1, Math.round(years))} 年`;
-    if (years < 1e8) return `${(years / 1e4).toFixed(years < 1e6 ? 1 : 0)} 万年`;
-    if (years < 1e12) return `${(years / 1e8).toFixed(years < 1e9 ? 2 : 1)} 亿年`;
-    return `10^${Math.log10(years).toFixed(1)} 年`;
+    if (years < 1e3) return `${Math.max(1, Math.round(years))} yr`;
+    if (years < 1e6) return `${(years / 1e3).toFixed(years < 1e5 ? 1 : 0)} kyr`;
+    if (years < 1e9) return `${(years / 1e6).toFixed(years < 1e8 ? 1 : 0)} Myr`;
+    if (years < 1e12) return `${(years / 1e9).toFixed(1)} Gyr`;
+    return `10^${Math.log10(years).toFixed(1)} yr`;
   };
-  if (position < 18) return `T+${Math.max(.001, logLerp(.001, 1, position / 18)).toFixed(3)} 秒`;
-  if (position < 55) return `T+${Math.max(1, Math.round(logLerp(1, 180, (position - 18) / 37)))} 秒`;
+  if (position < 18) return `T+${Math.max(.001, logLerp(.001, 1, position / 18)).toFixed(3)} s`;
+  if (position < 55) return `T+${Math.max(1, Math.round(logLerp(1, 180, (position - 18) / 37)))} s`;
   const milestones = universe?.cosmicMilestones || {};
   const recombinationYears = milestones.recombinationYears || 380000;
   const firstStarsYears = Math.max(recombinationYears * 1.1, milestones.firstStarsYears || 1.8e8);
@@ -212,9 +213,9 @@ export function cosmicTimeLabel(position, universe) {
     return `T+${formatYears(years)}`;
   }
   if (position < 570) return `T+${formatYears(logLerp(presentAgeYears, 1e12, (position - 470) / 100))}`;
-  if (position < 650) return `T+10^${(12 + (position - 570) / 80 * 2).toFixed(1)} 年`;
-  if (position < 680) return `T+10^${(14 + (position - 650) / 30).toFixed(1)} 年`;
-  if (position < 845) return `T+10^${Math.round(15 + (position - 680) / 165 * 23)} 年`;
-  if (position < 950) return `T+10^${Math.round(38 + (position - 845) / 105 * (universe.blackHoleEvaporationExponent - 38))} 年`;
-  return position < 999 ? `T+10^${universe.blackHoleEvaporationExponent} 年以后` : '趋近热寂';
+  if (position < 650) return `T+10^${(12 + (position - 570) / 80 * 2).toFixed(1)} yr`;
+  if (position < 680) return `T+10^${(14 + (position - 650) / 30).toFixed(1)} yr`;
+  if (position < 845) return `T+10^${Math.round(15 + (position - 680) / 165 * 23)} yr`;
+  if (position < 950) return `T+10^${Math.round(38 + (position - 845) / 105 * (universe.blackHoleEvaporationExponent - 38))} yr`;
+  return position < 999 ? `T+10^${universe.blackHoleEvaporationExponent} yr 以后` : '趋近热寂';
 }

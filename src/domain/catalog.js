@@ -24,9 +24,9 @@ export const eras = [
   { until: 245, name: '宇宙黑暗时代', description: '38 万年后宇宙变得透明，但第一代恒星尚未点亮。' },
   { until: 340, name: '宇宙黎明', description: '约 1～2 亿年后，第一代恒星与星系开始形成并推动再电离。' },
   { until: 650, name: '恒星时代', description: '恒星、星系与重元素持续演化；生命与文明属于未证实的模型层。' },
-  { until: 845, name: '简并时代 · 假说', description: '若质子衰变等标准长期假说成立，恒星残骸绕核运行，并在近遇中逐个逃离或落入黑洞。' },
-  { until: 950, name: '黑洞时代 · 假说', description: '若霍金辐射的标准推断适用，孤立黑洞在极漫长时间中逐个蒸发。' },
-  { until: 1001, name: '暗时代 · 渐近', description: '宇宙继续膨胀，辐射红移与稀释，可用能量梯度趋近于零，而非发生一次全局终结。' }
+  { until: 845, name: '简并时代', description: '若质子衰变等标准长期假说成立，恒星残骸绕核运行，并在近遇中逐个逃离或落入黑洞。' },
+  { until: 950, name: '黑洞时代', description: '若霍金辐射的标准推断适用，孤立黑洞在极漫长时间中逐个蒸发。' },
+  { until: 1001, name: '暗时代', description: '宇宙继续膨胀，辐射红移与稀释，可用能量梯度趋近于零，而非发生一次全局终结。' }
 ];
 
 export function erasForUniverse(universe) {
@@ -49,7 +49,7 @@ export function erasForUniverse(universe) {
   const preFate = fate.onsetAt > stellarEnd
     ? [{
         until: fate.onsetAt,
-        name: '简并时代 · 假说',
+        name: '简并时代',
         description: '恒星已经熄灭，白矮星、中子星与黑洞继续经历长期引力演化。'
       }]
     : [];
