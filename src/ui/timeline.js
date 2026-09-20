@@ -92,11 +92,27 @@ export function focusTimelineScale(position) {
     const stretch = 1 + proximity * 1.35;
     tick.style.transform = `translateX(calc(-50% + ${shift.toFixed(2)}px)) scaleY(${stretch.toFixed(3)})`;
   });
+
+  const eventTrack = $('#cosmic-event-markers');
+  if (!eventTrack || eventTrack.clientWidth === 0) return;
+  const eventRadius = Math.min(92, eventTrack.clientWidth * .12);
+  eventTrack.querySelectorAll('.event-marker').forEach((marker) => {
+    const markerX = Number(marker.dataset.position) / 1000 * eventTrack.clientWidth;
+    const distance = markerX - focusX;
+    const proximity = Math.max(0, 1 - Math.abs(distance) / eventRadius);
+    const shift = Math.sign(distance) * proximity * eventRadius * .52;
+    marker.style.setProperty('--timeline-focus-shift', `${shift.toFixed(2)}px`);
+    marker.style.setProperty('--timeline-focus-growth', (proximity * .16).toFixed(3));
+  });
 }
 
 export function resetTimelineScaleFocus() {
   $('#timeline-scale')?.querySelectorAll('.scale-tick').forEach((tick) => {
     tick.style.transform = '';
+  });
+  $('#cosmic-event-markers')?.querySelectorAll('.event-marker').forEach((marker) => {
+    marker.style.removeProperty('--timeline-focus-shift');
+    marker.style.removeProperty('--timeline-focus-growth');
   });
 }
 
@@ -104,8 +120,16 @@ export function renderTimelineHeader(state) {
   const timeline = cachedElement('timeline', '#cosmic-timeline');
   const timelineValue = String(state.position);
   if (timeline?.value !== timelineValue) timeline.value = timelineValue;
+  if (timeline?.getAttribute('aria-valuetext') !== state.label) {
+    timeline?.setAttribute('aria-valuetext', state.label);
+  }
   setStyle(cachedElement('progress', '#time-progress'), 'width', `${state.position / 10}%`);
   setText(cachedElement('timelineValue', '#timeline-value'), state.label);
+  const scrubValue = cachedElement('timelineScrubValue', '#timeline-scrub-value');
+  setText(scrubValue, state.label);
+  setStyle(scrubValue, 'left', `${state.position / 10}%`);
+  scrubValue?.classList.toggle('is-at-start', state.position < 55);
+  scrubValue?.classList.toggle('is-at-end', state.position > 945);
   setText(cachedElement('eraName', '#era-name'), state.era.name);
   setText(cachedElement('cosmicTime', '#cosmic-time'), state.label.replace('T+', ''));
   setText(cachedElement('eraDescription', '#era-description'), state.era.description);

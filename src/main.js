@@ -1862,6 +1862,7 @@ function renderCosmicEventMarkers() {
     marker.className = `event-marker${confidenceClass}`;
     marker.classList.toggle('is-beyond-lightcone', !observerCanSeeEvent(event));
     marker.style.left = `${event.start / 10}%`;
+    marker.dataset.position = event.start.toFixed(3);
     marker.style.setProperty('--event-color', event.color);
     const eventKind = event.confidence === 'science-fiction'
       ? '科幻假设，'
@@ -2906,6 +2907,7 @@ $('#toggle-time').addEventListener('click', () => {
 });
 const timelineInput = $('#cosmic-timeline');
 const timelineWrap = timelineInput.closest('.range-wrap');
+let timelinePointerId = null;
 
 function beginTimelineFocus() {
   timelineWrap.classList.add('is-scrubbing');
@@ -2918,19 +2920,71 @@ function endTimelineFocus() {
   resetTimelineScaleFocus();
 }
 
-timelineInput.addEventListener('pointerdown', beginTimelineFocus);
-window.addEventListener('pointerup', endTimelineFocus);
-window.addEventListener('pointercancel', endTimelineFocus);
+function pauseTimelineForScrubbing() {
+  timePlaying = false;
+  $('#toggle-time').textContent = '▶';
+  $('#toggle-time').setAttribute('aria-label', '播放时间');
+}
+
+function updateTimelineFromPointer(event) {
+  const bounds = timelineWrap.getBoundingClientRect();
+  if (bounds.width <= 0) return;
+  const progress = THREE.MathUtils.clamp((event.clientX - bounds.left) / bounds.width, 0, 1);
+  const position = Math.round(progress * 10000) / 10;
+  updateCosmicTime(position, true);
+  focusTimelineScale(position);
+}
+
+function beginTimelineScrub(event) {
+  if (event.button !== 0 || event.target.closest('.event-marker')) return;
+  event.preventDefault();
+  timelinePointerId = event.pointerId;
+  timelineWrap.setPointerCapture(event.pointerId);
+  timelineInput.focus({ preventScroll: true });
+  timelineWrap.classList.remove('is-keyboard-focus');
+  pauseTimelineForScrubbing();
+  beginTimelineFocus();
+  updateTimelineFromPointer(event);
+}
+
+function moveTimelineScrub(event) {
+  if (event.pointerId !== timelinePointerId) return;
+  updateTimelineFromPointer(event);
+}
+
+function endTimelineScrub(event) {
+  if (event.pointerId !== timelinePointerId) return;
+  timelinePointerId = null;
+  if (timelineWrap.hasPointerCapture(event.pointerId)) {
+    timelineWrap.releasePointerCapture(event.pointerId);
+  }
+  endTimelineFocus();
+}
+
+timelineWrap.addEventListener('pointerdown', beginTimelineScrub);
+timelineWrap.addEventListener('pointermove', moveTimelineScrub);
+timelineWrap.addEventListener('pointerup', endTimelineScrub);
+timelineWrap.addEventListener('pointercancel', endTimelineScrub);
+timelineWrap.addEventListener('lostpointercapture', (event) => {
+  if (event.pointerId !== timelinePointerId) return;
+  timelinePointerId = null;
+  endTimelineFocus();
+});
+timelineInput.addEventListener('focus', () => {
+  if (timelinePointerId === null) timelineWrap.classList.add('is-keyboard-focus');
+});
 timelineInput.addEventListener('keydown', (event) => {
   if (['ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown'].includes(event.key)) {
     beginTimelineFocus();
   }
 });
 timelineInput.addEventListener('keyup', endTimelineFocus);
-timelineInput.addEventListener('blur', endTimelineFocus);
+timelineInput.addEventListener('blur', () => {
+  timelineWrap.classList.remove('is-keyboard-focus');
+  endTimelineFocus();
+});
 timelineInput.addEventListener('input', (event) => {
-  timePlaying = false;
-  $('#toggle-time').textContent = '▶';
+  pauseTimelineForScrubbing();
   updateCosmicTime(event.target.value, true);
   if (timelineWrap.classList.contains('is-scrubbing')) {
     focusTimelineScale(Number(event.target.value));
