@@ -59,7 +59,9 @@
 
 千新星使用蓝紫色的赤道抛射物与短暂双极喷流，表示双中子星并合产生的短伽马暴和富重元素物质；新星则是尺寸更小的表面热核爆发，爆发后白矮星仍然存在。失败超新星不会形成明亮的外抛壳层，而会经历短暂增亮、暗弱尘埃外流和新生黑洞显现。红矮星超级耀斑主要影响近轨行星环境，不会摧毁宿主恒星。潮汐瓦解事件只在拥有中央黑洞的宇宙中生成，恒星会被拉成长流，其中一部分物质被吸积，另一部分沿轨道逃逸。
 
-这五类事件由独立的种子化约化模型驱动，而不是固定动画参数。千新星会生成双星质量、啁啾质量、引力波能损、抛射质量与速度、喷流张角和残骸类型；潮汐瓦解会计算黑洞与恒星质量、潮汐半径、穿透因子、回落时间及 `t^-5/3` 吸积衰减；失败超新星会计算前身质量、外层抛射比例、中微子质量损失和残余黑洞质量；超级耀斑和新星会生成多次脉冲、能量或吸积参数、恢复时间与复发周期。计算结果会继续驱动影响范围、文明损伤与恢复、粒子速度、事件播报，以及千新星和失败超新星残骸的持续局部引力场。
+全部天体事件现在都由独立的种子化约化模型驱动，而不是固定动画参数。千新星会生成双星质量、啁啾质量、引力波能损、抛射质量与速度、喷流张角和残骸类型；潮汐瓦解会计算黑洞与恒星质量、潮汐半径、穿透因子、回落时间及 `t^-5/3` 吸积衰减；失败超新星会计算前身质量、外层抛射比例、中微子质量损失和残余黑洞质量；超级耀斑和新星会生成多次脉冲、能量或吸积参数、恢复时间与复发周期。
+
+原有事件也接入了对应模型：成对不稳定、Ia 型、核坍缩和超亮超新星会生成前身星质量、爆炸能量、抛射质量与速度、镍-56 产量及残骸；年轻脉冲星和磁星耀斑会生成中子星质量、自转周期、磁场、诞生踢速或耀斑能量；长伽马暴会生成坍缩星质量、喷流张角、洛伦兹因子与持续时间；类星体会计算中央黑洞质量、爱丁顿比、吸积率和活动周期；脉冲星自转突变会计算频率跃变量与恢复比例；双黑洞事件会生成两颗黑洞质量、自旋、啁啾质量、引力波质量损失、残余质量和反冲速度。计算结果会继续驱动影响范围、文明损伤与恢复、粒子数量与速度、喷流宽度、脉冲节律、事件播报、引力波形变，以及致密残骸的持续局部引力场。
 
 ### 3. 压缩一部宇宙史
 
@@ -118,6 +120,11 @@
 - [NASA Hubble：失败超新星与黑洞形成](https://science.nasa.gov/missions/hubble/collapsing-star-gives-birth-to-a-black-hole/)
 - [NASA Hubble：经典新星与再发新星](https://science.nasa.gov/mission/hubble/science/science-behind-the-discoveries/hubble-stellar-explosions/)
 - [NASA Astrobiology：超级耀斑对行星宜居性的影响](https://astrobiology.nasa.gov/news/superflares-and-the-habitability-of-planets/)
+- [NASA Hubble：Ia 型与核坍缩超新星的形成和残骸](https://science.nasa.gov/mission/hubble/science/science-behind-the-discoveries/hubble-stellar-explosions/)
+- [NASA Hubble：脉冲星的磁极束流与高速粒子](https://science.nasa.gov/mission/hubble/science/science-behind-the-discoveries/hubble-pulsars/)
+- [NASA NICER：脉冲星自转突变与内部角动量交换](https://heasarc.gsfc.nasa.gov/docs/nicer/science_nuggets/20240502.html)
+- [NASA GCN：磁星巨型耀斑的能量、谱峰与持续时间实例](https://gcn.nasa.gov/circulars/35062)
+- [Dessart 等：成对不稳定与磁星供能超亮超新星模型](https://arxiv.org/abs/1208.1214)
 
 ## 操作指南
 

@@ -27,6 +27,251 @@ export function createTransientSimulation(event, universe, eventIndex) {
   const random = createSeededRandom(universe.seed, 12011 + eventIndex * 977);
   const gravityScale = Math.sqrt(universe.gravity);
 
+  if (event.type === 'pair-instability-supernova') {
+    const progenitorMass = randomBetween(random, 140, 255);
+    const heliumCoreMass = randomBetween(random, 64, Math.min(133, progenitorMass * .54));
+    const explosionEnergyBethe = clamp(4 + Math.pow((heliumCoreMass - 64) / 69, 1.7) * 72, 4, 76);
+    const nickelMass = clamp(.04 + Math.pow((heliumCoreMass - 64) / 69, 2.2) * 38, .04, 38);
+    return {
+      model: 'pair-instability',
+      progenitorMass,
+      heliumCoreMass,
+      explosionEnergyBethe,
+      nickelMass,
+      ejectaMass: progenitorMass * randomBetween(random, .82, .96),
+      ejectaVelocityKms: randomBetween(random, 7000, 14500) * Math.pow(explosionEnergyBethe / 20, .18),
+      noRemnant: true,
+      rangeScale: clamp(.82 + Math.sqrt(explosionEnergyBethe / 20) * .3, .9, 1.62),
+      civilizationScale: clamp(.76 + Math.sqrt(explosionEnergyBethe / 20) * .24, .86, 1.48),
+      kickScale: clamp(.8 + explosionEnergyBethe / 120, .84, 1.42)
+    };
+  }
+
+  if (event.type === 'type-ia-supernova') {
+    const channel = random() < .46 ? 'double-degenerate' : 'single-degenerate';
+    const whiteDwarfMass = channel === 'double-degenerate'
+      ? randomBetween(random, 1.22, 1.58)
+      : randomBetween(random, 1.34, 1.41);
+    const nickelMass = randomBetween(random, .38, .86);
+    const explosionEnergyBethe = randomBetween(random, .85, 1.55) * (1 + (nickelMass - .6) * .25);
+    return {
+      model: 'thermonuclear-supernova',
+      channel,
+      whiteDwarfMass,
+      nickelMass,
+      explosionEnergyBethe,
+      ejectaMass: whiteDwarfMass,
+      ejectaVelocityKms: randomBetween(random, 9000, 14500) * Math.sqrt(explosionEnergyBethe),
+      noRemnant: true,
+      rangeScale: clamp(.84 + explosionEnergyBethe * .14, .92, 1.16),
+      civilizationScale: clamp(.78 + nickelMass * .28, .86, 1.12),
+      kickScale: clamp(.84 + explosionEnergyBethe * .1, .9, 1.08)
+    };
+  }
+
+  if (event.type === 'core-collapse-supernova') {
+    const progenitorMass = randomBetween(random, 8.2, 31);
+    const compactness = clamp((progenitorMass - 8) / 23 + randomBetween(random, -.16, .16), 0, 1);
+    const remnantType = compactness > .7 ? 'black-hole' : 'neutron-star';
+    const remnantMass = remnantType === 'black-hole'
+      ? randomBetween(random, 4.8, Math.min(13.5, progenitorMass * .55))
+      : randomBetween(random, 1.18, 2.18);
+    const explosionEnergyBethe = randomBetween(random, .45, 2.15) * (1 - compactness * .28);
+    return {
+      model: 'core-collapse',
+      progenitorMass,
+      explosionEnergyBethe,
+      ejectaMass: Math.max(.8, progenitorMass - remnantMass - randomBetween(random, .4, 2.1)),
+      ejectaVelocityKms: randomBetween(random, 4500, 11500) * Math.sqrt(explosionEnergyBethe),
+      nickelMass: randomBetween(random, .025, .13) * explosionEnergyBethe,
+      neutrinoEnergyErg: logarithmicRandom(random, 52.9, 53.5),
+      remnantType,
+      remnantMass,
+      natalKickKms: remnantType === 'neutron-star' ? randomBetween(random, 80, 720) : randomBetween(random, 15, 180),
+      persistentRemnant: true,
+      gravityStrength: clamp(remnantMass / 8, .2, 1.35),
+      gravityRadius: randomBetween(random, .42, .72),
+      rangeScale: clamp(.78 + Math.sqrt(explosionEnergyBethe) * .2, .86, 1.22),
+      civilizationScale: clamp(.72 + explosionEnergyBethe * .17, .8, 1.16),
+      kickScale: clamp(.76 + explosionEnergyBethe * .18, .82, 1.18)
+    };
+  }
+
+  if (event.type === 'superluminous-supernova') {
+    const engine = random() < .64 ? 'magnetar' : 'circumstellar-interaction';
+    const progenitorMass = randomBetween(random, 22, 78);
+    const explosionEnergyBethe = randomBetween(random, 3, 18);
+    const remnantType = engine === 'magnetar' && progenitorMass < 48 ? 'magnetar' : 'black-hole';
+    const remnantMass = remnantType === 'magnetar'
+      ? randomBetween(random, 1.55, 2.35)
+      : randomBetween(random, 5.5, 18);
+    return {
+      model: 'superluminous-supernova',
+      engine,
+      progenitorMass,
+      explosionEnergyBethe,
+      ejectaMass: randomBetween(random, 5, Math.max(7, progenitorMass * .62)),
+      ejectaVelocityKms: randomBetween(random, 8000, 18500) * Math.pow(explosionEnergyBethe / 8, .18),
+      peakLuminosityErgS: logarithmicRandom(random, 43.7, 45),
+      magnetarPeriodMs: engine === 'magnetar' ? randomBetween(random, 1.1, 4.8) : null,
+      magneticFieldGauss: engine === 'magnetar' ? logarithmicRandom(random, 13.8, 15.2) : null,
+      remnantType,
+      remnantMass,
+      persistentRemnant: true,
+      gravityStrength: clamp(remnantMass / 10, .24, 1.45),
+      gravityRadius: randomBetween(random, .48, .78),
+      rangeScale: clamp(.94 + Math.sqrt(explosionEnergyBethe / 8) * .34, 1.05, 1.52),
+      civilizationScale: clamp(.88 + Math.log10(explosionEnergyBethe) * .24, .96, 1.38),
+      kickScale: clamp(.86 + explosionEnergyBethe / 42, .92, 1.32)
+    };
+  }
+
+  if (event.type === 'young-pulsar-birth') {
+    const neutronStarMass = randomBetween(random, 1.18, 2.12);
+    const spinPeriodMs = logarithmicRandom(random, 1.05, 2.22);
+    const magneticFieldGauss = logarithmicRandom(random, 11.8, 13.55);
+    const spinDownLuminosityErgS = 3.9e31
+      * Math.pow(magneticFieldGauss / 1e12, 2)
+      * Math.pow(1000 / spinPeriodMs, 4);
+    return {
+      model: 'young-pulsar',
+      neutronStarMass,
+      spinPeriodMs,
+      magneticFieldGauss,
+      spinDownLuminosityErgS,
+      natalKickKms: randomBetween(random, 90, 820),
+      beamOpeningDeg: randomBetween(random, 5, 18),
+      persistentRemnant: true,
+      gravityStrength: clamp(neutronStarMass / 3.6, .28, .62),
+      gravityRadius: randomBetween(random, .34, .54),
+      rangeScale: clamp(.76 + Math.log10(spinDownLuminosityErgS / 1e36 + 1) * .16, .78, 1.22),
+      civilizationScale: clamp(.72 + Math.log10(spinDownLuminosityErgS / 1e36 + 1) * .18, .75, 1.18),
+      kickScale: 0
+    };
+  }
+
+  if (event.type === 'gamma-ray-burst') {
+    const progenitorMass = randomBetween(random, 22, 72);
+    const isotropicEnergyErg = logarithmicRandom(random, 51.4, 54.1);
+    const jetOpeningDeg = randomBetween(random, 3.2, 11.5);
+    const jetOpeningRad = jetOpeningDeg * Math.PI / 180;
+    return {
+      model: 'collapsar-jet',
+      progenitorMass,
+      isotropicEnergyErg,
+      trueJetEnergyErg: isotropicEnergyErg * (1 - Math.cos(jetOpeningRad)),
+      jetOpeningDeg,
+      lorentzFactor: randomBetween(random, 90, 620),
+      durationSeconds: logarithmicRandom(random, .35, 2.15),
+      remnantMass: randomBetween(random, 3.4, 15),
+      remnantType: 'black-hole',
+      rangeScale: clamp(.78 + (Math.log10(isotropicEnergyErg) - 51) * .17, .86, 1.48),
+      civilizationScale: clamp(.72 + (Math.log10(isotropicEnergyErg) - 51) * .2, .82, 1.5),
+      kickScale: 0
+    };
+  }
+
+  if (event.type === 'quasar-awakening') {
+    const blackHoleMass = logarithmicRandom(random, 6.5, 9.2) * clamp(universe.massRatio, .7, 1.6);
+    const eddingtonRatio = logarithmicRandom(random, -1.15, .24);
+    const radiativeEfficiency = randomBetween(random, .07, .22);
+    return {
+      model: 'quasar-duty-cycle',
+      blackHoleMass,
+      eddingtonRatio,
+      radiativeEfficiency,
+      accretionRateSolarPerYear: 2.2 * blackHoleMass / 1e8 * eddingtonRatio * (.1 / radiativeEfficiency),
+      jetLorentzFactor: randomBetween(random, 3, 18),
+      jetOpeningDeg: randomBetween(random, 4, 15),
+      activeDurationMyr: logarithmicRandom(random, -.2, 1.7),
+      pulsePhases: [.32, .58, .76],
+      pulseWeights: [1, .72, .46],
+      recoveryDuration: randomBetween(random, 18, 32),
+      recoveryFraction: randomBetween(random, .22, .38),
+      temporaryOnly: true,
+      rangeScale: clamp(.8 + Math.sqrt(eddingtonRatio) * .34, .84, 1.38),
+      civilizationScale: clamp(.72 + Math.sqrt(eddingtonRatio) * .3, .78, 1.34),
+      kickScale: 0
+    };
+  }
+
+  if (event.type === 'magnetar-flare') {
+    const magneticFieldGauss = logarithmicRandom(random, 14.2, 15.35);
+    const energyErg = logarithmicRandom(random, 44.2, 46.4);
+    const pulseCount = 2 + Math.floor(random() * 4);
+    return {
+      model: 'magnetar-giant-flare',
+      magneticFieldGauss,
+      energyErg,
+      spikeDurationSeconds: logarithmicRandom(random, -2.7, -.55),
+      tailPeriodSeconds: randomBetween(random, 2.2, 11.8),
+      pulsePhases: createPulsePhases(random, pulseCount, .34, .76),
+      pulseWeights: Array.from({ length: pulseCount }, (_, index) => Math.pow(.68, index)),
+      recoveryDuration: randomBetween(random, 12, 28),
+      recoveryFraction: randomBetween(random, .36, .62),
+      temporaryOnly: true,
+      rangeScale: clamp(.76 + (Math.log10(energyErg) - 44) * .18, .8, 1.34),
+      civilizationScale: clamp(.68 + (Math.log10(energyErg) - 44) * .22, .72, 1.42),
+      kickScale: 0
+    };
+  }
+
+  if (event.type === 'pulsar-glitch') {
+    const spinPeriodMs = logarithmicRandom(random, 1.3, 3);
+    const fractionalFrequencyJump = logarithmicRandom(random, -9.2, -5.1);
+    return {
+      model: 'pulsar-glitch',
+      spinPeriodMs,
+      fractionalFrequencyJump,
+      recoveryFraction: randomBetween(random, .08, .82),
+      recoveryDays: logarithmicRandom(random, .4, 2.9),
+      pulsePhases: [.46, .56],
+      pulseWeights: [1, .24],
+      temporaryOnly: true,
+      rangeScale: 1,
+      civilizationScale: 1,
+      kickScale: 0
+    };
+  }
+
+  if (event.type === 'stellar-black-hole-merger' || event.type === 'late-black-hole-merger') {
+    const late = event.type === 'late-black-hole-merger';
+    const massA = late ? logarithmicRandom(random, 2.7, 5.4) : randomBetween(random, 18, 86);
+    const massB = late
+      ? logarithmicRandom(random, 2.5, Math.log10(massA))
+      : randomBetween(random, 7, Math.min(70, massA));
+    const totalMass = massA + massB;
+    const symmetricMassRatio = massA * massB / (totalMass * totalMass);
+    const spinA = randomBetween(random, -.82, .94);
+    const spinB = randomBetween(random, -.82, .94);
+    const effectiveSpin = (massA * spinA + massB * spinB) / totalMass;
+    const radiatedMassFraction = clamp(.035 + symmetricMassRatio * .11 + Math.max(0, effectiveSpin) * .018, .028, .09);
+    const recoilKms = clamp(
+      randomBetween(random, 80, late ? 1750 : 1050)
+        * (1 + Math.abs(spinA - spinB) * .52)
+        * (.72 + (1 - massB / massA) * .5),
+      40,
+      3200
+    );
+    return {
+      model: 'black-hole-binary',
+      massA,
+      massB,
+      chirpMass: Math.pow(massA * massB, 3 / 5) / Math.pow(totalMass, 1 / 5),
+      spinA,
+      spinB,
+      effectiveSpin,
+      radiatedMassFraction,
+      remnantMass: totalMass * (1 - radiatedMassFraction),
+      recoilKms,
+      gasRich: !late && random() < .38,
+      persistentRemnant: false,
+      rangeScale: 1,
+      civilizationScale: 1,
+      kickScale: 0
+    };
+  }
+
   if (event.type === 'neutron-star-kilonova') {
     const massA = randomBetween(random, 1.18, 1.92);
     const massB = randomBetween(random, 1.12, Math.min(1.82, massA));
@@ -178,8 +423,8 @@ export function applyTransientImpactScales(profile, simulation) {
     kick: profile.kick * (simulation.kickScale ?? 1),
     civilization: profile.civilization * (simulation.civilizationScale || 1),
     range: profile.range * (simulation.rangeScale || 1),
-    beamAngle: simulation.jetOpeningDeg
-      ? simulation.jetOpeningDeg * Math.PI / 180
+    beamAngle: simulation.jetOpeningDeg || simulation.beamOpeningDeg
+      ? (simulation.jetOpeningDeg || simulation.beamOpeningDeg) * Math.PI / 180
       : profile.beamAngle
   };
 }
@@ -202,6 +447,41 @@ export function describeTransientSimulation(event) {
   }
   if (simulation.model === 'recurrent-nova') {
     return `${simulation.whiteDwarfMass.toFixed(2)} M☉ 白矮星以 ${simulation.accretionRate.toExponential(1)} M☉/年吸积，模型复发周期约 ${Math.round(simulation.recurrenceYears).toLocaleString('zh-CN')} 年，本段显示 ${simulation.outburstCount} 次爆发`;
+  }
+  if (simulation.model === 'pair-instability') {
+    return `${simulation.progenitorMass.toFixed(0)} M☉ 巨星的 ${simulation.heliumCoreMass.toFixed(0)} M☉ 氦核触发成对不稳定，释放约 ${simulation.explosionEnergyBethe.toFixed(1)} Bethe，并完全解体、不留致密残骸`;
+  }
+  if (simulation.model === 'thermonuclear-supernova') {
+    const channel = simulation.channel === 'double-degenerate' ? '双白矮星并合' : '伴星吸积';
+    return `${channel}使 ${simulation.whiteDwarfMass.toFixed(2)} M☉ 白矮星热核失控，合成约 ${simulation.nickelMass.toFixed(2)} M☉ 镍-56，并完全解体`;
+  }
+  if (simulation.model === 'core-collapse') {
+    const remnant = simulation.remnantType === 'black-hole' ? '黑洞' : '中子星';
+    return `${simulation.progenitorMass.toFixed(1)} M☉ 恒星以约 ${simulation.explosionEnergyBethe.toFixed(2)} Bethe 爆发，抛出 ${simulation.ejectaMass.toFixed(1)} M☉ 物质，留下 ${simulation.remnantMass.toFixed(2)} M☉ ${remnant}`;
+  }
+  if (simulation.model === 'superluminous-supernova') {
+    const engine = simulation.engine === 'magnetar'
+      ? `${simulation.magnetarPeriodMs.toFixed(1)} ms 初始周期磁星`
+      : '致密星周物质相互作用';
+    return `${simulation.progenitorMass.toFixed(0)} M☉ 前身星由${engine}持续供能，峰值光度约 10^${Math.log10(simulation.peakLuminosityErgS).toFixed(1)} erg/s，留下 ${simulation.remnantMass.toFixed(1)} M☉ ${simulation.remnantType === 'black-hole' ? '黑洞' : '磁星'}`;
+  }
+  if (simulation.model === 'young-pulsar') {
+    return `${simulation.neutronStarMass.toFixed(2)} M☉ 中子星以 ${simulation.spinPeriodMs.toFixed(1)} ms 周期自转，表面磁场约 10^${Math.log10(simulation.magneticFieldGauss).toFixed(1)} G，并以约 ${Math.round(simulation.natalKickKms)} km/s 获得诞生踢速`;
+  }
+  if (simulation.model === 'collapsar-jet') {
+    return `${simulation.progenitorMass.toFixed(0)} M☉ 巨星坍缩为约 ${simulation.remnantMass.toFixed(1)} M☉ 黑洞，产生张角 ${simulation.jetOpeningDeg.toFixed(1)}°、洛伦兹因子约 ${Math.round(simulation.lorentzFactor)} 的喷流，持续约 ${simulation.durationSeconds.toFixed(1)} 秒`;
+  }
+  if (simulation.model === 'quasar-duty-cycle') {
+    return `约 ${(simulation.blackHoleMass / 1e6).toFixed(1)}×10⁶ M☉ 中央黑洞达到 ${(simulation.eddingtonRatio * 100).toFixed(0)}% 爱丁顿吸积率，每年吸积约 ${simulation.accretionRateSolarPerYear.toFixed(2)} M☉，活动期约 ${simulation.activeDurationMyr.toFixed(1)} 百万年`;
+  }
+  if (simulation.model === 'magnetar-giant-flare') {
+    return `约 10^${Math.log10(simulation.magneticFieldGauss).toFixed(1)} G 磁场重排，释放约 10^${Math.log10(simulation.energyErg).toFixed(1)} erg；初始硬脉冲持续 ${simulation.spikeDurationSeconds.toFixed(3)} 秒并伴随衰减尾波`;
+  }
+  if (simulation.model === 'pulsar-glitch') {
+    return `${simulation.spinPeriodMs.toFixed(1)} ms 脉冲星的自转频率跃增约 ${simulation.fractionalFrequencyJump.toExponential(1)}，其中 ${(simulation.recoveryFraction * 100).toFixed(0)}% 在约 ${Math.round(simulation.recoveryDays)} 天内恢复`;
+  }
+  if (simulation.model === 'black-hole-binary') {
+    return `${simulation.massA.toFixed(1)} 与 ${simulation.massB.toFixed(1)} M☉ 黑洞并合，约 ${(simulation.radiatedMassFraction * 100).toFixed(1)}% 总质量转化为引力波，形成 ${simulation.remnantMass.toFixed(1)} M☉ 黑洞并以约 ${Math.round(simulation.recoilKms)} km/s 反冲${simulation.gasRich ? '，周围气体产生短暂余辉' : ''}`;
   }
   return null;
 }

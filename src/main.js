@@ -656,18 +656,12 @@ function buildCosmicEvents(starPositions) {
     {
       type: 'stellar-black-hole-merger', visual: 'black-hole-merger', label: '双黑洞合并',
       message: '时空啁啾达到峰值，引力波波前穿过局部星域（形变已视觉放大）', preferCenter: true,
-      start: 616 + random() * 18, duration: 38, persistUntil: Math.min(845, universe.cosmicFate.onsetAt || 845), persistenceFadeDuration: 24, color: '#c897ff',
-      gasRich: random() < .38,
-      radiatedMassFraction: randomBetween(random, .035, .058),
-      recoilKms: Math.round(randomBetween(random, 180, 1180))
+      start: 616 + random() * 18, duration: 38, persistUntil: Math.min(845, universe.cosmicFate.onsetAt || 845), persistenceFadeDuration: 24, color: '#c897ff'
     },
     {
       type: 'late-black-hole-merger', visual: 'black-hole-merger', label: '孤立黑洞捕获合并',
       message: '漫长引力散射后完成并合，残余黑洞在阻尼振铃中反冲', preferCenter: true,
-      start: 872 + random() * 18, duration: 42, persistUntil: 950, persistenceFadeDuration: 18, color: '#9bb8ff',
-      gasRich: false,
-      radiatedMassFraction: randomBetween(random, .028, .052),
-      recoilKms: Math.round(randomBetween(random, 420, 1640))
+      start: 872 + random() * 18, duration: 42, persistUntil: 950, persistenceFadeDuration: 18, color: '#9bb8ff'
     }
   ].filter((event) => (!event.requiresCentralBlackHole || universe.hasCentralBlackHole)
     && (event.type !== 'late-black-hole-merger'
@@ -675,13 +669,19 @@ function buildCosmicEvents(starPositions) {
       || universe.cosmicFate.outcomeExponent > 45))
     .map((event, eventIndex) => {
       const simulation = createTransientSimulation(event, universe, eventIndex);
-      if (!simulation?.persistentRemnant) return { ...event, simulation };
-      return {
+      const simulatedEvent = {
         ...event,
-        simulation,
-        persistUntil: Math.min(845, universe.cosmicFate.onsetAt || 845),
-        persistenceFadeDuration: 24
+        simulation
       };
+      if (simulation?.model === 'black-hole-binary') {
+        simulatedEvent.gasRich = simulation.gasRich;
+        simulatedEvent.radiatedMassFraction = simulation.radiatedMassFraction;
+        simulatedEvent.recoilKms = simulation.recoilKms;
+      }
+      if (!simulation?.persistentRemnant) return simulatedEvent;
+      simulatedEvent.persistUntil = Math.min(845, universe.cosmicFate.onsetAt || 845);
+      simulatedEvent.persistenceFadeDuration = 24;
+      return simulatedEvent;
     });
 
   const impactProfiles = {
@@ -789,12 +789,12 @@ function buildCosmicEvents(starPositions) {
       'failed-supernova': '恒星几乎没有明亮爆炸便消失，留下新生黑洞'
     };
     const simulatedOutcome = describeTransientSimulation(data);
-    const systemSummary = data.visual === 'black-hole-merger'
-      ? `约 ${(data.radiatedMassFraction * 100).toFixed(1)}% 总质量以引力波带走，残余黑洞以约 ${data.recoilKms} km/s 反冲${data.gasRich ? '，周围气体受热形成短暂余辉' : '；真空环境中没有超新星式爆炸'}`
-      : data.type === 'pulsar-glitch'
-        ? '自转频率发生微小跃变，没有可见的大规模破坏'
-        : simulatedOutcome
-          ? simulatedOutcome
+    const systemSummary = simulatedOutcome
+      ? simulatedOutcome
+      : data.visual === 'black-hole-merger'
+        ? `约 ${(data.radiatedMassFraction * 100).toFixed(1)}% 总质量以引力波带走，残余黑洞以约 ${data.recoilKms} km/s 反冲${data.gasRich ? '，周围气体受热形成短暂余辉' : '；真空环境中没有超新星式爆炸'}`
+        : data.type === 'pulsar-glitch'
+          ? '自转频率发生微小跃变，没有可见的大规模破坏'
         : sourceOutcomes[data.type]
           ? `${sourceOutcomes[data.type]}，${Math.max(0, starImpacts.length - 1)} 个邻近恒星系受影响`
         : data.visual === 'pulsar'
@@ -939,7 +939,7 @@ function buildCosmicEvents(starPositions) {
     }
     const waveAmplitude = isKilonova
       ? THREE.MathUtils.clamp((data.simulation?.radiatedMassFraction || .025) / .04, .38, 1)
-      : 1;
+      : THREE.MathUtils.clamp((data.simulation?.radiatedMassFraction || .045) / .045, .62, 1.8);
     return { waveRadius, waveAmplitude, indices, distances, transverse, polarities };
   };
 
@@ -965,7 +965,12 @@ function buildCosmicEvents(starPositions) {
       const remnant = new THREE.Sprite(new THREE.SpriteMaterial({ map: getPointTexture(), color: remnantColor, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
       remnant.scale.set(.16, .16, 1);
 
-      const ejectaCount = isNova ? 360 : 620;
+      const simulatedEjectaScale = THREE.MathUtils.clamp(
+        Math.sqrt((data.simulation?.ejectaMass || (isNova ? .00002 : 8)) / (isNova ? .00002 : 8)),
+        .7,
+        1.65
+      );
+      const ejectaCount = Math.round((isNova ? 360 : 620) * simulatedEjectaScale);
       const ejectaPositions = new Float32Array(ejectaCount * 3);
       const ejectaColors = new Float32Array(ejectaCount * 3);
       const ejectaDirections = new Float32Array(ejectaCount * 3);
@@ -985,8 +990,10 @@ function buildCosmicEvents(starPositions) {
         ejectaDirections.set([direction.x, direction.y, direction.z], i * 3);
         const simulatedVelocityScale = isKilonova
           ? THREE.MathUtils.clamp((data.simulation?.ejectaVelocityC || .2) / .18, .72, 1.55)
-          : 1;
-        const velocityScale = isNova ? .46 : isKilonova ? simulatedVelocityScale : 1;
+          : isNova
+            ? THREE.MathUtils.clamp((data.simulation?.ejectaVelocityKms || 1800) / 1800, .64, 1.7)
+            : THREE.MathUtils.clamp((data.simulation?.ejectaVelocityKms || 9000) / 9000, .62, 1.72);
+        const velocityScale = isNova ? .46 * simulatedVelocityScale : simulatedVelocityScale;
         ejectaVelocity[i] = (.38 + Math.pow(random(), .48) * 1.45 + Math.abs(direction.y) * .22) * velocityScale;
         ejectaDelay[i] = Math.pow(random(), 2.4) * .22;
         const color = hot.clone().lerp(cool, Math.pow(random(), .52));
@@ -997,7 +1004,7 @@ function buildCosmicEvents(starPositions) {
       ejectaGeometry.setAttribute('color', new THREE.BufferAttribute(ejectaColors, 3));
       const ejecta = new THREE.Points(ejectaGeometry, new THREE.PointsMaterial({ size: .1, map: getPointTexture(), alphaTest: .008, vertexColors: true, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
 
-      const shellCount = isNova ? 160 : 280;
+      const shellCount = Math.round((isNova ? 160 : 280) * Math.min(1.45, simulatedEjectaScale));
       const shellPositions = new Float32Array(shellCount * 3);
       const shellDirections = new Float32Array(shellCount * 3);
       const shellNoise = new Float32Array(shellCount);
@@ -1129,12 +1136,17 @@ function buildCosmicEvents(starPositions) {
 
       const rotor = new THREE.Group();
       rotor.rotation.z = .58 + random() * .32;
-      const jetCount = 420;
+      const jetPowerScale = data.simulation?.model === 'collapsar-jet'
+        ? THREE.MathUtils.clamp(data.simulation.lorentzFactor / 260, .7, 1.75)
+        : data.simulation?.model === 'quasar-duty-cycle'
+          ? THREE.MathUtils.clamp(data.simulation.jetLorentzFactor / 8, .7, 1.7)
+          : 1;
+      const jetCount = Math.round(420 * jetPowerScale);
       const jetPositions = new Float32Array(jetCount * 3);
       const jetColors = new Float32Array(jetCount * 3);
       for (let i = 0; i < jetCount; i++) {
         const side = i % 2 ? 1 : -1;
-        const distance = .1 + Math.pow(random(), .66) * 2.6;
+        const distance = .1 + Math.pow(random(), .66) * 2.6 * jetPowerScale;
         const width = .012 + distance * .014;
         const angle = random() * Math.PI * 2;
         jetPositions[i * 3] = Math.cos(angle) * width * random();
@@ -1173,7 +1185,7 @@ function buildCosmicEvents(starPositions) {
         rotor.add(knot);
       }
       group.add(nebula, halo, sweepGlow, core, rotor);
-      group.userData.effect = { core, halo, nebula, sweepGlow, rotor, jets, fieldLines, knots };
+      group.userData.effect = { core, halo, nebula, sweepGlow, rotor, jets, fieldLines, knots, jetPowerScale };
     } else if (data.visual === 'black-hole-merger') {
       const makeHole = (color, direction) => {
         const hole = createBlackHoleVisual({

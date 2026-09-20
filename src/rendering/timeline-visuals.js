@@ -419,6 +419,22 @@ export function updateCosmicEvents(position, context) {
         effect.dust.material.opacity = 0;
         effect.remnantHole.visible = true;
         setBlackHoleIntensity(effect.remnantHole, .8, transientPersistence);
+      } else if (event.visual === 'supernova') {
+        effect.innerFlash.material.opacity = 0;
+        effect.photosphere.material.opacity = 0;
+        effect.ejecta.material.opacity = 0;
+        effect.shell.material.opacity = 0;
+        effect.remnant.material.opacity = transientPersistence * .68;
+      } else if (event.visual === 'pulsar') {
+        effect.core.material.opacity = transientPersistence * .76;
+        effect.halo.material.opacity = transientPersistence * .1;
+        effect.nebula.material.opacity = transientPersistence * .055;
+        effect.jets.material.opacity = transientPersistence * .12;
+        effect.sweepGlow.material.opacity = 0;
+        effect.fieldLines.forEach((field, fieldIndex) => {
+          field.material.opacity = transientPersistence * (.038 - fieldIndex * .005);
+        });
+        event.group.userData.intensity = transientPersistence * .56;
       }
       return;
     }
@@ -434,10 +450,15 @@ export function updateCosmicEvents(position, context) {
         const distance = Math.abs(phase - pulsePhase);
         return Math.max(strongest, Math.exp(-distance * distance * 1500) * weight);
       }, 0) || 0;
-      const flash = Math.max(
+      const radioactiveScale = THREE.MathUtils.clamp(
+        (event.simulation?.nickelMass || .6) / .6,
+        .58,
+        2.2
+      );
+      const flash = Math.min(1, Math.max(
         ignition * (1 - THREE.MathUtils.smoothstep(phase, .045, .19)),
         simulatedPulse
-      );
+      ) * (isNova || isKilonova ? 1 : radioactiveScale));
       const afterglow = (1 - THREE.MathUtils.smoothstep(phase, .12, 1)) * ignition;
       effect.innerFlash.material.opacity = flash * (isNova ? .72 : .98);
       const flashScale = (.08 + Math.pow(Math.min(1, phase / .16), .28) * .72) * visualScale;
@@ -445,7 +466,9 @@ export function updateCosmicEvents(position, context) {
       effect.photosphere.material.opacity = flash * .58 + afterglow * .2;
       const photosphereScale = (.16 + Math.pow(phase, .56) * 1.15) * visualScale;
       effect.photosphere.scale.set(photosphereScale, photosphereScale * .9, 1);
-      const remnantFade = isNova ? 1 : 1 - THREE.MathUtils.smoothstep(phase, .82, 1);
+      const remnantFade = isNova || event.simulation?.persistentRemnant
+        ? 1
+        : 1 - THREE.MathUtils.smoothstep(phase, .82, 1);
       effect.remnant.material.opacity = THREE.MathUtils.smoothstep(phase, .2, .52) * remnantFade * .72;
 
       const ejectaArray = effect.ejecta.geometry.attributes.position.array;
@@ -466,7 +489,7 @@ export function updateCosmicEvents(position, context) {
         ? .72 + (event.simulation?.ejectaVelocityKms || 1800) / 10000
         : isKilonova
           ? 2.15 + (event.simulation?.ejectaVelocityC || .2) * 3.1
-          : 2.25;
+          : THREE.MathUtils.clamp(1.25 + (event.simulation?.ejectaVelocityKms || 9000) / 7200, 1.8, 3.9);
       const shellRadius = .12 + (1 - Math.pow(1 - phase, 2.4)) * shellExtent;
       for (let i = 0; i < effect.shellNoise.length; i++) {
         const offset = i * 3;
@@ -591,12 +614,19 @@ export function updateCosmicEvents(position, context) {
       if (effect.remnantHole.visible) setBlackHoleIntensity(effect.remnantHole, .58 + collapse * .34);
     } else if (event.visual === 'pulsar') {
       const phase = visualPhase;
-      const envelope = Math.pow(Math.sin(phase * Math.PI), .45);
+      const simulatedPulse = event.simulation?.pulsePhases?.reduce((strongest, pulsePhase, pulseIndex) => {
+        const weight = event.simulation.pulseWeights?.[pulseIndex] ?? 1;
+        const distance = Math.abs(phase - pulsePhase);
+        return Math.max(strongest, Math.exp(-distance * distance * 1200) * weight);
+      }, 0) || 0;
+      const envelope = Math.max(Math.pow(Math.sin(phase * Math.PI), .45), simulatedPulse);
       const glitchScale = event.type === 'pulsar-glitch' ? .22 : 1;
-      effect.core.material.opacity = envelope * .92;
-      effect.halo.material.opacity = envelope * .16 * glitchScale;
-      effect.nebula.material.opacity = envelope * .095 * glitchScale;
-      effect.halo.scale.set(1.05, 1.05, 1);
+      const jetPowerScale = effect.jetPowerScale || 1;
+      effect.core.material.opacity = Math.min(1, envelope * (.82 + simulatedPulse * .18));
+      effect.halo.material.opacity = Math.min(.58, envelope * .16 * glitchScale * Math.sqrt(jetPowerScale));
+      effect.nebula.material.opacity = Math.min(.34, envelope * .095 * glitchScale * Math.sqrt(jetPowerScale));
+      const haloScale = 1.05 + simulatedPulse * .52 + (jetPowerScale - 1) * .18;
+      effect.halo.scale.set(haloScale, haloScale, 1);
       effect.jets.material.opacity = envelope * .18 * glitchScale;
       effect.fieldLines.forEach((field, fieldIndex) => {
         field.material.opacity = envelope * (.055 - fieldIndex * .007) * glitchScale;
@@ -682,7 +712,11 @@ export function updateCosmicEvents(position, context) {
       effect.waveDust.material.opacity = merged ? Math.pow(Math.sin(postMerge * Math.PI), .62) * .5 : 0;
 
       const recoilProgress = THREE.MathUtils.smoothstep(postMerge, .08, 1);
-      const recoilDistance = recoilProgress * .68;
+      const recoilDistance = recoilProgress * THREE.MathUtils.clamp(
+        (event.simulation?.recoilKms || event.recoilKms || 500) / 720,
+        .22,
+        2.2
+      );
       effect.remnantHole.position.copy(effect.recoilVector).multiplyScalar(recoilDistance);
       const recoilArray = effect.recoilTrail.geometry.attributes.position.array;
       recoilArray[0] = 0; recoilArray[1] = 0; recoilArray[2] = 0;
@@ -720,7 +754,14 @@ export function animateCosmicEvents(now, context) {
     } else if (event.visual === 'stellar-collapse') {
       if (effect.remnantHole.visible) animateBlackHoleVisual(effect.remnantHole, now, effect.remnantHole.userData.spinDirection);
     } else if (event.visual === 'pulsar') {
-      effect.rotor.rotation.y = now * .0024;
+      const spinPeriodMs = event.simulation?.spinPeriodMs;
+      const spinRate = spinPeriodMs
+        ? THREE.MathUtils.clamp(80 / spinPeriodMs, .45, 4.8)
+        : event.simulation?.model === 'magnetar-giant-flare' ? .72 : 1;
+      const glitchCue = event.simulation?.model === 'pulsar-glitch' && phase >= .46
+        ? 1 + Math.min(.12, event.simulation.fractionalFrequencyJump * 15000)
+        : 1;
+      effect.rotor.rotation.y = now * .0024 * spinRate * glitchCue;
       const worldQuaternion = new THREE.Quaternion();
       const worldPosition = new THREE.Vector3();
       const beamAxis = new THREE.Vector3(0, 1, 0);
@@ -729,7 +770,8 @@ export function animateCosmicEvents(now, context) {
       beamAxis.applyQuaternion(worldQuaternion).normalize();
       const viewDirection = camera.position.clone().sub(worldPosition).normalize();
       const alignment = Math.pow(Math.abs(beamAxis.dot(viewDirection)), 14);
-      const pulse = .52 + Math.pow(Math.max(0, Math.sin(now * .012)), 10) * .48;
+      const pulseFrequency = THREE.MathUtils.clamp(spinRate, .55, 3.2);
+      const pulse = .52 + Math.pow(Math.max(0, Math.sin(now * .012 * pulseFrequency)), 10) * .48;
       const glitchScale = event.type === 'pulsar-glitch' ? .16 : 1;
       effect.jets.material.opacity = event.group.userData.intensity * (.34 + alignment * .58) * pulse * glitchScale;
       effect.sweepGlow.material.opacity = event.group.userData.intensity * alignment * pulse * .78 * glitchScale;
