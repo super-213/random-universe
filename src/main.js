@@ -305,6 +305,7 @@ function buildGalaxy() {
   buildCivilizations(positions);
   buildCosmicEvents(positions);
   buildCivilizationSimulation({ universe, civilizationData, civilizationSimulation, cosmicEvents });
+  renderCosmicEventMarkers();
 }
 
 function buildEpochEffects(starPositions) {
@@ -684,7 +685,7 @@ function buildCosmicEvents(starPositions) {
         starPositions[offset + 2] - location.position.z
       );
       if (distance > profile.radius) continue;
-      if (profile.directional && data.beamDirection) {
+      if (profile.directional && data.beamDirection && distance > .001) {
         const direction = new THREE.Vector3(
           starPositions[offset] - location.position.x,
           starPositions[offset + 1] - location.position.y,
@@ -718,25 +719,6 @@ function buildCosmicEvents(starPositions) {
       };
     });
 
-    const livingSpecies = civilizationData
-      .map((species, speciesIndex) => ({ species, speciesIndex, distance: species.home.distanceTo(location.position) }))
-      .filter(({ species, distance }) => {
-        if (!(impactAt >= species.birth && impactAt < species.extinction && distance <= profile.range)) return false;
-        if (species.highDimensional && impactAt >= species.ascensionAt) return false;
-        if (!profile.directional || !data.beamDirection) return true;
-        const direction = species.home.clone().sub(location.position).normalize();
-        return Math.abs(direction.dot(data.beamDirection)) >= Math.cos(profile.beamAngle);
-      })
-      .sort((a, b) => a.distance - b.distance);
-    const maxSpecies = Math.min(profile.maxSpecies || 1, livingSpecies.length);
-    const civilizationImpacts = livingSpecies.slice(0, maxSpecies).map(({ species, speciesIndex, distance }) => {
-      const proximity = Math.max(.08, 1 - distance / profile.range);
-      const lossFraction = THREE.MathUtils.clamp(profile.civilization * (.62 + proximity * .48) * (.84 + random() * .3), .03, .58);
-      const established = Math.floor(species.maxColonies * THREE.MathUtils.smoothstep(impactAt, species.birth, species.birth + 95));
-      const collapse = established > 0 && established <= 8 && lossFraction > .3 && random() < .42;
-      return { speciesIndex, lossFraction: collapse ? 1 : lossFraction, collapse };
-    });
-
     const sourceOutcomes = {
       'pair-instability-supernova': '爆发源完全解体且没有致密残骸',
       'type-ia-supernova': '白矮星被热核爆炸完全摧毁',
@@ -750,14 +732,85 @@ function buildCosmicEvents(starPositions) {
         : data.visual === 'pulsar'
           ? `${starImpacts.length} 个位于辐射束或近场内的恒星系受到影响`
         : `${sourceOutcomes[data.type] || '爆发源发生结构性改变'}，${Math.max(0, starImpacts.length - 1)} 个邻近恒星系受冲击`;
-    const civilizationSummary = civilizationImpacts.length
-      ? civilizationImpacts.map((impact) => {
-          const name = civilizationData[impact.speciesIndex].name;
-          return impact.collapse ? `${name} 灭绝` : `${name} 仿真疆域损失约 ${Math.round(impact.lossFraction * 100)}%`;
-        }).join('，')
-      : '未波及已知文明';
+    return { impactAt, impactPhase, starImpacts, systemOutcome: systemSummary };
+  };
 
-    return { impactAt, impactPhase, starImpacts, civilizationImpacts, outcome: `${systemSummary}；${civilizationSummary}` };
+  const deriveCivilizationNodeImpacts = (data, location, consequences, gravityField, eventIndex) => {
+    if (!civilizationSimulation || !remnantDynamics) return [];
+    const profile = impactProfiles[data.type];
+    const impactRandom = createSeededRandom(universe.seed, 6203 + eventIndex * 131);
+    const impactMap = new Map();
+    const addImpact = (nodeIndex, at, severity, permanent = false) => {
+      const key = `${nodeIndex}:${at.toFixed(4)}`;
+      const existing = impactMap.get(key);
+      if (existing) {
+        existing.severity = 1 - (1 - existing.severity) * (1 - severity);
+        existing.permanent ||= permanent;
+        return;
+      }
+      impactMap.set(key, {
+        nodeIndex,
+        at,
+        severity: THREE.MathUtils.clamp(severity, 0, 1),
+        permanent,
+        destructionRoll: impactRandom()
+      });
+    };
+
+    if (profile.civilization > 0 && profile.range > 0) {
+      for (let nodeIndex = 0; nodeIndex < civilizationSimulation.habitatPositions.length / 3; nodeIndex++) {
+        const offset = nodeIndex * 3;
+        const dx = civilizationSimulation.habitatPositions[offset] - location.position.x;
+        const dy = civilizationSimulation.habitatPositions[offset + 1] - location.position.y;
+        const dz = civilizationSimulation.habitatPositions[offset + 2] - location.position.z;
+        const distance = Math.hypot(dx, dy, dz);
+        if (distance > profile.range) continue;
+        if (profile.directional && data.beamDirection && distance > .001) {
+          const inverseDistance = 1 / distance;
+          const alignment = Math.abs(
+            dx * inverseDistance * data.beamDirection.x
+            + dy * inverseDistance * data.beamDirection.y
+            + dz * inverseDistance * data.beamDirection.z
+          );
+          if (alignment < Math.cos(profile.beamAngle)) continue;
+        }
+        const proximity = Math.max(.08, 1 - distance / profile.range);
+        const severity = THREE.MathUtils.clamp(
+          profile.civilization * (.62 + proximity * .48) * (.84 + impactRandom() * .3),
+          0,
+          .58
+        );
+        addImpact(nodeIndex, consequences.impactAt, severity);
+      }
+    }
+
+    const starImpacts = new Map(consequences.starImpacts.map((impact) => [impact.index, impact]));
+    const capturedStars = new Map();
+    if (gravityField) {
+      for (let sample = 0; sample < gravityField.indices.length; sample++) {
+        if (gravityField.restDistances[sample] >= gravityField.captureRadius) continue;
+        capturedStars.set(gravityField.indices[sample], gravityField.restDistances[sample]);
+      }
+    }
+
+    for (let nodeIndex = 0; nodeIndex < civilizationSimulation.habitatRemnantIndices.length; nodeIndex++) {
+      const remnantIndex = civilizationSimulation.habitatRemnantIndices[nodeIndex];
+      const sourceStarIndex = remnantDynamics.sourceIndices[remnantIndex];
+      const stellarImpact = starImpacts.get(sourceStarIndex);
+      if (stellarImpact) {
+        const stellarDamage = 1 - stellarImpact.dimFactor;
+        if (stellarDamage > .001) {
+          addImpact(nodeIndex, consequences.impactAt, stellarDamage, stellarImpact.dimFactor <= .15);
+        }
+      }
+      const captureDistance = capturedStars.get(sourceStarIndex);
+      if (captureDistance !== undefined) {
+        const captureDelay = captureDistance / gravityField.captureRadius * 11;
+        addImpact(nodeIndex, consequences.impactAt + captureDelay + 13, 1, true);
+      }
+    }
+
+    return Array.from(impactMap.values()).sort((a, b) => a.at - b.at || a.nodeIndex - b.nodeIndex);
   };
 
   const buildWaveSamples = (data, location, eventIndex) => {
@@ -1012,9 +1065,19 @@ function buildCosmicEvents(starPositions) {
           eventIndex: index
         })
       : null;
+    const civilizationNodeImpacts = deriveCivilizationNodeImpacts(
+      data,
+      location,
+      consequences,
+      gravityField,
+      index
+    );
     cosmicEvents.push({
       ...data,
       ...consequences,
+      civilizationNodeImpacts,
+      civilizationImpacts: [],
+      outcome: consequences.systemOutcome,
       waveSamples,
       gravityField,
       group,
@@ -1026,7 +1089,6 @@ function buildCosmicEvents(starPositions) {
 
   cosmicEventGroup.rotation.copy(galaxyGroup.rotation);
   cosmicEventGroup.visible = false;
-  renderCosmicEventMarkers();
 }
 
 function renderCosmicEventMarkers() {

@@ -40,10 +40,17 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
   civilizationData.forEach((species, index) => { reservedFor[species.homeNodeIndex] = index; });
   const lastCounts = new Uint16Array(speciesCount);
   const lastCauses = Array(speciesCount).fill('自主扩张');
+  const disabledNodes = new Uint8Array(nodeCount);
   const finiteOutcome = universe.cosmicFate?.type !== 'heat-death';
   const declineStart = finiteOutcome ? universe.cosmicFate.onsetAt : 620;
   const declineEnd = finiteOutcome ? 1000 : 710;
   const declineCause = finiteOutcome ? universe.cosmicFate.label : '恒星能源枯竭';
+  const events = cosmicEvents.slice().sort((a, b) => a.impactAt - b.impactAt);
+  const eventImpactStats = new Map(events.map((event) => [event, new Map()]));
+  const scheduledImpacts = events.flatMap((event) => {
+    event.civilizationImpacts = [];
+    return (event.civilizationNodeImpacts || []).map((impact) => ({ event, impact }));
+  }).sort((a, b) => a.impact.at - b.impact.at || a.impact.nodeIndex - b.impact.nodeIndex);
 
   const relationIndex = (a, b) => a * speciesCount + b;
   for (let a = 0; a < speciesCount; a++) {
@@ -65,47 +72,85 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
     relationStates[relationIndex(b, a)] = state;
   };
 
-  const removeTerritory = (speciesIndex, fraction, collapse, cause) => {
-    const territory = [];
+  const territoryCountFor = (speciesIndex) => {
+    let count = 0;
     for (let node = 0; node < nodeCount; node++) {
-      if (owners[node] === speciesIndex) territory.push(node);
+      if (owners[node] === speciesIndex) count++;
     }
-    if (territory.length === 0) return;
-    if (collapse) fraction = 1;
-    for (let index = territory.length - 1; index > 0; index--) {
-      const swap = Math.floor(random() * (index + 1));
-      [territory[index], territory[swap]] = [territory[swap], territory[index]];
-    }
-    const losses = Math.min(territory.length, Math.max(collapse ? territory.length : 0, Math.round(territory.length * fraction * .62)));
-    territory.forEach((node, order) => {
-      if (order < losses) {
-        owners[node] = -1;
-        strength[node] = 0;
-      } else {
-        strength[node] *= Math.max(.18, 1 - fraction * .46);
-      }
-    });
-    lastCauses[speciesIndex] = cause;
+    return count;
   };
 
-  const events = cosmicEvents.slice().sort((a, b) => a.impactAt - b.impactAt);
+  const applyNodeImpact = (event, impact, time) => {
+    const { nodeIndex, severity, permanent, destructionRoll } = impact;
+    if (permanent) disabledNodes[nodeIndex] = 1;
+    const speciesIndex = owners[nodeIndex];
+    if (speciesIndex < 0) return;
+    const species = civilizationData[speciesIndex];
+    if (species.highDimensional && time >= species.ascensionAt) return;
+
+    const statsBySpecies = eventImpactStats.get(event);
+    let stats = statsBySpecies.get(speciesIndex);
+    if (!stats) {
+      stats = {
+        initialCount: territoryCountFor(speciesIndex),
+        affectedDomains: 0,
+        lostDomains: 0,
+        weakenedDomains: 0,
+        effectiveLoss: 0,
+        collapse: false
+      };
+      statsBySpecies.set(speciesIndex, stats);
+    }
+    stats.affectedDomains++;
+
+    const destructionChance = THREE.MathUtils.clamp(
+      severity * .62 / Math.max(.65, species.resilience),
+      0,
+      .9
+    );
+    const destroyed = permanent || destructionRoll < destructionChance;
+    if (destroyed) {
+      owners[nodeIndex] = -1;
+      strength[nodeIndex] = 0;
+      stats.lostDomains++;
+      stats.effectiveLoss += 1;
+    } else {
+      const strengthLoss = severity * .46;
+      strength[nodeIndex] *= Math.max(.18, 1 - strengthLoss);
+      stats.weakenedDomains++;
+      stats.effectiveLoss += strengthLoss;
+    }
+    stats.collapse ||= territoryCountFor(speciesIndex) === 0;
+    lastCauses[speciesIndex] = event.label;
+  };
+
+  let scheduledImpactIndex = 0;
+  while (scheduledImpactIndex < scheduledImpacts.length
+    && scheduledImpacts[scheduledImpactIndex].impact.at < simulation.start) {
+    const { impact } = scheduledImpacts[scheduledImpactIndex];
+    if (impact.permanent) disabledNodes[impact.nodeIndex] = 1;
+    scheduledImpactIndex++;
+  }
+
   for (let time = simulation.start; time <= simulation.end; time += simulation.step) {
     civilizationData.forEach((species, speciesIndex) => {
       if (seeded[speciesIndex] || time < species.birth) return;
       seeded[speciesIndex] = 1;
+      if (disabledNodes[species.homeNodeIndex]) {
+        lastCauses[speciesIndex] = '母星在文明诞生前失去宜居条件';
+        return;
+      }
       owners[species.homeNodeIndex] = speciesIndex;
       strength[species.homeNodeIndex] = .34;
       lastCauses[speciesIndex] = '母星文明进入星际阶段';
     });
 
-    events.forEach((event) => {
-      if (event.impactAt <= time - simulation.step || event.impactAt > time) return;
-      event.civilizationImpacts.forEach((impact) => {
-        const species = civilizationData[impact.speciesIndex];
-        if (!species || (species.highDimensional && time >= species.ascensionAt)) return;
-        removeTerritory(impact.speciesIndex, impact.lossFraction, impact.collapse, event.label);
-      });
-    });
+    while (scheduledImpactIndex < scheduledImpacts.length
+      && scheduledImpacts[scheduledImpactIndex].impact.at <= time) {
+      const { event, impact } = scheduledImpacts[scheduledImpactIndex];
+      applyNodeImpact(event, impact, time);
+      scheduledImpactIndex++;
+    }
 
     const friendlyCounts = new Uint8Array(speciesCount);
     const conflictCounts = new Uint8Array(speciesCount);
@@ -173,7 +218,7 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
         const frontier = [];
         territory.forEach((source) => {
           simulation.adjacency[source].forEach((target) => {
-            if (owners[target] !== speciesIndex) frontier.push([source, target]);
+            if (!disabledNodes[target] && owners[target] !== speciesIndex) frontier.push([source, target]);
           });
         });
         if (frontier.length === 0) break;
@@ -261,6 +306,31 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       causes: lastCauses.slice()
     });
   }
+
+  events.forEach((event) => {
+    const impacts = Array.from(eventImpactStats.get(event).entries()).map(([speciesIndex, stats]) => ({
+      speciesIndex,
+      lossFraction: THREE.MathUtils.clamp(stats.effectiveLoss / Math.max(1, stats.initialCount), 0, 1),
+      collapse: stats.collapse,
+      affectedDomains: stats.affectedDomains,
+      lostDomains: stats.lostDomains,
+      weakenedDomains: stats.weakenedDomains
+    }));
+    event.civilizationImpacts = impacts;
+    const civilizationSummary = impacts.length
+      ? impacts.map((impact) => {
+          const name = civilizationData[impact.speciesIndex].name;
+          if (impact.collapse) return `${name} 灭绝`;
+          if (impact.lostDomains > 0) {
+            return impact.weakenedDomains > 0
+              ? `${name} 损失 ${impact.lostDomains} 个疆域，另有 ${impact.weakenedDomains} 个受损`
+              : `${name} 损失 ${impact.lostDomains} 个疆域`;
+          }
+          return `${name} 的 ${impact.weakenedDomains} 个疆域受损`;
+        }).join('，')
+      : '未波及当时存在的文明疆域';
+    event.outcome = `${event.systemOutcome}；${civilizationSummary}`;
+  });
 
 }
 
