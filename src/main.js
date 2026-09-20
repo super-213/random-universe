@@ -2516,6 +2516,7 @@ async function enterUniverse() {
   document.body.classList.remove('is-local-group-view');
   $('#toggle-local-group').setAttribute('aria-pressed', 'false');
   $('#toggle-local-group').textContent = '查看局部星系群';
+  setGalaxyMenuOpen(false);
   controls.enabled = true;
   controls.target.set(0, 0, 0);
   const linkedPosition = Number(new URLSearchParams(window.location.search).get('t'));
@@ -2543,6 +2544,7 @@ function leaveUniverse() {
   observerSpeciesIndex = null;
   localGroupView = false;
   document.body.classList.remove('is-local-group-view');
+  setGalaxyMenuOpen(false);
   closeCivilizationChronicle();
   $('#civilization-panel').classList.remove('is-expanded');
   $('#toggle-civilizations').setAttribute('aria-expanded', 'false');
@@ -2679,12 +2681,18 @@ function openCivilizationChronicle(speciesIndex) {
   $('#observe-civilization').textContent = observing ? '退出观察者模式' : '以此文明观察';
 }
 
+function setGalaxyMenuOpen(open) {
+  $('#galaxy-submenu').hidden = !open;
+  $('#toggle-galaxy-menu').setAttribute('aria-expanded', String(open));
+}
+
 function toggleLocalGroupView() {
   if (mode !== 'explorer') return;
   localGroupView = !localGroupView;
   document.body.classList.toggle('is-local-group-view', localGroupView);
   $('#toggle-local-group').setAttribute('aria-pressed', String(localGroupView));
   $('#toggle-local-group').textContent = localGroupView ? '返回主星系' : '查看局部星系群';
+  setGalaxyMenuOpen(false);
   if (localGroupView) {
     const verticalFov = THREE.MathUtils.degToRad(camera.fov);
     const horizontalFov = 2 * Math.atan(Math.tan(verticalFov / 2) * camera.aspect);
@@ -3512,6 +3520,9 @@ $('#export-universe-history').addEventListener('click', () => {
   $('#chronicle-status').textContent = '文明历史已导出';
 });
 $('#toggle-civilizations').addEventListener('click', toggleCivilizations);
+$('#toggle-galaxy-menu').addEventListener('click', () => {
+  setGalaxyMenuOpen($('#galaxy-submenu').hidden);
+});
 $('#close-timeline-event-detail').addEventListener('click', closeTimelineEventDetail);
 $('#toggle-time').addEventListener('click', () => {
   const willPlay = !timePlaying;
@@ -3545,6 +3556,9 @@ timelineFilterToggle.addEventListener('click', () => {
   setTimelineFilterMenuOpen(timelineFilterMenu.hidden);
 });
 document.addEventListener('pointerdown', (event) => {
+  if (!$('#galaxy-submenu').hidden && !event.target.closest('.galaxy-menu')) {
+    setGalaxyMenuOpen(false);
+  }
   if (!timelineFilterMenu.hidden && !event.target.closest('.timeline-filter')) {
     setTimelineFilterMenuOpen(false);
   }
@@ -3725,6 +3739,11 @@ document.addEventListener('keydown', (event) => {
     return;
   }
   if (event.key === 'Escape' && mode === 'explorer') {
+    if (!$('#galaxy-submenu').hidden) {
+      setGalaxyMenuOpen(false);
+      $('#toggle-galaxy-menu').focus({ preventScroll: true });
+      return;
+    }
     if (!timelineFilterMenu.hidden) {
       setTimelineFilterMenuOpen(false);
       timelineFilterToggle.focus({ preventScroll: true });

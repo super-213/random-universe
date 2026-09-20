@@ -6,10 +6,10 @@
     <meta name="theme-color" content="#050508" />
     <meta name="description" content="每一次刷新，都会诞生一个独一无二的宇宙。" />
     <title>随机宇宙发生器</title>
-    <script type="module" crossorigin src="/assets/index-D-Pt8Gs2.js"></script>
+    <script type="module" crossorigin src="/assets/index-DzLK5Z6g.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/three-core-CLuJ_1KH.js">
     <link rel="modulepreload" crossorigin href="/assets/technology-tree-d-pOel6N.js">
-    <link rel="stylesheet" crossorigin href="/assets/index-C5hGI44g.css">
+    <link rel="stylesheet" crossorigin href="/assets/index-CclvkUKF.css">
   </head>
   <body>
     <canvas
@@ -199,9 +199,24 @@
       <section class="explorer-view" id="explorer-view" aria-label="宇宙探索器">
         <div class="explorer-title">
           <p class="kicker"><span id="explore-id">#7K9A-3M2Q-X8P4-L6NW</span></p>
-          <h2 id="galaxy-name">赫利俄斯星系</h2>
+          <div class="galaxy-menu">
+            <h2>
+              <button
+                class="galaxy-menu-toggle"
+                id="toggle-galaxy-menu"
+                type="button"
+                aria-expanded="false"
+                aria-controls="galaxy-submenu"
+              >
+                <span id="galaxy-name">赫利俄斯星系</span>
+                <span class="galaxy-menu-indicator" aria-hidden="true">⌄</span>
+              </button>
+            </h2>
+            <nav class="galaxy-submenu" id="galaxy-submenu" aria-label="星系视图" hidden>
+              <button class="local-group-toggle" id="toggle-local-group" type="button" aria-pressed="false">查看局部星系群</button>
+            </nav>
+          </div>
           <p id="galaxy-meta">棒旋星系 · 直径 18.4 万光年</p>
-          <button class="local-group-toggle" id="toggle-local-group" type="button" aria-pressed="false">查看局部星系群</button>
         </div>
 
         <div class="local-group-readout" id="local-group-readout" aria-live="polite">
