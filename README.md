@@ -315,7 +315,14 @@ Aactivity = clamp(0.38 + 0.16 × Nstar + 0.18 × Sstructure, 0.55, 2.35)
 Nevent = 1 + min(Poisson(repeatRate × Aactivity), maximumOccurrences - 1)
 ```
 
-重复事件会在基础时间之后按带少量扰动的间隔排列，但不得越过最后恒星熄灭、有限宇宙终局或事件自身的最晚发生时间。事件影响半径还会乘上模型强度和光速因果缩放；喷流类事件必须同时满足距离与方向锥条件。
+重复事件会在基础时间之后按带少量扰动的间隔排列，但不得越过最后恒星熄灭、有限宇宙终局或事件自身的最晚发生时间。事件影响半径还会乘上模型强度和光速因果缩放：
+
+```text
+Rlocal = Rstar-profile × rangeScale × (0.82 + 0.18√c*)
+Rcivilization = Rciv-profile × rangeScale × √c*
+```
+
+其中 `rangeScale` 来自该次瞬变事件实际生成的能量、质量或吸积参数。喷流类事件还必须同时满足距离与方向锥条件，锥角由事件自身的喷流张角覆盖默认值。
 
 ### 4.2 当前实现的 15 组事件家族
 
