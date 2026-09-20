@@ -117,7 +117,7 @@ let originalRemnantPositions = null;
 let remnantDynamics = null;
 let cosmicPosition = 0;
 let timePlaying = false;
-let timeSpeed = 1;
+let timeSpeed = 10;
 let lastFrame = performance.now();
 let cosmicEvents = [];
 
