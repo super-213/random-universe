@@ -20,6 +20,7 @@ export function applyCivilizationSnapshot(snapshot, {
 }
 
 export function syncCivilizationHosts({
+  clickableStars,
   stellarRemnants,
   remnantDynamics,
   cosmicPosition,
@@ -28,6 +29,11 @@ export function syncCivilizationHosts({
 }) {
   if (!stellarRemnants) return;
   const remnantPositions = stellarRemnants.geometry.attributes.position.array;
+  const stellarPositions = clickableStars?.geometry.attributes.position.array;
+  const hostPositions = stellarPositions || remnantPositions;
+  const hostOffsetFor = (hostIndex) => stellarPositions
+    ? remnantDynamics.sourceIndices[hostIndex] * 3
+    : hostIndex * 3;
   const rotatedOffset = new THREE.Vector3();
   const rotateOffsetWithHost = (hostIndex, x, y, z, target) => {
     const offset = hostIndex * 3;
@@ -51,7 +57,7 @@ export function syncCivilizationHosts({
     const colonyPositions = civilization.geometry.attributes.position.array;
     for (let colonyIndex = 0; colonyIndex < species.displayCount; colonyIndex++) {
       const hostIndex = species.hostRemnantIndices[colonyIndex];
-      const source = hostIndex * 3;
+      const source = hostOffsetFor(hostIndex);
       const target = colonyIndex * 3;
       rotateOffsetWithHost(
         hostIndex,
@@ -60,9 +66,9 @@ export function syncCivilizationHosts({
         species.hostOffsets[target + 2],
         rotatedOffset
       );
-      colonyPositions[target] = remnantPositions[source] + rotatedOffset.x;
-      colonyPositions[target + 1] = remnantPositions[source + 1] + rotatedOffset.y;
-      colonyPositions[target + 2] = remnantPositions[source + 2] + rotatedOffset.z;
+      colonyPositions[target] = hostPositions[source] + rotatedOffset.x;
+      colonyPositions[target + 1] = hostPositions[source + 1] + rotatedOffset.y;
+      colonyPositions[target + 2] = hostPositions[source + 2] + rotatedOffset.z;
       if (species.highDimensional && cosmicPosition >= species.ascensionAt) {
         const projection = THREE.MathUtils.smoothstep(cosmicPosition, species.ascensionAt, species.ascensionAt + 34);
         const phase = colonyIndex * 1.618 + cosmicPosition * .035;
@@ -73,7 +79,7 @@ export function syncCivilizationHosts({
     }
     civilization.geometry.attributes.position.needsUpdate = true;
 
-    const homeOffset = species.homeRemnantIndex * 3;
+    const homeOffset = hostOffsetFor(species.homeRemnantIndex);
     rotateOffsetWithHost(
       species.homeRemnantIndex,
       species.homeOffset.x,
@@ -82,9 +88,9 @@ export function syncCivilizationHosts({
       rotatedOffset
     );
     species.home.set(
-      remnantPositions[homeOffset] + rotatedOffset.x,
-      remnantPositions[homeOffset + 1] + rotatedOffset.y,
-      remnantPositions[homeOffset + 2] + rotatedOffset.z
+      hostPositions[homeOffset] + rotatedOffset.x,
+      hostPositions[homeOffset + 1] + rotatedOffset.y,
+      hostPositions[homeOffset + 2] + rotatedOffset.z
     );
     if (species.highDimensional && cosmicPosition >= species.ascensionAt) {
       const projection = THREE.MathUtils.smoothstep(cosmicPosition, species.ascensionAt, species.ascensionAt + 34);

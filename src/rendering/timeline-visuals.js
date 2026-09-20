@@ -1,13 +1,14 @@
 import * as THREE from 'three';
 import { stellarEndTimelinePosition } from '../domain/universe.js';
 import { orbitalAngleAt } from '../domain/orbital-motion.js';
+import { applyMergerGravity, applyStellarGravity } from '../simulation/black-hole-gravity.js';
 import { animateBlackHoleVisual, setBlackHoleIntensity } from './black-hole.js';
 
 export function updateEpochVisuals(position, context) {
   const {
     mode, epochEffectsGroup, primordialParticles, primordialFactors, primordialDirections,
     expansionStreaks, expansionDirections, bangCore, shockwaves, renderer, scene,
-    clickableStars, originalGalaxyPositions, universe, transition, galaxyGroup,
+    clickableStars, originalGalaxyPositions, stellarGravityState, universe, transition, galaxyGroup,
     starDeathThresholds, originalGalaxyColors, cosmicEvents, remnantGroup,
     stellarRemnants, originalRemnantPositions, remnantDynamics, blackHoleRemnants,
     heatDeathGroup, coldPhotons, originalPhotonPositions, originalPhotonColors,
@@ -106,16 +107,32 @@ export function updateEpochVisuals(position, context) {
 
   const positionArray = clickableStars.geometry.attributes.position.array;
   const colorArray = clickableStars.geometry.attributes.color.array;
+  if (stellarGravityState) {
+    applyStellarGravity(position, originalGalaxyPositions, positionArray, stellarGravityState);
+  }
   for (let i = 0; i < originalGalaxyPositions.length; i += 3) {
     const starIndex = i / 3;
     const alive = 1 - THREE.MathUtils.smoothstep(position, starDeathThresholds[starIndex], starDeathThresholds[starIndex] + 22);
-    positionArray[i] = originalGalaxyPositions[i];
-    positionArray[i + 1] = originalGalaxyPositions[i + 1];
-    positionArray[i + 2] = originalGalaxyPositions[i + 2];
+    if (!stellarGravityState) {
+      positionArray[i] = originalGalaxyPositions[i];
+      positionArray[i + 1] = originalGalaxyPositions[i + 1];
+      positionArray[i + 2] = originalGalaxyPositions[i + 2];
+    }
     colorArray[i] = originalGalaxyColors[i] * alive;
     colorArray[i + 1] = originalGalaxyColors[i + 1] * alive;
     colorArray[i + 2] = originalGalaxyColors[i + 2] * alive;
   }
+  cosmicEvents.forEach((event) => {
+    const sourceOffset = event.sourceIndex * 3;
+    const center = {
+      x: positionArray[sourceOffset],
+      y: positionArray[sourceOffset + 1],
+      z: positionArray[sourceOffset + 2]
+    };
+    event.group.position.set(center.x, center.y, center.z);
+    if (event.visual !== 'black-hole-merger') return;
+    applyMergerGravity(position, positionArray, colorArray, event, center);
+  });
   cosmicEvents.forEach((event) => {
     if (position < event.impactAt) return;
     const aftermath = THREE.MathUtils.smoothstep(position, event.impactAt, event.impactAt + 24);

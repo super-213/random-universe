@@ -9,6 +9,7 @@ import { getPointTexture, makeGlowTexture, makeRingTexture } from './rendering/t
 import { animateBlackHoleVisual, createBlackHoleVisual } from './rendering/black-hole.js';
 import { applyCivilizationSnapshot, syncCivilizationHosts } from './rendering/civilizations.js';
 import { animateCosmicEvents, updateCosmicEvents, updateEpochVisuals } from './rendering/timeline-visuals.js';
+import { createMergerGravityField, createStellarGravityState } from './simulation/black-hole-gravity.js';
 import { buildCivilizationSimulation, civilizationSnapshotAt, deriveCivilizationRuntime, findDominantRelationship } from './simulation/civilization.js';
 import { updateUniverseData } from './ui/universe-data.js';
 import { renderCivilizationRows, renderTimelineEvent, renderTimelineHeader } from './ui/timeline.js';
@@ -79,6 +80,7 @@ let originalPhotonColors = null;
 let stellarRemnants = null;
 let originalGalaxyPositions = null;
 let originalGalaxyColors = null;
+let stellarGravityState = null;
 let starDeathThresholds = null;
 let originalRemnantPositions = null;
 let remnantDynamics = null;
@@ -259,6 +261,7 @@ function buildGalaxy() {
 
   originalGalaxyPositions = positions.slice();
   originalGalaxyColors = colors.slice();
+  stellarGravityState = createStellarGravityState(originalGalaxyPositions, universe);
 
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
@@ -404,6 +407,7 @@ function buildEpochEffects(starPositions) {
   const remnantColors = new Float32Array(remnantCount * 3);
   originalRemnantPositions = new Float32Array(remnantCount * 3);
   remnantDynamics = {
+    sourceIndices: new Uint16Array(remnantCount),
     axes: new Float32Array(remnantCount * 3),
     orbitRates: new Float32Array(remnantCount),
     escapeAt: new Float32Array(remnantCount),
@@ -414,22 +418,22 @@ function buildEpochEffects(starPositions) {
   for (let i = 0; i < remnantCount; i++) {
     const source = Math.floor(random() * starPositions.length / 3);
     const sourceOffset = source * 3;
+    remnantDynamics.sourceIndices[i] = source;
     const x = starPositions[sourceOffset];
     const y = starPositions[sourceOffset + 1];
     const z = starPositions[sourceOffset + 2];
     remnantPositions[i * 3] = originalRemnantPositions[i * 3] = x;
     remnantPositions[i * 3 + 1] = originalRemnantPositions[i * 3 + 1] = y;
     remnantPositions[i * 3 + 2] = originalRemnantPositions[i * 3 + 2] = z;
-    const diskLike = universe.galaxyType <= 2;
-    let axisX = diskLike ? gaussianRandom(random) * .035 : gaussianRandom(random);
-    let axisY = diskLike ? 1 : gaussianRandom(random);
-    let axisZ = diskLike ? gaussianRandom(random) * .035 : gaussianRandom(random);
-    const axisLength = Math.max(.001, Math.hypot(axisX, axisY, axisZ));
-    axisX /= axisLength; axisY /= axisLength; axisZ /= axisLength;
-    remnantDynamics.axes.set([axisX, axisY, axisZ], i * 3);
-    const orbitDirection = diskLike ? (random() < .94 ? 1 : -1) : (random() < .5 ? 1 : -1);
-    const radius = Math.max(.8, Math.hypot(x, y, z));
-    remnantDynamics.orbitRates[i] = orbitDirection * randomBetween(random, .008, .018) / Math.sqrt(radius * .22);
+    // Preserve the random stream used by older generated universes while the
+    // host now inherits the exact gravity state of its source star.
+    random(); random(); random();
+    remnantDynamics.axes.set([
+      stellarGravityState.axes[sourceOffset],
+      stellarGravityState.axes[sourceOffset + 1],
+      stellarGravityState.axes[sourceOffset + 2]
+    ], i * 3);
+    remnantDynamics.orbitRates[i] = stellarGravityState.orbitRates[source];
 
     const fateRoll = random();
     const fate = fateRoll < .82 ? 0 : fateRoll < .92 ? 1 : fateRoll < .99 ? 2 : 3;
@@ -1002,10 +1006,17 @@ function buildCosmicEvents(starPositions) {
 
     const consequences = deriveConsequences(data, location);
     const waveSamples = buildWaveSamples(data, location, index);
+    const gravityField = data.visual === 'black-hole-merger'
+      ? createMergerGravityField(starPositions, location.position, {
+          seedValue: universe.seedValue,
+          eventIndex: index
+        })
+      : null;
     cosmicEvents.push({
       ...data,
       ...consequences,
       waveSamples,
+      gravityField,
       group,
       sourceIndex: location.index,
       id: `${data.type}-${index}-${universe.seed}`,
@@ -1299,7 +1310,7 @@ function timelineVisualContext() {
   return {
     mode, epochEffectsGroup, primordialParticles, primordialFactors, primordialDirections,
     expansionStreaks, expansionDirections, bangCore, shockwaves, renderer, scene,
-    clickableStars, originalGalaxyPositions, universe, transition, galaxyGroup,
+    clickableStars, originalGalaxyPositions, stellarGravityState, universe, transition, galaxyGroup,
     starDeathThresholds, originalGalaxyColors, cosmicEvents, remnantGroup,
     stellarRemnants, originalRemnantPositions, remnantDynamics, blackHoleRemnants,
     heatDeathGroup, coldPhotons, originalPhotonPositions, originalPhotonColors,
@@ -1336,6 +1347,7 @@ function updateCosmicTime(value, force = false) {
     civilizationGroups
   });
   syncCivilizationHosts({
+    clickableStars,
     stellarRemnants,
     remnantDynamics,
     cosmicPosition,
