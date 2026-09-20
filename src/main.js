@@ -22,6 +22,8 @@ let speciesNames;
 let randomBetween;
 let gaussianRandom;
 let createStellarDawnModel;
+let STELLAR_DAWN_END;
+let STELLAR_DAWN_START;
 let stellarEndTimelinePosition;
 let cosmicTimeLabel;
 let cosmicYearsToTimelinePosition;
@@ -180,6 +182,8 @@ function loadExplorer() {
       randomBetween,
       gaussianRandom,
       createStellarDawnModel,
+      STELLAR_DAWN_END,
+      STELLAR_DAWN_START,
       stellarEndTimelinePosition,
       cosmicTimeLabel,
       cosmicYearsToTimelinePosition,
@@ -341,6 +345,8 @@ function buildLocalGroupMap() {
   localGroupGalaxies = [];
   localGalaxyGroup = createLocalGalaxyGroup(universe.seed, $('#galaxy-name').textContent);
   const random = createSeededRandom(universe.seed, 7317);
+  const stellarEnd = stellarEndTimelinePosition(universe);
+  const stellarDeathStart = Math.min(stellarEnd, cosmicYearsToTimelinePosition(4e10, universe));
   localGalaxyGroup.companions.forEach((companion) => {
     const galaxy = new THREE.Group();
     galaxy.position.fromArray(companion.position);
@@ -352,14 +358,26 @@ function buildLocalGroupMap() {
     const count = Math.round(820 + companion.radius * 260);
     const positions = new Float32Array(count * 3);
     const colors = new Float32Array(count * 3);
+    const baseColors = new Float32Array(count * 3);
     const radii = new Float32Array(count);
     const angles = new Float32Array(count);
     const verticals = new Float32Array(count);
     const phases = new Float32Array(count);
+    const formationRadii = new Float32Array(count);
+    const formationAngles = new Float32Array(count);
+    const formationVerticals = new Float32Array(count);
+    const birthAt = new Float32Array(count);
+    const deathAt = new Float32Array(count);
+    const remnantStrength = new Float32Array(count);
     const tint = new THREE.Color().setHSL(companion.hue, .58, .68);
     const isSpiral = companion.type === '小型螺旋星系';
     const isIrregular = companion.type === '不规则星系';
     const flattening = isIrregular ? .82 : isSpiral ? .68 : .76;
+    const galaxyBirthStart = THREE.MathUtils.clamp(
+      STELLAR_DAWN_START + randomBetween(random, -4, 8),
+      STELLAR_DAWN_START - 4,
+      STELLAR_DAWN_START + 8
+    );
     for (let index = 0; index < count; index++) {
       const offset = index * 3;
       const radius = Math.pow(random(), .78) * companion.radius;
@@ -371,13 +389,29 @@ function buildLocalGroupMap() {
       angles[index] = angle;
       verticals[index] = vertical;
       phases[index] = random() * Math.PI * 2;
+      formationRadii[index] = radius * randomBetween(random, 1.28, 1.62)
+        + random() * companion.radius * .16;
+      formationAngles[index] = angle + gaussianRandom(random) * .34;
+      formationVerticals[index] = vertical * randomBetween(random, 1.8, 2.5)
+        + gaussianRandom(random) * companion.radius * .18;
+      birthAt[index] = THREE.MathUtils.clamp(
+        galaxyBirthStart + Math.pow(radius / companion.radius, .7) * 27 + Math.pow(random(), 1.55) * 31,
+        STELLAR_DAWN_START - 3,
+        STELLAR_DAWN_END - 8
+      );
+      deathAt[index] = stellarDeathStart
+        + Math.pow(random(), 1.9) * Math.max(0, stellarEnd - stellarDeathStart);
+      remnantStrength[index] = random() < .36 ? randomBetween(random, .08, .22) : 0;
       positions[offset] = Math.cos(angle) * radius;
       positions[offset + 1] = vertical;
       positions[offset + 2] = Math.sin(angle) * radius * flattening;
       const brightness = .68 + random() * .52;
-      colors[offset] = tint.r * brightness;
-      colors[offset + 1] = tint.g * brightness;
-      colors[offset + 2] = tint.b * brightness;
+      baseColors[offset] = tint.r * brightness;
+      baseColors[offset + 1] = tint.g * brightness;
+      baseColors[offset + 2] = tint.b * brightness;
+      colors[offset] = baseColors[offset];
+      colors[offset + 1] = baseColors[offset + 1];
+      colors[offset + 2] = baseColors[offset + 2];
     }
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
@@ -411,17 +445,41 @@ function buildLocalGroupMap() {
     core.material.userData.baseOpacity = .4;
     core.renderOrder = 3;
     galaxy.add(core);
+
+    const gas = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: makeGlowTexture(),
+      color: tint.clone().lerp(new THREE.Color(0x8fc9e8), .48),
+      transparent: true,
+      opacity: 0,
+      depthTest: false,
+      depthWrite: false,
+      fog: false,
+      blending: THREE.AdditiveBlending
+    }));
+    gas.scale.setScalar(companion.radius * 4.1);
+    gas.renderOrder = -1;
+    galaxy.add(gas);
     localGroupGroup.add(galaxy);
     localGroupGalaxies.push({
       galaxy,
       points,
       core,
+      gas,
+      basePosition: companion.position.slice(),
+      baseColors,
       radii,
       angles,
       verticals,
       phases,
+      formationRadii,
+      formationAngles,
+      formationVerticals,
+      birthAt,
+      deathAt,
+      remnantStrength,
       flattening,
       radius: companion.radius,
+      galaxyBirthStart,
       rotationSpeed: (isSpiral ? .082 : isIrregular ? .036 : .052) * (random() < .5 ? -1 : 1),
       radialWobble: isIrregular ? .026 : .008,
       pulsePhase: random() * Math.PI * 2
@@ -2771,13 +2829,143 @@ function updateKeyboardStarMarker() {
 
 function updateLocalGroupVisuals(simulationState) {
   if (!localGalaxyGroup) return;
-  const formed = mode === 'explorer' && cosmicPosition >= 300;
-  localGroupGroup.visible = formed;
+  const visible = mode === 'explorer' && cosmicPosition >= 205;
+  const routesFormed = visible && cosmicPosition >= STELLAR_DAWN_END;
+  localGroupGroup.visible = visible;
   const viewBoost = localGroupView ? 1 : .34;
-  localGroupGroup.traverse((object) => {
-    const baseOpacity = object.material?.userData?.baseOpacity;
-    if (baseOpacity !== undefined) object.material.opacity = baseOpacity * viewBoost;
+  const stellarEnd = stellarEndTimelinePosition(universe);
+  const remapReferencePosition = (referencePosition) => cosmicYearsToTimelinePosition(
+    referenceFutureYearsAtTimelinePosition(referencePosition, universe),
+    universe
+  );
+  const remnantFadeStart = remapReferencePosition(845);
+  const remnantFadeEnd = remapReferencePosition(930);
+  const remnantPersistence = remnantFadeStart >= 999
+    ? 1
+    : 1 - THREE.MathUtils.smoothstep(
+        cosmicPosition,
+        remnantFadeStart,
+        Math.max(remnantFadeStart + 1, remnantFadeEnd)
+      );
+  const stellarPopulation = 1 - THREE.MathUtils.smoothstep(
+    cosmicPosition,
+    stellarEnd - 75,
+    stellarEnd + 10
+  );
+  const fate = universe.cosmicFate;
+  const finiteOutcome = fate?.type && fate.type !== 'heat-death';
+  const fatePhase = finiteOutcome
+    ? THREE.MathUtils.smoothstep(cosmicPosition, fate.onsetAt, 1000)
+    : 0;
+
+  localGroupGalaxies.forEach((companion) => {
+    let fateSurvival = 1;
+    companion.galaxy.position.fromArray(companion.basePosition);
+    companion.galaxy.scale.setScalar(1);
+    if (fatePhase > 0 && fate.type === 'big-rip') {
+      const separation = 1 + Math.pow(fatePhase, 1.7) * 3.2;
+      companion.galaxy.position.multiplyScalar(separation);
+      companion.galaxy.scale.setScalar(1 + Math.pow(fatePhase, 1.7) * 2.5);
+      fateSurvival = Math.pow(1 - fatePhase, .72);
+    } else if (fatePhase > 0 && fate.type === 'big-crunch') {
+      const contraction = Math.max(.012, 1 - Math.pow(fatePhase, 1.35) * .988);
+      companion.galaxy.position.multiplyScalar(contraction);
+      companion.galaxy.scale.setScalar(contraction);
+    } else if (fatePhase > 0 && fate.type === 'vacuum-decay') {
+      const bubbleRadius = .18 + Math.pow(fatePhase, .58) * 36;
+      const bubblePosition = fateBubble?.position || new THREE.Vector3();
+      const distance = companion.galaxy.position.distanceTo(bubblePosition);
+      fateSurvival = THREE.MathUtils.smoothstep(bubbleRadius - 1.2, bubbleRadius + .4, distance);
+    }
+
+    const gasReveal = THREE.MathUtils.smoothstep(
+      cosmicPosition,
+      companion.galaxyBirthStart - 38,
+      companion.galaxyBirthStart - 12
+    );
+    const gasIonized = THREE.MathUtils.smoothstep(
+      cosmicPosition,
+      companion.galaxyBirthStart + 22,
+      STELLAR_DAWN_END
+    );
+    const colorArray = companion.points.geometry.attributes.color.array;
+    for (let index = 0; index < companion.birthAt.length; index++) {
+      const offset = index * 3;
+      const born = THREE.MathUtils.smoothstep(
+        cosmicPosition,
+        companion.birthAt[index],
+        companion.birthAt[index] + 5.5
+      );
+      const alive = 1 - THREE.MathUtils.smoothstep(
+        cosmicPosition,
+        companion.deathAt[index],
+        companion.deathAt[index] + 22
+      );
+      const young = 1 - THREE.MathUtils.smoothstep(
+        cosmicPosition,
+        companion.birthAt[index] + 3,
+        companion.birthAt[index] + 18
+      );
+      const remnant = THREE.MathUtils.smoothstep(
+        cosmicPosition,
+        companion.deathAt[index],
+        companion.deathAt[index] + 10
+      ) * companion.remnantStrength[index] * remnantPersistence;
+      const livingLight = born * alive;
+      const gasLight = (1 - born) * gasReveal * (1 - gasIonized);
+      colorArray[offset] = companion.baseColors[offset] * livingLight * (1 + young * .28)
+        + remnant * .64
+        + gasLight * .055;
+      colorArray[offset + 1] = companion.baseColors[offset + 1] * livingLight * (1 + young * .52)
+        + remnant * .74
+        + gasLight * .14;
+      colorArray[offset + 2] = companion.baseColors[offset + 2] * livingLight * (1 + young * .95)
+        + remnant
+        + gasLight * .22;
+      if (fate.type === 'big-crunch' && fatePhase > 0) {
+        colorArray[offset] *= 1 + fatePhase * 1.4;
+        colorArray[offset + 1] *= 1 - fatePhase * .5;
+        colorArray[offset + 2] *= 1 - fatePhase * .72;
+      }
+    }
+    companion.points.geometry.attributes.color.needsUpdate = true;
+    companion.points.material.opacity = companion.points.material.userData.baseOpacity
+      * viewBoost
+      * fateSurvival;
+
+    companion.gas.material.opacity = gasReveal * (1 - gasIonized) * .38 * viewBoost * fateSurvival;
+    companion.gas.scale.setScalar(companion.radius * THREE.MathUtils.lerp(4.4, 3.2, gasIonized));
+    const assembled = THREE.MathUtils.smoothstep(
+      cosmicPosition,
+      companion.galaxyBirthStart + 20,
+      STELLAR_DAWN_END + 8
+    );
+    companion.coreEvolutionOpacity = companion.core.material.userData.baseOpacity
+      * viewBoost
+      * assembled
+      * stellarPopulation
+      * fateSurvival;
+    companion.core.material.opacity = companion.coreEvolutionOpacity;
+    if (prefersReducedMotion || !localGroupView) {
+      updateLocalGalaxyParticlePositions(companion, performance.now(), false);
+    }
   });
+
+  let epochLabel = '原星系云';
+  if (cosmicPosition < STELLAR_DAWN_START) epochLabel = '原星系云';
+  else if (cosmicPosition < STELLAR_DAWN_END) epochLabel = '恒星形成中';
+  else if (cosmicPosition < stellarEnd - 75) epochLabel = '恒星时代';
+  else if (cosmicPosition < stellarEnd + 10) epochLabel = '恒星逐渐熄灭';
+  else if (cosmicPosition < remnantFadeEnd) epochLabel = '致密残骸时代';
+  else epochLabel = '暗星系遗迹';
+  if (fatePhase > 0) epochLabel = fate.type === 'big-rip'
+    ? '结构解体中'
+    : fate.type === 'big-crunch' ? '整体坍缩中' : '真空衰变中';
+  const groupCountText = `1 个主星系 · ${localGalaxyGroup.companions.length} 个伴星系 · ${epochLabel}`;
+  if ($('#local-group-count').textContent !== groupCountText) {
+    $('#local-group-count').textContent = groupCountText;
+  }
+
   let activeRoutes = 0;
   civilizationData.forEach((species, speciesIndex) => {
     const route = localGroupRoutes[speciesIndex];
@@ -2791,7 +2979,12 @@ function updateLocalGroupVisuals(simulationState) {
     const companion = routeIndex
       ? localGalaxyGroup.companions[(routeIndex - 1) % localGalaxyGroup.companions.length]
       : null;
-    route.visible = Boolean(companion && (fleetState || externalPopulation > .01) && formed);
+    route.visible = Boolean(
+      companion
+      && (fleetState || externalPopulation > .01)
+      && routesFormed
+      && fatePhase < .08
+    );
     marker.visible = route.visible;
     if (!route.visible) return;
     activeRoutes++;
@@ -2815,34 +3008,49 @@ function updateLocalGroupVisuals(simulationState) {
     : '尚无跨星系航线';
 }
 
+function updateLocalGalaxyParticlePositions(companion, now, motionEnabled) {
+  const elapsed = now * .001;
+  const positions = companion.points.geometry.attributes.position.array;
+  for (let index = 0; index < companion.radii.length; index++) {
+    const offset = index * 3;
+    const normalizedRadius = companion.radii[index] / companion.radius;
+    const angularSpeed = companion.rotationSpeed * (
+      .48 + 1.05 / (.32 + Math.max(.14, normalizedRadius))
+    );
+    const phase = companion.phases[index];
+    const assembly = THREE.MathUtils.smoothstep(
+      cosmicPosition,
+      companion.birthAt[index] - 7,
+      Math.min(STELLAR_DAWN_END, companion.birthAt[index] + 38)
+    );
+    const settledRadius = companion.radii[index] * (
+      1 + (motionEnabled ? Math.sin(elapsed * .24 + phase) * companion.radialWobble : 0)
+    );
+    const radius = THREE.MathUtils.lerp(companion.formationRadii[index], settledRadius, assembly);
+    const settledAngle = companion.angles[index]
+      + (motionEnabled ? elapsed * angularSpeed : 0);
+    const angle = THREE.MathUtils.lerp(companion.formationAngles[index], settledAngle, assembly);
+    positions[offset] = Math.cos(angle) * radius;
+    positions[offset + 1] = THREE.MathUtils.lerp(
+      companion.formationVerticals[index],
+      companion.verticals[index],
+      assembly
+    ) + (motionEnabled ? Math.sin(elapsed * .34 + phase) * companion.radius * .012 : 0);
+    positions[offset + 2] = Math.sin(angle) * radius * companion.flattening;
+  }
+  companion.points.geometry.attributes.position.needsUpdate = true;
+}
+
 function animateLocalGroupGalaxies(now) {
   if (!localGroupView || !localGroupGroup.visible || prefersReducedMotion) return;
   const elapsed = now * .001;
-  const viewBoost = localGroupView ? 1 : .34;
   localGroupGalaxies.forEach((companion) => {
-    const positions = companion.points.geometry.attributes.position.array;
-    for (let index = 0; index < companion.radii.length; index++) {
-      const offset = index * 3;
-      const normalizedRadius = companion.radii[index] / companion.radius;
-      const angularSpeed = companion.rotationSpeed * (
-        .48 + 1.05 / (.32 + Math.max(.14, normalizedRadius))
-      );
-      const phase = companion.phases[index];
-      const radius = companion.radii[index] * (
-        1 + Math.sin(elapsed * .24 + phase) * companion.radialWobble
-      );
-      const angle = companion.angles[index] + elapsed * angularSpeed;
-      positions[offset] = Math.cos(angle) * radius;
-      positions[offset + 1] = companion.verticals[index]
-        + Math.sin(elapsed * .34 + phase) * companion.radius * .012;
-      positions[offset + 2] = Math.sin(angle) * radius * companion.flattening;
-    }
-    companion.points.geometry.attributes.position.needsUpdate = true;
+    updateLocalGalaxyParticlePositions(companion, now, true);
     const pulse = 1 + Math.sin(elapsed * .72 + companion.pulsePhase) * .035;
     companion.core.scale.setScalar(companion.radius * 1.68 * pulse);
-    companion.core.material.opacity = companion.core.material.userData.baseOpacity
-      * viewBoost
+    companion.core.material.opacity = (companion.coreEvolutionOpacity || 0)
       * (.92 + Math.sin(elapsed * .72 + companion.pulsePhase) * .08);
+    companion.gas.material.rotation = elapsed * companion.rotationSpeed * .08;
   });
 }
 

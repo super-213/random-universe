@@ -1,7 +1,11 @@
 export { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 export { erasForUniverse, galaxyTypes, speciesColors, speciesNames } from './domain/catalog.js';
 export { randomBetween, gaussianRandom } from './domain/random.js';
-export { createStellarDawnModel } from './domain/stellar-dawn.js';
+export {
+  createStellarDawnModel,
+  STELLAR_DAWN_END,
+  STELLAR_DAWN_START
+} from './domain/stellar-dawn.js';
 export { stellarEndTimelinePosition } from './domain/universe.js';
 export {
   cosmicTimeLabel,
