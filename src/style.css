@@ -317,7 +317,6 @@ h1 strong {
   align-items: baseline;
   transition: opacity .35s ease, transform .35s ease;
 }
-.era-number { color: var(--accent); font: 8px "Space Mono", monospace; }
 .era-readout > div { display: flex; align-items: baseline; gap: 9px; }
 .era-readout p { margin: 0; color: var(--muted); font-size: 9px; letter-spacing: .1em; }
 .era-readout strong { font: 400 13px var(--display-font); letter-spacing: 0; }

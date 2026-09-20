@@ -89,7 +89,6 @@ export function renderTimelineHeader(state) {
   $('#cosmic-timeline').value = state.position;
   $('#time-progress').style.width = `${state.position / 10}%`;
   $('#timeline-value').textContent = state.label;
-  $('#era-number').textContent = String(state.eraIndex + 1).padStart(2, '0');
   $('#era-name').textContent = state.era.name;
   $('#cosmic-time').textContent = state.label.replace('T+', '');
   $('#era-description').textContent = state.era.description;
