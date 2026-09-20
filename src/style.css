@@ -7,7 +7,7 @@
     local("Smiley Sans"),
     local("得意黑"),
     local("Smiley Sans Oblique"),
-    url("./assets/fonts/SmileySans-Oblique.ttf.woff2") format("woff2");
+    url("./assets/fonts/SmileySans-Oblique.subset.woff2") format("woff2");
   font-style: normal;
   font-weight: 400;
   font-display: swap;

@@ -1,0 +1,46 @@
+export { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+export { erasForUniverse, galaxyTypes, speciesColors, speciesNames } from './domain/catalog.js';
+export { randomBetween, gaussianRandom } from './domain/random.js';
+export { createStellarDawnModel } from './domain/stellar-dawn.js';
+export { stellarEndTimelinePosition } from './domain/universe.js';
+export {
+  cosmicTimeLabel,
+  cosmicYearsToTimelinePosition,
+  createCosmicTimelineState,
+  referenceFutureYearsAtTimelinePosition,
+  selectTimelineNarrative,
+  timelineUnitsPerSecond
+} from './domain/cosmic-time.js';
+export { makeGlowTexture, makeRingTexture } from './rendering/textures.js';
+export { animateBlackHoleVisual, createBlackHoleVisual } from './rendering/black-hole.js';
+export { applyCivilizationSnapshot, syncCivilizationHosts } from './rendering/civilizations.js';
+export { animateCosmicEvents, updateCosmicEvents, updateEpochVisuals } from './rendering/timeline-visuals.js';
+export { createMergerGravityField, createStellarGravityState } from './simulation/black-hole-gravity.js';
+export {
+  blackHoleEvaporationExponent,
+  blackHoleMassFromSimulation,
+  selectBlackHoleProgenitors
+} from './simulation/compact-objects.js';
+export {
+  buildCivilizationSimulation,
+  civilizationSnapshotAt,
+  deriveCivilizationRuntime,
+  findDominantRelationship
+} from './simulation/civilization.js';
+export { expandEventSchedule } from './simulation/event-occurrence.js';
+export {
+  applyTransientImpactScales,
+  createTransientGravityField,
+  createTransientSimulation,
+  describeTransientSimulation
+} from './simulation/transient-events.js';
+export {
+  focusTimelineScale,
+  renderCivilizationRows,
+  renderTimelineEvent,
+  renderTimelineHeader,
+  renderTimelineScale,
+  resetTimelineScaleFocus,
+  restartTimelineScaleIntro
+} from './ui/timeline.js';
+export { organizeCivilizationLegend, resetCivilizationLegend } from './ui/civilization-legend.js';

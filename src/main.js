@@ -1,47 +1,56 @@
 import * as THREE from 'three';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import './style.css';
-import { erasForUniverse, galaxyTypes, speciesColors, speciesNames } from './domain/catalog.js';
-import { createSeededRandom, randomBetween, gaussianRandom } from './domain/random.js';
-import { createStellarDawnModel } from './domain/stellar-dawn.js';
-import { createUniverse, stellarEndTimelinePosition } from './domain/universe.js';
-import {
-  cosmicTimeLabel,
-  cosmicYearsToTimelinePosition,
-  createCosmicTimelineState,
-  referenceFutureYearsAtTimelinePosition,
-  selectTimelineNarrative,
-  timelineUnitsPerSecond
-} from './domain/cosmic-time.js';
-import { getPointTexture, makeGlowTexture, makeRingTexture } from './rendering/textures.js';
-import { animateBlackHoleVisual, createBlackHoleVisual } from './rendering/black-hole.js';
-import { applyCivilizationSnapshot, syncCivilizationHosts } from './rendering/civilizations.js';
-import { animateCosmicEvents, updateCosmicEvents, updateEpochVisuals } from './rendering/timeline-visuals.js';
-import { createMergerGravityField, createStellarGravityState } from './simulation/black-hole-gravity.js';
-import {
-  blackHoleEvaporationExponent,
-  blackHoleMassFromSimulation,
-  selectBlackHoleProgenitors
-} from './simulation/compact-objects.js';
-import { buildCivilizationSimulation, civilizationSnapshotAt, deriveCivilizationRuntime, findDominantRelationship } from './simulation/civilization.js';
-import { expandEventSchedule } from './simulation/event-occurrence.js';
-import {
-  applyTransientImpactScales,
-  createTransientGravityField,
-  createTransientSimulation,
-  describeTransientSimulation
-} from './simulation/transient-events.js';
+import { createSeededRandom } from './domain/random.js';
+import { createUniverse } from './domain/universe.js';
+import { getPointTexture } from './rendering/textures.js';
 import { updateUniverseData } from './ui/universe-data.js';
-import {
-  focusTimelineScale,
-  renderCivilizationRows,
-  renderTimelineEvent,
-  renderTimelineHeader,
-  renderTimelineScale,
-  resetTimelineScaleFocus,
-  restartTimelineScaleIntro
-} from './ui/timeline.js';
-import { organizeCivilizationLegend, resetCivilizationLegend } from './ui/civilization-legend.js';
+
+let erasForUniverse;
+let galaxyTypes;
+let speciesColors;
+let speciesNames;
+let randomBetween;
+let gaussianRandom;
+let createStellarDawnModel;
+let stellarEndTimelinePosition;
+let cosmicTimeLabel;
+let cosmicYearsToTimelinePosition;
+let createCosmicTimelineState;
+let referenceFutureYearsAtTimelinePosition;
+let selectTimelineNarrative;
+let timelineUnitsPerSecond;
+let makeGlowTexture;
+let makeRingTexture;
+let animateBlackHoleVisual;
+let createBlackHoleVisual;
+let applyCivilizationSnapshot;
+let syncCivilizationHosts;
+let animateCosmicEvents;
+let updateCosmicEvents;
+let updateEpochVisuals;
+let createMergerGravityField;
+let createStellarGravityState;
+let blackHoleEvaporationExponent;
+let blackHoleMassFromSimulation;
+let selectBlackHoleProgenitors;
+let buildCivilizationSimulation;
+let civilizationSnapshotAt;
+let deriveCivilizationRuntime;
+let findDominantRelationship;
+let expandEventSchedule;
+let applyTransientImpactScales;
+let createTransientGravityField;
+let createTransientSimulation;
+let describeTransientSimulation;
+let focusTimelineScale;
+let renderCivilizationRows;
+let renderTimelineEvent;
+let renderTimelineHeader;
+let renderTimelineScale;
+let resetTimelineScaleFocus;
+let restartTimelineScaleIntro;
+let organizeCivilizationLegend;
+let resetCivilizationLegend;
 
 const $ = (selector) => document.querySelector(selector);
 const canvas = $('#universe');
@@ -60,16 +69,9 @@ scene.fog = new THREE.FogExp2(0x050508, 0.018);
 const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 200);
 camera.position.set(0, 0.5, 32);
 
-const controls = new OrbitControls(camera, canvas);
-controls.enableDamping = true;
-controls.dampingFactor = 0.045;
-controls.enablePan = false;
-controls.minDistance = 8;
-controls.maxDistance = 46;
-// The camera should only move in response to the observer. Automatic camera
-// orbit made a static galaxy look as though every star suddenly accelerated.
-controls.autoRotate = false;
-controls.enabled = false;
+let controls = null;
+let explorerLoadPromise = null;
+let galaxyBuiltForSeed = null;
 
 let universeGroup = new THREE.Group();
 let galaxyGroup = new THREE.Group();
@@ -120,6 +122,77 @@ let timePlaying = false;
 let timeSpeed = 10;
 let lastFrame = performance.now();
 let cosmicEvents = [];
+
+function loadExplorer() {
+  if (explorerLoadPromise) return explorerLoadPromise;
+
+  explorerLoadPromise = import('./explorer-dependencies.js').then((explorer) => {
+    ({
+      erasForUniverse,
+      galaxyTypes,
+      speciesColors,
+      speciesNames,
+      randomBetween,
+      gaussianRandom,
+      createStellarDawnModel,
+      stellarEndTimelinePosition,
+      cosmicTimeLabel,
+      cosmicYearsToTimelinePosition,
+      createCosmicTimelineState,
+      referenceFutureYearsAtTimelinePosition,
+      selectTimelineNarrative,
+      timelineUnitsPerSecond,
+      makeGlowTexture,
+      makeRingTexture,
+      animateBlackHoleVisual,
+      createBlackHoleVisual,
+      applyCivilizationSnapshot,
+      syncCivilizationHosts,
+      animateCosmicEvents,
+      updateCosmicEvents,
+      updateEpochVisuals,
+      createMergerGravityField,
+      createStellarGravityState,
+      blackHoleEvaporationExponent,
+      blackHoleMassFromSimulation,
+      selectBlackHoleProgenitors,
+      buildCivilizationSimulation,
+      civilizationSnapshotAt,
+      deriveCivilizationRuntime,
+      findDominantRelationship,
+      expandEventSchedule,
+      applyTransientImpactScales,
+      createTransientGravityField,
+      createTransientSimulation,
+      describeTransientSimulation,
+      focusTimelineScale,
+      renderCivilizationRows,
+      renderTimelineEvent,
+      renderTimelineHeader,
+      renderTimelineScale,
+      resetTimelineScaleFocus,
+      restartTimelineScaleIntro,
+      organizeCivilizationLegend,
+      resetCivilizationLegend
+    } = explorer);
+
+    controls = new explorer.OrbitControls(camera, canvas);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.045;
+    controls.enablePan = false;
+    controls.minDistance = 8;
+    controls.maxDistance = 46;
+    // The camera should only move in response to the observer. Automatic camera
+    // orbit made a static galaxy look as though every star suddenly accelerated.
+    controls.autoRotate = false;
+    controls.enabled = false;
+  }).catch((error) => {
+    explorerLoadPromise = null;
+    throw error;
+  });
+
+  return explorerLoadPromise;
+}
 
 function addBlackHoleRemnant({
   random,
@@ -1700,7 +1773,7 @@ function regenerate() {
   universe = createUniverse();
   updateUniverseData(universe);
   buildUniverseObject();
-  buildGalaxy();
+  galaxyBuiltForSeed = null;
   $('.universe-data').scrollTop = 0;
   const flash = $('#creation-flash');
   flash.classList.remove('is-flashing');
@@ -1713,8 +1786,32 @@ function regenerate() {
   });
 }
 
-function enterUniverse() {
+async function enterUniverse() {
   if (mode !== 'generator') return;
+  const enterButton = $('#enter-universe');
+  const enterLabel = enterButton.querySelector('span');
+  if (enterButton.getAttribute('aria-busy') === 'true') return;
+
+  enterButton.disabled = true;
+  enterButton.setAttribute('aria-busy', 'true');
+  enterLabel.textContent = '正在校准';
+
+  try {
+    await loadExplorer();
+    if (galaxyBuiltForSeed !== universe.seed) {
+      buildGalaxy();
+      galaxyBuiltForSeed = universe.seed;
+    }
+  } catch (error) {
+    console.error('无法加载宇宙探索器', error);
+    $('#mode-label').textContent = '探索器加载失败';
+    return;
+  } finally {
+    enterButton.disabled = false;
+    enterButton.removeAttribute('aria-busy');
+    enterLabel.textContent = '进入宇宙';
+  }
+
   mode = 'explorer';
   document.body.classList.add('is-exploring');
   $('#generator-view').classList.remove('is-active');
@@ -2070,5 +2167,4 @@ document.addEventListener('keydown', (event) => {
 universe = createUniverse();
 updateUniverseData(universe);
 buildUniverseObject();
-buildGalaxy();
 animate(performance.now());

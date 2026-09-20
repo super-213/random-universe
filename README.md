@@ -418,6 +418,13 @@ npm run build
 npm run preview
 ```
 
+页面使用按当前源码字符生成的得意黑子集。修改界面文案后，如本机已安装
+[FontTools](https://fonttools.readthedocs.io/)，可重新生成字体文件：
+
+```bash
+npm run font:subset
+```
+
 ### 技术栈
 
 - [Vite](https://vite.dev/)：开发服务器与生产构建
@@ -432,6 +439,7 @@ random-universe/
 ├── index.html                     # 页面结构与交互控件
 ├── src/
 │   ├── main.js                    # 应用入口、星系构造、事件与交互编排
+│   ├── explorer-dependencies.js   # 点击进入宇宙后按需加载的探索器依赖
 │   ├── domain/
 │   │   ├── random.js             # 种子规范化、哈希与伪随机数
 │   │   ├── universe.js           # 宇宙参数、派生量与早期里程碑
@@ -450,6 +458,7 @@ random-universe/
 │   ├── assets/                    # 构建时打包资源
 │   └── style.css                  # 响应式视觉与动效
 ├── test/simulation.test.js        # 核心模型自动化测试
+├── scripts/subset-font.mjs        # 从页面源码重新生成得意黑字符子集
 ├── public/fonts/                  # 字体与许可证
 ├── readme-photo/                  # README 截图
 └── dist/                          # 生产构建输出
