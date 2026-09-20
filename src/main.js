@@ -80,6 +80,7 @@ const compactCivilizationLayout = window.matchMedia('(max-width: 800px)');
 const timelineUpdateIntervalMs = 1000 / 30;
 const coordinateUpdateIntervalMs = 100;
 const maxVisibleIntergalacticShips = 3;
+const showCivilizationLogistics = false;
 const coordinateElements = [$('#coord-x'), $('#coord-y'), $('#coord-z')];
 
 const { renderer, backend: rendererBackend } = await createUniverseRenderer(canvas);
@@ -2838,7 +2839,7 @@ function updateLogisticsVisuals(simulationState) {
     const count = Math.min(12, Math.max(0, species?.displayCount - 1));
     const linePositions = network.geometry.attributes.position.array;
     const colonyPositions = civilization.geometry.attributes.position.array;
-    if (!simulationState?.active?.[speciesIndex] || count === 0) {
+    if (!showCivilizationLogistics || !simulationState?.active?.[speciesIndex] || count === 0) {
       network.visible = false;
       network.geometry.setDrawRange(0, 0);
       return;
