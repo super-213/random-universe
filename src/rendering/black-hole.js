@@ -235,7 +235,7 @@ export function createBlackHoleVisual({
 
   const horizon = new THREE.Mesh(
     new THREE.SphereGeometry(.235 * visualScale, 32, 20),
-    new THREE.MeshBasicMaterial({ color: 0x000000 })
+    new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0 })
   );
   horizon.renderOrder = 2;
   halo.renderOrder = 1;
@@ -250,6 +250,7 @@ export function createBlackHoleVisual({
     bloom,
     flow,
     intensity: 0,
+    visibility: 1,
     baseTilt: tilt,
     phase,
     visualScale
@@ -258,15 +259,21 @@ export function createBlackHoleVisual({
   return group;
 }
 
-export function setBlackHoleIntensity(group, intensity) {
+export function setBlackHoleIntensity(group, intensity, visibility = 1) {
   const visual = group.userData.blackHoleVisual;
   if (!visual) return;
   const normalized = THREE.MathUtils.clamp(intensity, 0, 1.4);
+  const opacity = THREE.MathUtils.clamp(visibility, 0, 1);
   visual.intensity = normalized;
-  visual.accretion.material.opacity = Math.min(1, normalized * .92);
-  visual.bloom.material.opacity = Math.min(.34, normalized * .27);
-  visual.flow.material.opacity = Math.min(.82, normalized * .5);
-  visual.halo.material.opacity = Math.min(.7, normalized * .42);
+  visual.visibility = opacity;
+  // Keep a formed event horizon visually black while still allowing its birth
+  // and final evaporation to cross-fade with the luminous layers.
+  visual.horizon.material.opacity = THREE.MathUtils.smoothstep(normalized, 0, .24) * opacity;
+  visual.horizon.visible = normalized * opacity > .001;
+  visual.accretion.material.opacity = Math.min(1, normalized * .92) * opacity;
+  visual.bloom.material.opacity = Math.min(.34, normalized * .27) * opacity;
+  visual.flow.material.opacity = Math.min(.82, normalized * .5) * opacity;
+  visual.halo.material.opacity = Math.min(.7, normalized * .42) * opacity;
 }
 
 export function animateBlackHoleVisual(group, now, direction = 1) {
@@ -276,8 +283,8 @@ export function animateBlackHoleVisual(group, now, direction = 1) {
   const pulse = 1 + Math.sin(time * .72 + visual.phase) * .035;
   const shimmer = .82 + Math.sin(time * 1.7 + visual.phase * 1.9) * .18;
   visual.halo.scale.setScalar(2.65 * visual.visualScale * pulse);
-  visual.halo.material.opacity = Math.min(.7, visual.intensity * (.36 + shimmer * .09));
-  visual.bloom.material.opacity = Math.min(.36, visual.intensity * (.22 + shimmer * .07));
+  visual.halo.material.opacity = Math.min(.7, visual.intensity * (.36 + shimmer * .09)) * visual.visibility;
+  visual.bloom.material.opacity = Math.min(.36, visual.intensity * (.22 + shimmer * .07)) * visual.visibility;
   visual.flow.material.rotation = visual.baseTilt + direction * Math.sin(time * .44 + visual.phase) * .055;
-  visual.flow.material.opacity = Math.min(.82, visual.intensity * (.38 + shimmer * .15));
+  visual.flow.material.opacity = Math.min(.82, visual.intensity * (.38 + shimmer * .15)) * visual.visibility;
 }

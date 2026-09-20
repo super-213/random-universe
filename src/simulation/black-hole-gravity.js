@@ -1,6 +1,7 @@
 import { orbitalTimelinePhase } from '../domain/orbital-motion.js';
 
 const TWO_PI = Math.PI * 2;
+const DEFAULT_MERGER_RELEASE_DURATION = 24;
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -10,6 +11,12 @@ function smoothstep(value, min, max) {
   if (max <= min) return value >= max ? 1 : 0;
   const progress = clamp((value - min) / (max - min), 0, 1);
   return progress * progress * (3 - 2 * progress);
+}
+
+export function mergerPersistenceAt(position, event) {
+  const persistenceEnd = event.persistUntil ?? event.start + event.duration;
+  const releaseDuration = event.persistenceFadeDuration ?? DEFAULT_MERGER_RELEASE_DURATION;
+  return 1 - smoothstep(position, persistenceEnd, persistenceEnd + releaseDuration);
 }
 
 function hashUnit(index, salt) {
@@ -155,12 +162,13 @@ export function createMergerGravityField(positions, center, {
 
 export function applyMergerGravity(position, targetPositions, colorArray, event, center) {
   const field = event.gravityField;
-  if (!field || position < event.start || position > event.persistUntil) return;
+  if (!field || position < event.start) return;
 
   const activeUntil = Math.min(position, event.persistUntil);
   const elapsed = activeUntil - event.start;
   const onset = smoothstep(position, event.start, event.start + 4.5);
   const merged = smoothstep(position, event.impactAt - 1.2, event.impactAt + 2.4);
+  const persistence = mergerPersistenceAt(position, event);
   const retainedMass = 1 - event.radiatedMassFraction * merged;
   const axisX = field.axis[0];
   const axisY = field.axis[1];
@@ -213,8 +221,12 @@ export function applyMergerGravity(position, targetPositions, colorArray, event,
       colorArray[offset + 2] *= visibility;
     }
 
-    targetPositions[offset] = center.x + rotatedX;
-    targetPositions[offset + 1] = center.y + rotatedY;
-    targetPositions[offset + 2] = center.z + rotatedZ;
+    // When the remnant reaches the end of its visible lifetime, release the
+    // local distortion over the same interval used by the visual fade. A hard
+    // return here used to restore thousands of stars to their baseline orbit
+    // in one frame. Captured stars remain dark instead of reappearing.
+    targetPositions[offset] = center.x + x + (rotatedX - x) * persistence;
+    targetPositions[offset + 1] = center.y + y + (rotatedY - y) * persistence;
+    targetPositions[offset + 2] = center.z + z + (rotatedZ - z) * persistence;
   }
 }

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { stellarEndTimelinePosition } from '../domain/universe.js';
 import { orbitalAngleAt } from '../domain/orbital-motion.js';
-import { applyMergerGravity, applyStellarGravity } from '../simulation/black-hole-gravity.js';
+import { applyMergerGravity, applyStellarGravity, mergerPersistenceAt } from '../simulation/black-hole-gravity.js';
 import { animateBlackHoleVisual, setBlackHoleIntensity } from './black-hole.js';
 
 export function updateEpochVisuals(position, context) {
@@ -210,6 +210,17 @@ export function updateEpochVisuals(position, context) {
       }
     }
   }
+  // Fate transformations run after local event gravity. Re-anchor event
+  // visuals to their final transformed host position so a collapsing or
+  // unbinding galaxy cannot slide away from its black-hole remnant.
+  cosmicEvents.forEach((event) => {
+    const sourceOffset = event.sourceIndex * 3;
+    event.group.position.set(
+      positionArray[sourceOffset],
+      positionArray[sourceOffset + 1],
+      positionArray[sourceOffset + 2]
+    );
+  });
   clickableStars.geometry.attributes.position.needsUpdate = true;
   clickableStars.geometry.attributes.color.needsUpdate = true;
 
@@ -373,9 +384,12 @@ export function updateCosmicEvents(position, context) {
   cosmicEvents.forEach((event) => {
     const phase = (position - event.start) / event.duration;
     const active = phase >= 0 && phase <= 1;
+    const persistence = event.visual === 'black-hole-merger'
+      ? mergerPersistenceAt(position, event)
+      : 0;
     const persistentRemnant = event.visual === 'black-hole-merger'
       && position >= event.impactAt
-      && position <= event.persistUntil;
+      && persistence > 0;
     const visible = (active || persistentRemnant) && mode === 'explorer';
     event.group.visible = visible;
     if (!visible) return;
@@ -441,7 +455,7 @@ export function updateCosmicEvents(position, context) {
       const merged = phase >= mergePoint;
       effect.holeA.visible = !merged;
       effect.holeB.visible = !merged;
-      effect.remnantHole.visible = merged;
+      effect.remnantHole.visible = merged && persistence > 0;
       const inspiral = Math.min(1, phase / mergePoint);
       const angleFor = (value) => Math.PI * 2 * (1.15 * value + 4.1 * Math.pow(value, 3));
       const radiusFor = (value) => .12 + 2.45 * Math.pow(1 - value, .72);
@@ -471,7 +485,7 @@ export function updateCosmicEvents(position, context) {
       effect.remnantHole.scale.set(1.24 + ringdown * .07, 1.24 - ringdown * .045, 1.24);
       setBlackHoleIntensity(effect.holeA, .62 + inspiral * .38);
       setBlackHoleIntensity(effect.holeB, .62 + inspiral * .38);
-      setBlackHoleIntensity(effect.remnantHole, .74 + Math.exp(-postMerge * 4) * .34);
+      setBlackHoleIntensity(effect.remnantHole, .74 + Math.exp(-postMerge * 4) * .34, persistence);
       const mergerFlash = merged ? Math.exp(-postMerge * 18) : 0;
       // Vacuum mergers have no supernova-like flash. Gas-rich systems can have
       // a short electromagnetic afterglow, shown separately in warm light.
@@ -523,7 +537,7 @@ export function updateCosmicEvents(position, context) {
       recoilArray[4] = effect.remnantHole.position.y;
       recoilArray[5] = effect.remnantHole.position.z;
       effect.recoilTrail.geometry.attributes.position.needsUpdate = true;
-      effect.recoilTrail.material.opacity = merged ? (1 - postMerge * .72) * .28 : 0;
+      effect.recoilTrail.material.opacity = merged ? (1 - postMerge * .72) * .28 * persistence : 0;
     }
   });
   cosmicEventGroup.visible = anyVisible;

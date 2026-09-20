@@ -623,7 +623,7 @@ function buildCosmicEvents(starPositions) {
     {
       type: 'stellar-black-hole-merger', visual: 'black-hole-merger', label: '双黑洞合并',
       message: '时空啁啾达到峰值，引力波波前穿过局部星域（形变已视觉放大）', preferCenter: true,
-      start: 616 + random() * 18, duration: 38, persistUntil: Math.min(845, universe.cosmicFate.onsetAt || 845), color: '#c897ff',
+      start: 616 + random() * 18, duration: 38, persistUntil: Math.min(845, universe.cosmicFate.onsetAt || 845), persistenceFadeDuration: 24, color: '#c897ff',
       gasRich: random() < .38,
       radiatedMassFraction: randomBetween(random, .035, .058),
       recoilKms: Math.round(randomBetween(random, 180, 1180))
@@ -631,7 +631,7 @@ function buildCosmicEvents(starPositions) {
     {
       type: 'late-black-hole-merger', visual: 'black-hole-merger', label: '孤立黑洞捕获合并',
       message: '漫长引力散射后完成并合，残余黑洞在阻尼振铃中反冲', preferCenter: true,
-      start: 872 + random() * 18, duration: 42, persistUntil: 950, color: '#9bb8ff',
+      start: 872 + random() * 18, duration: 42, persistUntil: 950, persistenceFadeDuration: 18, color: '#9bb8ff',
       gasRich: false,
       radiatedMassFraction: randomBetween(random, .028, .052),
       recoilKms: Math.round(randomBetween(random, 420, 1640))
