@@ -87,7 +87,7 @@ const { renderer, backend: rendererBackend } = await createUniverseRenderer(canv
 const cosmicAudio = createCosmicAudio();
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(0x050508, 0.018);
+scene.fog = new THREE.FogExp2(0x050508, 0.008);
 const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 200);
 camera.position.set(0, 0.5, 32);
 
