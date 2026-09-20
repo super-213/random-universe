@@ -331,7 +331,35 @@ h1 strong {
 }
 .explorer-title .kicker { order: 2; margin: 0; opacity: .6; }
 .explorer-title h2 { margin: 0; font-family: var(--display-font); font-size: 19px; font-weight: 400; letter-spacing: .04em; }
-.explorer-title > p:last-child { display: none; }
+.explorer-title > #galaxy-meta { display: none; }
+.local-group-toggle {
+  padding: 4px 0;
+  border: 0;
+  border-bottom: 1px solid rgba(241,238,231,.2);
+  background: transparent;
+  color: var(--muted);
+  font: 8px "Space Mono", monospace;
+  cursor: pointer;
+}
+.local-group-toggle[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+.local-group-readout {
+  position: absolute;
+  top: 19vh;
+  left: 3.4vw;
+  display: grid;
+  gap: 3px;
+  padding-left: 10px;
+  border-left: 1px solid var(--accent);
+  opacity: 0;
+  transform: translateX(-8px);
+  transition: opacity .35s ease, transform .35s ease;
+  pointer-events: none;
+}
+.is-local-group-view .local-group-readout { opacity: 1; transform: translateX(0); }
+.local-group-readout span { color: var(--muted); font: 8px "Space Mono", monospace; }
+.local-group-readout b { font: 400 13px var(--display-font); }
+.local-group-readout small { color: var(--muted); font-size: 8px; }
+.local-group-readout .local-group-members { max-width: 280px; margin-top: 3px; line-height: 1.55; opacity: .68; }
 
 .coordinates {
   position: absolute;
@@ -631,8 +659,8 @@ h1 strong {
   z-index: 8;
   top: 12vh;
   right: 3.4vw;
-  width: min(350px, 34vw);
-  max-height: 68vh;
+  width: min(410px, 38vw);
+  max-height: 74vh;
   padding: 22px 4px 0 0;
   overflow-y: auto;
   border-top: 1px solid var(--chronicle-color, var(--accent));
@@ -650,6 +678,31 @@ h1 strong {
 .chronicle-meta div { padding: 8px 0; border-bottom: 1px solid var(--faint); }
 .chronicle-meta dt { margin-bottom: 4px; color: var(--muted); font-size: 9px; }
 .chronicle-meta dd { margin: 0; font-size: 10px; line-height: 1.6; }
+.chronicle-section { margin: 15px 0; }
+.chronicle-section-head { display: flex; justify-content: space-between; margin-bottom: 8px; }
+.chronicle-section-head span { font-size: 10px; }
+.chronicle-section-head small { color: var(--muted); font: 7px "Space Mono", monospace; }
+.chronicle-internal-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 7px 14px; }
+.chronicle-internal-metrics > div { display: grid; grid-template-columns: 36px 1fr 52px; align-items: center; gap: 6px; }
+.chronicle-internal-metrics span { color: var(--muted); font-size: 8px; }
+.chronicle-internal-metrics i { position: relative; height: 1px; background: rgba(241,238,231,.12); }
+.chronicle-internal-metrics i::after { content: ''; position: absolute; inset: -1px auto -1px 0; width: var(--metric); background: var(--chronicle-color, var(--accent)); }
+.chronicle-internal-metrics b { color: var(--ink); font: 7px "Space Mono", monospace; text-align: right; }
+.observation-summary { margin: 0 0 8px; color: var(--muted); font: 8px "Space Mono", monospace; }
+.observation-comparison { display: grid; grid-template-columns: repeat(3, 1fr); border-block: 1px solid var(--faint); }
+.observation-comparison > div { display: grid; gap: 3px; padding: 8px; border-right: 1px solid var(--faint); }
+.observation-comparison > div:last-child { border: 0; }
+.observation-comparison span { color: var(--muted); font-size: 8px; }
+.observation-comparison b { font: 8px "Space Mono", monospace; }
+.observation-comparison small { color: var(--muted); font-size: 7px; }
+.chronicle-technology { display: flex; margin: 0; padding: 0; list-style: none; }
+.chronicle-technology li { position: relative; display: grid; flex: 1; gap: 3px; padding-top: 13px; color: rgba(241,238,231,.25); text-align: center; }
+.chronicle-technology li::before { content: ''; position: absolute; top: 4px; left: 0; right: 0; height: 1px; background: rgba(241,238,231,.12); }
+.chronicle-technology li i { position: absolute; z-index: 1; top: 1px; left: calc(50% - 3px); width: 6px; height: 6px; border: 1px solid currentColor; border-radius: 50%; background: #050508; }
+.chronicle-technology li.is-unlocked { color: var(--chronicle-color, var(--accent)); }
+.chronicle-technology li.is-unlocked::before { background: currentColor; }
+.chronicle-technology span { font-size: 7px; }
+.chronicle-technology small { color: inherit; font: 6px "Space Mono", monospace; }
 .chronicle-actions { display: flex; flex-wrap: wrap; gap: 7px; margin: 14px 0 8px; }
 .chronicle-actions button {
   padding: 7px 9px;
@@ -662,7 +715,11 @@ h1 strong {
 .chronicle-actions button:hover,
 .chronicle-actions button.is-active { border-color: var(--chronicle-color, var(--accent)); color: var(--ink); }
 .chronicle-status { min-height: 14px; margin: 0; color: var(--accent); font-size: 9px; }
-.chronicle-events { margin: 12px 0 0; padding: 0; list-style: none; }
+.chronicle-view-switch { display: flex; gap: 12px; margin-top: 10px; border-bottom: 1px solid var(--faint); }
+.chronicle-view-switch button { padding: 7px 0; border: 0; border-bottom: 1px solid transparent; background: none; color: var(--muted); font: 8px "Space Mono", monospace; cursor: pointer; }
+.chronicle-view-switch button.is-active { border-color: var(--chronicle-color, var(--accent)); color: var(--ink); }
+.chronicle-events { display: none; margin: 12px 0 0; padding: 0; list-style: none; }
+.chronicle-events.is-active { display: block; }
 .chronicle-events li { position: relative; padding: 10px 0 10px 13px; border-left: 1px solid rgba(241,238,231,.14); }
 .chronicle-events li[data-event-id] { cursor: pointer; }
 .chronicle-events li[data-event-id]:hover b { color: var(--chronicle-color, var(--accent)); }
@@ -673,8 +730,24 @@ h1 strong {
 .chronicle-events b { font-size: 10px; font-weight: 400; }
 .chronicle-events p { margin: 4px 0 0; color: var(--muted); font-size: 9px; line-height: 1.55; }
 .chronicle-events .is-empty { color: var(--muted); font-size: 10px; }
+.causal-graph { display: none; position: relative; height: 250px; margin-top: 10px; overflow: hidden; border-block: 1px solid var(--faint); }
+.causal-graph.is-active { display: block; }
+.causal-graph svg { width: 100%; height: 100%; touch-action: none; cursor: grab; }
+.causal-graph svg:active { cursor: grabbing; }
+.causal-graph-controls { position: absolute; z-index: 2; right: 5px; top: 5px; display: flex; align-items: center; gap: 4px; }
+.causal-graph-controls button { width: 24px; height: 22px; border: 1px solid var(--faint); background: rgba(5,5,8,.8); color: var(--muted); font: 9px "Space Mono", monospace; cursor: pointer; }
+.causal-graph-controls button:last-child { width: auto; }
+.causal-graph-controls span { width: 32px; color: var(--muted); font: 7px "Space Mono", monospace; text-align: center; }
+.causal-edge { fill: none; stroke: color-mix(in srgb, var(--chronicle-color, var(--accent)) 45%, transparent); stroke-width: 1; }
+.causal-node { cursor: pointer; color: var(--chronicle-color, var(--accent)); }
+.causal-node circle { fill: rgba(5,5,8,.92); stroke: currentColor; stroke-width: 1; }
+.causal-node:hover circle, .causal-node:focus circle { fill: color-mix(in srgb, currentColor 18%, #050508); stroke-width: 2; }
+.causal-node text { fill: rgba(241,238,231,.7); font: 7px "Space Mono", monospace; }
+.causal-node .causal-time, .causal-empty { fill: rgba(241,238,231,.34); font: 6px "Space Mono", monospace; }
+.causal-node .causal-role { fill: currentColor; font-size: 8px; }
 .is-chronicle-open .civilization-panel { opacity: .08; pointer-events: none; }
 .event-marker.is-beyond-lightcone { opacity: .1; filter: grayscale(1); pointer-events: none; }
+.event-marker.is-uncertain-observation { opacity: calc(.32 + var(--observation-confidence, .5) * .5); filter: saturate(.55); }
 
 .creation-flash {
   position: fixed;
@@ -753,6 +826,8 @@ h1 strong {
     white-space: nowrap;
   }
   .explorer-title .kicker { display: none; }
+  .local-group-toggle { font-size: 7px; }
+  .local-group-readout { top: calc(env(safe-area-inset-top) + 72px); left: 16px; }
   .coordinates { display: none; }
   .era-readout {
     left: 16px;
@@ -890,6 +965,8 @@ h1 strong {
     backdrop-filter: blur(18px);
   }
   .civilization-chronicle h3 { font-size: 22px; }
+  .chronicle-internal-metrics { grid-template-columns: 1fr; }
+  .causal-graph { height: 210px; }
 }
 
 @media (max-width: 800px) and (max-height: 700px) {

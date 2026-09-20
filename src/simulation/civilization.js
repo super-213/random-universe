@@ -1,6 +1,11 @@
 import * as THREE from 'three';
 import { stellarEndTimelinePosition } from '../domain/universe.js';
 import { createSeededRandom, randomBetween } from '../domain/random.js';
+import {
+  advanceTechnologyTree,
+  meetsEscapePrerequisites,
+  technologyBits
+} from './technology-tree.js';
 
 const morphologyCodes = {
   '生物共同体': 1,
@@ -110,6 +115,15 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
   const diasporaModes = new Int8Array(speciesCount);
   const blackHoleHabitats = new Int8Array(speciesCount);
   const escapeProjects = new Int8Array(speciesCount);
+  const technologyMasks = new Uint16Array(speciesCount);
+  const internalPopulation = new Float32Array(speciesCount);
+  const resources = new Float32Array(speciesCount);
+  const energyReserves = new Float32Array(speciesCount);
+  const governance = new Float32Array(speciesCount);
+  const research = new Float32Array(speciesCount);
+  const stability = new Float32Array(speciesCount);
+  const externalGalaxyIndices = new Uint8Array(speciesCount);
+  const externalPopulations = new Float32Array(speciesCount);
   const archiveReadyAt = new Float32Array(speciesCount);
   archiveReadyAt.fill(Infinity);
   civilizationData.forEach((species, index) => {
@@ -118,6 +132,11 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
     cohesion[index] = species.cohesion ?? .6;
     machineAutonomy[index] = species.machineAutonomy ?? .18;
     morphologyModes[index] = morphologyCodes[species.morphology] || 1;
+    resources[index] = THREE.MathUtils.clamp(.48 + species.resilience * .12 + randomBetween(random, -.05, .05), .3, .78);
+    energyReserves[index] = THREE.MathUtils.clamp(.34 + technology[index] * .28, .25, .64);
+    governance[index] = THREE.MathUtils.clamp(.24 + species.cooperation * .36 + cohesion[index] * .24, .22, .82);
+    research[index] = THREE.MathUtils.clamp(.18 + technology[index] * .54, .18, .62);
+    stability[index] = THREE.MathUtils.clamp(.26 + cohesion[index] * .58, .3, .84);
   });
   for (let a = 0; a < speciesCount; a++) {
     for (let b = a + 1; b < speciesCount; b++) {
@@ -637,8 +656,11 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
     }
 
     if (event.type === 'intergalactic-diaspora') {
-      if (event.diasporaSuccess) {
+      const canCrossGalaxies = Boolean(technologyMasks[targetIndex] & technologyBits.stellarEngine);
+      if (event.diasporaSuccess && canCrossGalaxies) {
         diasporaModes[targetIndex] = event.diasporaMode === '星系桥殖民地' ? 1 : 2;
+        externalGalaxyIndices[targetIndex] = event.targetCompanionIndex || targetIndex % 5 + 1;
+        externalPopulations[targetIndex] = Math.max(.18, internalPopulation[targetIndex] * .08);
         technology[targetIndex] = Math.min(1, technology[targetIndex] + .1);
         visibility[targetIndex] = event.diasporaMode === '星系际流浪社会'
           ? Math.max(0, visibility[targetIndex] - .08)
@@ -649,13 +671,16 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
         diasporaModes[targetIndex] = -1;
         cohesion[targetIndex] = Math.max(0, cohesion[targetIndex] - .09);
         lastCauses[targetIndex] = '跨星系舰队失联';
-        event.outcome = `${target.name} 的跨星系舰队越过观测极限后失联，只剩引力助推记录`;
+        event.outcome = canCrossGalaxies
+          ? `${target.name} 的跨星系舰队越过观测极限后失联，只剩引力助推记录`
+          : `${target.name} 尚未完成恒星推进器前置技术，跨星系航线无法建立`;
       }
       return;
     }
 
     if (event.type === 'black-hole-civilization') {
-      if (event.blackHoleStable) {
+      const canHarvestBlackHole = Boolean(technologyMasks[targetIndex] & technologyBits.stellarEngine);
+      if (event.blackHoleStable && canHarvestBlackHole) {
         blackHoleHabitats[targetIndex] = 1;
         technology[targetIndex] = Math.min(1, technology[targetIndex] + .16);
         visibility[targetIndex] = Math.min(1, visibility[targetIndex] + .08);
@@ -667,13 +692,15 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
           if (owners[node] === targetIndex && (node + targetIndex) % 8 === 0) strength[node] *= .4;
         }
         lastCauses[targetIndex] = '黑洞能源站失稳';
-        event.outcome = `${target.name} 的黑洞能源站出现吸积反馈，多处设施被迫抛离`;
+        event.outcome = canHarvestBlackHole
+          ? `${target.name} 的黑洞能源站出现吸积反馈，多处设施被迫抛离`
+          : `${target.name} 缺少恒星推进基础设施，黑洞采能网络未能进入施工阶段`;
       }
       return;
     }
 
     if (event.type === 'universe-escape-project') {
-      if (event.escapeSuccess) {
+      if (event.escapeSuccess && meetsEscapePrerequisites(technologyMasks[targetIndex])) {
         escapeProjects[targetIndex] = 1;
         technology[targetIndex] = 1;
         visibility[targetIndex] = 0;
@@ -684,7 +711,9 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
         cohesion[targetIndex] = Math.max(0, cohesion[targetIndex] - .14);
         technology[targetIndex] = Math.max(.18, technology[targetIndex] - .06);
         lastCauses[targetIndex] = `${event.escapeMode}失败`;
-        event.outcome = `${target.name} 未能稳定${event.escapeMode}，工程被终止并留下长期资源赤字`;
+        event.outcome = meetsEscapePrerequisites(technologyMasks[targetIndex])
+          ? `${target.name} 未能稳定${event.escapeMode}，工程被终止并留下长期资源赤字`
+          : `${target.name} 尚未完成黑洞采能前置技术，${event.escapeMode}在点火前终止`;
       }
     }
   };
@@ -710,6 +739,7 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       }
       owners[species.homeNodeIndex] = speciesIndex;
       strength[species.homeNodeIndex] = .34;
+      internalPopulation[speciesIndex] = .55 + technology[speciesIndex] * .9;
       lastCauses[speciesIndex] = '母星文明进入星际阶段';
     });
 
@@ -724,6 +754,28 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       applyCivilizationEvent(civilizationEvents[civilizationEventIndex], time);
       civilizationEventIndex++;
     }
+
+    civilizationData.forEach((species, speciesIndex) => {
+      const advancement = advanceTechnologyTree({
+        mask: technologyMasks[speciesIndex],
+        active: seeded[speciesIndex] && territoryCountFor(speciesIndex) > 0,
+        technology: technology[speciesIndex],
+        research: research[speciesIndex],
+        resources: resources[speciesIndex],
+        energy: energyReserves[speciesIndex],
+        hasCentralBlackHole: universe.hasCentralBlackHole,
+        megastructure: megastructures[speciesIndex],
+        engineeringMode: engineeringModes[speciesIndex],
+        blackHoleHabitat: blackHoleHabitats[speciesIndex],
+        escapeProject: escapeProjects[speciesIndex]
+      });
+      if (advancement.mask === technologyMasks[speciesIndex]) return;
+      technologyMasks[speciesIndex] = advancement.mask;
+      resources[speciesIndex] = Math.max(.03, resources[speciesIndex] - advancement.cost.resources);
+      energyReserves[speciesIndex] = Math.max(.03, energyReserves[speciesIndex] - advancement.cost.energy);
+      stability[speciesIndex] = Math.max(.08, stability[speciesIndex] - advancement.cost.stability);
+      lastCauses[speciesIndex] = `${advancement.unlocked.at(-1)} 技术节点解锁`;
+    });
 
     const friendlyCounts = new Uint8Array(speciesCount);
     const conflictCounts = new Uint8Array(speciesCount);
@@ -749,6 +801,9 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
         : morphologyModes[owner] === 3 ? 1.05 : 1;
       const support = (1 + friendlyCounts[owner] * .045 - conflictCounts[owner] * .028)
         * infrastructure * socialStability * morphologySupport
+        * (.72 + energyReserves[owner] * .28)
+        * (.76 + resources[owner] * .24)
+        * (.74 + stability[owner] * .26)
         * (contamination[owner] > 0 ? .72 : 1) * (filterStates[owner] < 0 ? .78 : 1);
       strength[node] += (.032 + species.resilience * .018) * support * (1 - strength[node]);
       strength[node] = THREE.MathUtils.clamp(strength[node], 0, 1.35);
@@ -806,7 +861,9 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       const attempts = 1 + Math.floor(
         species.expansionRate + friendlyCounts[speciesIndex] * .34 + probeBonus + frontierBonus
           + substrateBonus + precursorBonus + migrationBonus + engineeringBonus + diasporaBonus
-          + technology[speciesIndex] * .28
+          + technology[speciesIndex] * .28 + resources[speciesIndex] * .25
+          + energyReserves[speciesIndex] * .24 + research[speciesIndex] * .2
+          + governance[speciesIndex] * .12 + stability[speciesIndex] * .14
       );
       for (let attempt = 0; attempt < attempts; attempt++) {
         const frontier = [];
@@ -837,8 +894,10 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
           continue;
         }
         if (state < 0) {
-          const attack = strength[source] * (.72 + species.aggression * .76 + random() * .35);
-          const defense = strength[target] * (.84 + civilizationData[defender].resilience * .52 + random() * .28);
+          const attack = strength[source] * (.72 + species.aggression * .76 + random() * .35)
+            * (.72 + energyReserves[speciesIndex] * .18 + research[speciesIndex] * .1);
+          const defense = strength[target] * (.84 + civilizationData[defender].resilience * .52 + random() * .28)
+            * (.7 + resources[defender] * .12 + governance[defender] * .08 + stability[defender] * .1);
           if (attack > defense) {
             owners[target] = speciesIndex;
             strength[target] = Math.max(.08, Math.min(.48, (attack - defense) * .5));
@@ -923,12 +982,12 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
     }
 
     const counts = new Uint16Array(speciesCount);
-    const populations = new Float32Array(speciesCount);
+    const infrastructureCapacity = new Float32Array(speciesCount);
     for (let node = 0; node < nodeCount; node++) {
       const owner = owners[node];
       if (owner < 0) continue;
       counts[owner]++;
-      populations[owner] += strength[node];
+      infrastructureCapacity[owner] += strength[node];
     }
     const trends = new Int8Array(speciesCount);
     const active = new Uint8Array(speciesCount);
@@ -940,18 +999,82 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       ascended[speciesIndex] = civilizationData[speciesIndex].highDimensional && time >= civilizationData[speciesIndex].ascensionAt ? 1 : 0;
       energyTiers[speciesIndex] = !active[speciesIndex]
         ? 0
-        : escapeProjects[speciesIndex] > 0 || technology[speciesIndex] >= .92 && substrateModes[speciesIndex]
+        : technologyMasks[speciesIndex] & technologyBits.universeEscape
           ? 4
-          : blackHoleHabitats[speciesIndex] > 0
+          : technologyMasks[speciesIndex] & technologyBits.blackHoleEnergy
             ? 3
-            : megastructures[speciesIndex] || engineeringModes[speciesIndex] > 0 ? 2 : 1;
+            : technologyMasks[speciesIndex] & technologyBits.dysonSwarm ? 2 : 1;
+
+      if (active[speciesIndex]) {
+        const species = civilizationData[speciesIndex];
+        const conflictPressure = conflictCounts[speciesIndex] / Math.max(1, speciesCount - 1);
+        const capacity = Math.max(1.2, infrastructureCapacity[speciesIndex] * 2.4
+          * (terraforming[speciesIndex] > 0 ? 1.24 : 1)
+          * (substrateModes[speciesIndex] ? 1.34 : 1));
+        const targetEnergy = THREE.MathUtils.clamp(
+          .26 + technology[speciesIndex] * .28 + energyTiers[speciesIndex] * .14
+            + megastructures[speciesIndex] * .1 - counts[speciesIndex] * .0007,
+          .1,
+          1
+        );
+        energyReserves[speciesIndex] += (targetEnergy - energyReserves[speciesIndex]) * .075;
+        const targetResources = THREE.MathUtils.clamp(
+          .32 + Math.min(.34, counts[speciesIndex] / 150) + terraforming[speciesIndex] * .08
+            - internalPopulation[speciesIndex] / capacity * .12 - conflictPressure * .16,
+          .08,
+          1
+        );
+        resources[speciesIndex] += (targetResources - resources[speciesIndex]) * .055;
+        const targetGovernance = THREE.MathUtils.clamp(
+          .22 + species.cooperation * .26 + cohesion[speciesIndex] * .34
+            + causalResponses[speciesIndex] * .04 - conflictPressure * .18,
+          .08,
+          1
+        );
+        governance[speciesIndex] += (targetGovernance - governance[speciesIndex]) * .045;
+        const targetResearch = THREE.MathUtils.clamp(
+          .18 + technology[speciesIndex] * .38 + energyReserves[speciesIndex] * .16
+            + Math.max(0, precursorKnowledge[speciesIndex]) * .14 + artifacts[speciesIndex] * .06,
+          .08,
+          1
+        );
+        research[speciesIndex] += (targetResearch - research[speciesIndex]) * .05;
+        const targetStability = THREE.MathUtils.clamp(
+          .16 + cohesion[speciesIndex] * .42 + governance[speciesIndex] * .2
+            + resources[speciesIndex] * .16 + energyReserves[speciesIndex] * .1
+            - conflictPressure * .22 - Math.max(0, contamination[speciesIndex]) * .16,
+          .04,
+          1
+        );
+        stability[speciesIndex] += (targetStability - stability[speciesIndex]) * .07;
+        const growth = .018 * resources[speciesIndex] * energyReserves[speciesIndex]
+          * stability[speciesIndex] * (1 - internalPopulation[speciesIndex] / capacity);
+        internalPopulation[speciesIndex] = Math.max(.02, internalPopulation[speciesIndex] * (1 + growth));
+        technology[speciesIndex] = Math.min(1, technology[speciesIndex] + research[speciesIndex] * .00034);
+        if (externalGalaxyIndices[speciesIndex]) {
+          externalPopulations[speciesIndex] = Math.min(
+            Math.max(.2, capacity * .32),
+            Math.max(.02, externalPopulations[speciesIndex] * (1 + growth * .72))
+          );
+        }
+      } else {
+        internalPopulation[speciesIndex] *= .72;
+        externalPopulations[speciesIndex] *= escapeProjects[speciesIndex] > 0 ? 1 : .92;
+        stability[speciesIndex] *= .9;
+      }
       lastCounts[speciesIndex] = counts[speciesIndex];
     }
     simulation.snapshots.push({
       time,
       owners: owners.slice(),
       counts,
-      populations,
+      populations: internalPopulation.slice(),
+      infrastructureCapacity,
+      resources: resources.slice(),
+      energyReserves: energyReserves.slice(),
+      governance: governance.slice(),
+      research: research.slice(),
+      stability: stability.slice(),
       trends,
       active,
       ascended,
@@ -981,6 +1104,9 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       diasporaModes: diasporaModes.slice(),
       blackHoleHabitats: blackHoleHabitats.slice(),
       escapeProjects: escapeProjects.slice(),
+      technologyMasks: technologyMasks.slice(),
+      externalGalaxyIndices: externalGalaxyIndices.slice(),
+      externalPopulations: externalPopulations.slice(),
       energyTiers,
       relations: relationStates.slice(),
       relationScores: relationScores.slice(),
@@ -1110,6 +1236,15 @@ export function deriveCivilizationRuntime(position, simulationState, civilizatio
       cohesion: simulationState?.cohesion[index] || 0,
       machineAutonomy: simulationState?.machineAutonomy[index] || 0,
       energyTier: simulationState?.energyTiers[index] || 0,
+      technologyMask: simulationState?.technologyMasks?.[index] || 0,
+      population: simulationState?.populations?.[index] || 0,
+      resources: simulationState?.resources?.[index] || 0,
+      energy: simulationState?.energyReserves?.[index] || 0,
+      governance: simulationState?.governance?.[index] || 0,
+      research: simulationState?.research?.[index] || 0,
+      stability: simulationState?.stability?.[index] || 0,
+      externalGalaxyIndex: simulationState?.externalGalaxyIndices?.[index] || 0,
+      externalPopulation: simulationState?.externalPopulations?.[index] || 0,
       statuses,
       eventState,
       friendlyNames,

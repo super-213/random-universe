@@ -1,4 +1,56 @@
+import { technologyPath } from '../simulation/technology-tree.js';
+import { renderCausalGraph } from './causal-graph.js';
+
 const energyTierLabels = ['', '行星能源', '恒星能源', '黑洞能源', '熵管理'];
+
+const metricDefinitions = [
+  ['population', '人口', (value) => `${value.toFixed(2)} 万亿`],
+  ['resources', '资源', (value) => `${Math.round(value * 100)}%`],
+  ['energy', '能源', (value) => `${Math.round(value * 100)}%`],
+  ['governance', '治理', (value) => `${Math.round(value * 100)}%`],
+  ['research', '科研', (value) => `${Math.round(value * 100)}%`],
+  ['stability', '稳定', (value) => `${Math.round(value * 100)}%`]
+];
+
+function renderInternalMetrics(container, state) {
+  container.replaceChildren();
+  metricDefinitions.forEach(([key, label, formatter]) => {
+    const row = document.createElement('div');
+    const value = state?.[key] || 0;
+    const normalized = key === 'population' ? Math.min(1, value / 18) : value;
+    row.innerHTML = `<span>${label}</span><i style="--metric:${Math.round(normalized * 100)}%"></i><b>${formatter(value)}</b>`;
+    container.appendChild(row);
+  });
+}
+
+function renderObservation(container, observation, timeLabel, universe) {
+  container.replaceChildren();
+  if (!observation) return;
+  const modeLabel = observation.mode === 'omniscient'
+    ? '玩家真值视角'
+    : observation.mode === 'direct' ? '文明本地遥测' : `延迟 ${observation.delay.toFixed(1)} 时间单位`;
+  const heading = document.createElement('p');
+  heading.className = 'observation-summary';
+  heading.textContent = observation.mode === 'delayed'
+    ? `${modeLabel} · 置信度 ${Math.round(observation.confidence * 100)}% · 信号时刻 ${timeLabel(observation.observedAt, universe)}`
+    : `${modeLabel} · 无光锥延迟`;
+  container.appendChild(heading);
+  const comparison = document.createElement('div');
+  comparison.className = 'observation-comparison';
+  [
+    ['真实状态', observation.actual],
+    ['文明观测', observation.observed],
+    ['玩家推测', observation.inferred]
+  ].forEach(([label, metrics]) => {
+    const column = document.createElement('div');
+    const uncertainty = label === '玩家推测' && observation.uncertainty
+      ? ` ±${Math.round(observation.uncertainty * 100)}%`
+      : '';
+    column.innerHTML = `<span>${label}</span><b>${metrics.population.toFixed(2)} 万亿</b><small>稳定 ${Math.round(metrics.stability * 100)}%${uncertainty}</small>`;
+    comparison.appendChild(column);
+  });
+  container.appendChild(comparison);
+}
 
 function eventRole(event, speciesIndex) {
   if (event.targetSpeciesIndex === speciesIndex) return '主体';
@@ -20,7 +72,9 @@ export function renderCivilizationChronicle({
   runtimeState,
   cosmicEvents,
   universe,
-  timeLabel
+  timeLabel,
+  observation,
+  localGroup
 }) {
   const panel = document.querySelector('#civilization-chronicle');
   const species = civilizationData[speciesIndex];
@@ -35,6 +89,22 @@ export function renderCivilizationChronicle({
     : `${species.morphology || '生物共同体'} · ${energyTierLabels[state?.energyTier || 1]}`;
   panel.querySelector('#chronicle-biosphere').textContent = (species.biospherePath || []).join(' → ') || '未记录';
   panel.querySelector('#chronicle-fermi').textContent = species.fermiScenario || '未形成主导解释';
+  const externalGalaxy = localGroup?.companions?.find((candidate) => candidate.index === state?.externalGalaxyIndex);
+  panel.querySelector('#chronicle-reach').textContent = externalGalaxy
+    ? `${externalGalaxy.name} · 外域人口 ${state.externalPopulation.toFixed(2)} 万亿`
+    : '母星系内部';
+  renderInternalMetrics(panel.querySelector('#chronicle-internal-metrics'), state);
+  renderObservation(panel.querySelector('#chronicle-observation'), observation, timeLabel, universe);
+
+  const technologyList = panel.querySelector('#chronicle-technology');
+  technologyList.replaceChildren();
+  technologyPath(state?.technologyMask || 0).forEach((node) => {
+    const item = document.createElement('li');
+    item.className = node.unlocked ? 'is-unlocked' : '';
+    item.title = `资源成本 ${Math.round(node.cost.resources * 100)} · 能源成本 ${Math.round(node.cost.energy * 100)} · 稳定成本 ${Math.round(node.cost.stability * 100)}`;
+    item.innerHTML = `<i></i><span>${node.label}</span><small>${node.unlocked ? '已完成' : '待解锁'}</small>`;
+    technologyList.appendChild(item);
+  });
 
   const history = civilizationHistory(speciesIndex, cosmicEvents);
   const list = panel.querySelector('#chronicle-events');
@@ -61,20 +131,33 @@ export function renderCivilizationChronicle({
     empty.textContent = '尚无可记录事件';
     list.appendChild(empty);
   }
+  renderCausalGraph(panel.querySelector('#causal-graph'), history, timeLabel, universe);
   panel.classList.add('is-open');
 }
 
-export function historyExportPayload({ universe, civilizationData, cosmicEvents }) {
+export function historyExportPayload({ universe, civilizationData, cosmicEvents, runtimeState = [], localGroup = null }) {
   return {
     format: 'random-universe-history-v1',
     seed: universe.seed,
     fate: universe.cosmicFate,
+    localGroup,
     civilizations: civilizationData.map((species, speciesIndex) => ({
       name: species.name,
       morphology: species.morphology,
       biospherePath: species.biospherePath,
       fermiScenario: species.fermiScenario,
       birth: species.birth,
+      internalState: runtimeState[speciesIndex] ? {
+        population: runtimeState[speciesIndex].population,
+        resources: runtimeState[speciesIndex].resources,
+        energy: runtimeState[speciesIndex].energy,
+        governance: runtimeState[speciesIndex].governance,
+        research: runtimeState[speciesIndex].research,
+        stability: runtimeState[speciesIndex].stability,
+        technologyMask: runtimeState[speciesIndex].technologyMask,
+        externalGalaxyIndex: runtimeState[speciesIndex].externalGalaxyIndex,
+        externalPopulation: runtimeState[speciesIndex].externalPopulation
+      } : null,
       history: civilizationHistory(speciesIndex, cosmicEvents).map(({ event, role }) => ({
         id: event.id,
         sourceEventId: event.sourceEventId || null,

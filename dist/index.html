@@ -6,9 +6,9 @@
     <meta name="theme-color" content="#050508" />
     <meta name="description" content="每一次刷新，都会诞生一个独一无二的宇宙。" />
     <title>随机宇宙发生器</title>
-    <script type="module" crossorigin src="/assets/index-ciR4W9rh.js"></script>
+    <script type="module" crossorigin src="/assets/index-D-a5M0Of.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/three-core-HQt76mAO.js">
-    <link rel="stylesheet" crossorigin href="/assets/index-DxiExv8b.css">
+    <link rel="stylesheet" crossorigin href="/assets/index-sQia7Hb_.css">
   </head>
   <body>
     <canvas id="universe" aria-hidden="true"></canvas>
@@ -184,6 +184,14 @@
           <p class="kicker"><span id="explore-id">#7K9A-3M2Q-X8P4-L6NW</span></p>
           <h2 id="galaxy-name">赫利俄斯星系</h2>
           <p id="galaxy-meta">棒旋星系 · 直径 18.4 万光年</p>
+          <button class="local-group-toggle" id="toggle-local-group" type="button" aria-pressed="false">查看局部星系群</button>
+        </div>
+
+        <div class="local-group-readout" id="local-group-readout" aria-live="polite">
+          <span>局部星系群</span>
+          <b id="local-group-count">1 个主星系</b>
+          <small id="local-group-routes">尚无跨星系航线</small>
+          <small class="local-group-members" id="local-group-members"></small>
         </div>
 
         <div class="coordinates" aria-hidden="true">
@@ -240,7 +248,20 @@
           <dl class="chronicle-meta">
             <div><dt>生物圈路径</dt><dd id="chronicle-biosphere">—</dd></div>
             <div><dt>费米情景</dt><dd id="chronicle-fermi">—</dd></div>
+            <div><dt>星系际范围</dt><dd id="chronicle-reach">—</dd></div>
           </dl>
+          <section class="chronicle-section">
+            <div class="chronicle-section-head"><span>文明内部状态</span><small>当前快照</small></div>
+            <div class="chronicle-internal-metrics" id="chronicle-internal-metrics"></div>
+          </section>
+          <section class="chronicle-section">
+            <div class="chronicle-section-head"><span>观测层</span><small>真值 / 信号 / 推测</small></div>
+            <div id="chronicle-observation"></div>
+          </section>
+          <section class="chronicle-section">
+            <div class="chronicle-section-head"><span>技术路线</span><small>悬停查看成本</small></div>
+            <ol class="chronicle-technology" id="chronicle-technology"></ol>
+          </section>
           <div class="chronicle-actions">
             <button type="button" id="observe-civilization">以此文明观察</button>
             <button type="button" id="bookmark-cosmic-time">保存当前时刻</button>
@@ -248,7 +269,12 @@
             <button type="button" id="export-universe-history">导出历史</button>
           </div>
           <p class="chronicle-status" id="chronicle-status" aria-live="polite"></p>
-          <ol class="chronicle-events" id="chronicle-events"></ol>
+          <div class="chronicle-view-switch" role="group" aria-label="文明历史视图">
+            <button type="button" class="is-active" data-chronicle-view="timeline">时间线</button>
+            <button type="button" data-chronicle-view="graph">因果图</button>
+          </div>
+          <ol class="chronicle-events is-active" id="chronicle-events"></ol>
+          <div class="causal-graph" id="causal-graph"></div>
         </aside>
 
         <div class="time-console" aria-label="宇宙时间控制">

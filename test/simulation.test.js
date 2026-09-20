@@ -13,6 +13,7 @@ import {
   stellarFormationEndTimelinePosition
 } from '../src/domain/universe.js';
 import { createSeededRandom } from '../src/domain/random.js';
+import { createLocalGalaxyGroup } from '../src/domain/local-group.js';
 import {
   createStellarDawnModel,
   STELLAR_DAWN_END,
@@ -35,6 +36,12 @@ import {
 import { expandEventSchedule } from '../src/simulation/event-occurrence.js';
 import { blackHoleRecoilKms, createTransientSimulation } from '../src/simulation/transient-events.js';
 import { civilizationHistory, historyExportPayload } from '../src/ui/civilization-chronicle.js';
+import { civilizationObservation } from '../src/simulation/observation.js';
+import {
+  advanceTechnologyTree,
+  technologyBits,
+  technologyPath
+} from '../src/simulation/technology-tree.js';
 
 const seedFor = (index) => index.toString(36).toUpperCase().padStart(16, '0');
 
@@ -420,9 +427,9 @@ test('causal evolution chains update biosphere, morphology, engineering, migrati
     makeEvent('ghost-signal', 470, 1, { delayUnits: 42 }),
     makeEvent('exposure-response', 480, 2, { responsePolicy: '跨文明验证协议' }),
     makeEvent('galactic-aftermath', 490, 3, { galacticStage: '潮汐尾与恒星形成潮' }),
-    makeEvent('intergalactic-diaspora', 510, 1, { diasporaMode: '星系桥殖民地', diasporaSuccess: true }),
+    makeEvent('intergalactic-diaspora', 510, 2, { diasporaMode: '星系桥殖民地', diasporaSuccess: true }),
     makeEvent('black-hole-civilization', 520, 2, { blackHoleMethod: '旋转能提取', blackHoleStable: true }),
-    makeEvent('universe-escape-project', 530, 3, { escapeMode: '人造婴儿宇宙', escapeSuccess: true })
+    makeEvent('universe-escape-project', 530, 2, { escapeMode: '人造婴儿宇宙', escapeSuccess: true })
   ];
   buildCivilizationSimulation({
     universe,
@@ -440,11 +447,19 @@ test('causal evolution chains update biosphere, morphology, engineering, migrati
   assert.equal(snapshot.artifacts[0], 1);
   assert.equal(snapshot.signalDelays[1], 42);
   assert.equal(snapshot.causalResponses[2], 1);
-  assert.equal(snapshot.diasporaModes[1], 1);
+  assert.equal(snapshot.diasporaModes[2], 1);
   assert.equal(snapshot.blackHoleHabitats[2], 1);
-  assert.equal(snapshot.escapeProjects[3], 1);
-  assert.equal(snapshot.energyTiers[2], 3);
-  assert.equal(snapshot.energyTiers[3], 4);
+  assert.equal(snapshot.escapeProjects[2], 1);
+  assert.equal(snapshot.energyTiers[2], 4);
+  assert.ok(snapshot.populations[2] > 0);
+  assert.ok(snapshot.resources[2] > 0);
+  assert.ok(snapshot.energyReserves[2] > 0);
+  assert.ok(snapshot.governance[2] > 0);
+  assert.ok(snapshot.research[2] > 0);
+  assert.ok(snapshot.stability[2] > 0);
+  assert.ok(snapshot.technologyMasks[2] & technologyBits.universeEscape);
+  assert.ok(snapshot.externalGalaxyIndices[2] > 0);
+  assert.ok(snapshot.externalPopulations[2] > 0);
   assert.ok(snapshot.fermiAwareness.some((value) => value === 1));
   assert.ok(events.every((event) => event.outcome !== '事件仍在演化'));
 });
@@ -466,6 +481,80 @@ test('civilization chronicles preserve roles and causal event links for export',
   assert.equal(exported.format, 'random-universe-history-v1');
   assert.equal(exported.civilizations[0].history[1].causalRootId, 'signal');
   assert.equal(exported.civilizations[1].history[0].role, '接触方');
+});
+
+test('technology tree enforces prerequisites and charges civilization costs', () => {
+  const blocked = advanceTechnologyTree({
+    mask: 0,
+    active: true,
+    technology: 1,
+    research: 1,
+    resources: 1,
+    energy: 1,
+    hasCentralBlackHole: false,
+    megastructure: true,
+    engineeringMode: 3,
+    blackHoleHabitat: 1,
+    escapeProject: 1
+  });
+  assert.ok(blocked.mask & technologyBits.stellarEngine);
+  assert.equal(Boolean(blocked.mask & technologyBits.blackHoleEnergy), false);
+  assert.equal(Boolean(blocked.mask & technologyBits.universeEscape), false);
+
+  const completed = advanceTechnologyTree({
+    mask: 0,
+    active: true,
+    technology: 1,
+    research: 1,
+    resources: 1,
+    energy: 1,
+    hasCentralBlackHole: true,
+    megastructure: true,
+    engineeringMode: 3,
+    blackHoleHabitat: 1,
+    escapeProject: 1
+  });
+  assert.equal(technologyPath(completed.mask).every((node) => node.unlocked), true);
+  assert.ok(completed.cost.resources > .8);
+  assert.ok(completed.cost.energy > .5);
+  assert.ok(completed.cost.stability > .2);
+});
+
+test('local galaxy groups and delayed observations are deterministic', () => {
+  const first = createLocalGalaxyGroup('LOCALGROUP000001', '主星系');
+  const second = createLocalGalaxyGroup('LOCALGROUP000001', '主星系');
+  assert.deepEqual(first, second);
+  assert.ok(first.companions.length >= 4 && first.companions.length <= 6);
+  assert.ok(first.companions.every((galaxy) => Math.hypot(...galaxy.position) > 18));
+
+  const snapshots = Array.from({ length: 41 }, (_, time) => ({
+    time,
+    populations: Float32Array.from([1, 1 + time / 10]),
+    resources: Float32Array.from([.7, .4 + time / 100]),
+    energyReserves: Float32Array.from([.8, .5]),
+    governance: Float32Array.from([.7, .6]),
+    research: Float32Array.from([.7, .65]),
+    stability: Float32Array.from([.8, .3 + time / 100]),
+    visibility: Float32Array.from([.1, .2]),
+    trends: Int8Array.from([0, 1])
+  }));
+  const observation = civilizationObservation({
+    observerSpeciesIndex: 0,
+    targetSpeciesIndex: 1,
+    position: 40,
+    civilizationSimulation: {
+      start: 0,
+      step: 1,
+      snapshots,
+      habitatPositions: Float32Array.from([0, 0, 0, 10, 0, 0])
+    },
+    civilizationData: [{ homeNodeIndex: 0 }, { homeNodeIndex: 1 }],
+    universe: { speed: 1 }
+  });
+  assert.ok(observation.delay > 30);
+  assert.ok(observation.observed.population < observation.actual.population);
+  assert.ok(observation.confidence < 1);
+  assert.ok(observation.uncertainty > 0);
 });
 
 test('event repeats respect a universe-specific latest start boundary', () => {

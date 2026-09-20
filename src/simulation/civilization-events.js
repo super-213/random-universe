@@ -493,6 +493,7 @@ export function createCivilizationEventPlan({ universe, civilizationData, habita
     } else if (definition.type === 'intergalactic-diaspora') {
       event.diasporaMode = random() < .54 ? '星系桥殖民地' : '星系际流浪社会';
       event.diasporaSuccess = random() < .38 + target.resilience * .3 + target.technology * .22;
+      event.targetCompanionIndex = 1 + Math.floor(random() * 6);
     } else if (definition.type === 'black-hole-civilization') {
       event.blackHoleMethod = ['吸积盘采能', '旋转能提取', '霍金辐射收集'][Math.floor(random() * 3)];
       event.blackHoleStable = random() < .42 + target.technology * .34 + target.resilience * .18;

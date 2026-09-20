@@ -122,6 +122,7 @@ export function renderCivilizationRows({ position, simulationState, runtimeState
     (total, state) => total + (state.alive && !state.ascended ? state.count : 0),
     0
   );
+  const totalPopulation = runtimeState.reduce((total, state) => total + (state.alive ? state.population : 0), 0);
   const panel = cachedElement('civilizationPanel', '#civilization-panel');
   const opacity = activeSpecies > 0 ? '1' : '0';
   if (panel?.style.getPropertyValue('--cosmic-opacity') !== opacity) {
@@ -129,7 +130,7 @@ export function renderCivilizationRows({ position, simulationState, runtimeState
   }
   setText(
     cachedElement('civilizationSummary', '#civilization-summary'),
-    activeSpecies > 0 ? `${activeSpecies} 种 · ${occupiedDomains} 域` : '尚未出现'
+    activeSpecies > 0 ? `${activeSpecies} 种 · ${occupiedDomains} 域 · ${totalPopulation.toFixed(1)} 万亿` : '尚未出现'
   );
 
   const compactPanelCollapsed = compactLayout.matches
@@ -152,7 +153,7 @@ export function renderCivilizationRows({ position, simulationState, runtimeState
     if (state.eventState.causes.length) details.push(`受 ${state.eventState.causes.join('、')} 影响`);
     if (state.statuses.length) details.push(state.statuses.join('、'));
     if (state.alive) {
-      details.push(`${energyTierLabels[state.energyTier] || '前工业能源'} · 技术 ${(state.technology * 100).toFixed(0)} · 凝聚 ${(state.cohesion * 100).toFixed(0)} · 可见度 ${(state.visibility * 100).toFixed(0)}`);
+      details.push(`${energyTierLabels[state.energyTier] || '前工业能源'} · 人口 ${state.population.toFixed(2)} 万亿 · 资源 ${(state.resources * 100).toFixed(0)} · 能源 ${(state.energy * 100).toFixed(0)} · 治理 ${(state.governance * 100).toFixed(0)} · 科研 ${(state.research * 100).toFixed(0)} · 稳定 ${(state.stability * 100).toFixed(0)}`);
     }
     const title = state.ascended ? '1% 概率的高维转化：已脱离普通物质宿主' : details.join('；');
     if (row.title !== title) row.title = title;
@@ -161,7 +162,7 @@ export function renderCivilizationRows({ position, simulationState, runtimeState
           ? '超维存续'
           : state.escaped
             ? '母宇宙外存续'
-          : `${state.count} 域${state.trend > 0 ? ' ↑' : state.trend < 0 ? ' ↓' : ''}${state.statuses[0] ? ` · ${state.statuses[0]}` : ''}`)
+          : `${state.count} 域 · ${state.population.toFixed(1)} 万亿${state.trend > 0 ? ' ↑' : state.trend < 0 ? ' ↓' : ''}${state.externalGalaxyIndex ? ' · 外星系' : ''}`)
       : position < species.birth ? '未诞生' : '衰亡');
   });
 }
