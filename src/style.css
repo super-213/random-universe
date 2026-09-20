@@ -634,6 +634,21 @@ h1 strong {
 .timeline-tool-button:hover { color: var(--ink); border-color: rgba(241,238,231,.28); }
 .timeline-tool-button:active { transform: scale(.96); }
 .timeline-tool-button.is-active { color: var(--accent); border-color: rgba(216,255,95,.4); background: rgba(216,255,95,.07); }
+.ship-highlight-toggle { display: inline-flex; align-items: center; gap: 6px; }
+.ship-highlight-toggle::before {
+  width: 5px;
+  height: 5px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  content: '';
+  opacity: .72;
+  transition: background .2s ease, box-shadow .2s ease, opacity .2s ease;
+}
+.ship-highlight-toggle.is-active::before {
+  background: var(--accent);
+  box-shadow: 0 0 9px rgba(216,255,95,.9);
+  opacity: 1;
+}
 .timeline-filter-menu {
   position: absolute;
   z-index: 12;
@@ -1280,6 +1295,9 @@ h1 strong {
   .timeline-tools { gap: 4px; margin-left: auto; }
   .timeline-tool-button { min-height: 32px; padding: 6px 8px; font-size: 7px; }
   #toggle-timeline-snap { width: 34px; padding: 0; overflow: hidden; }
+  #toggle-ship-highlight { width: 34px; padding: 0; justify-content: center; }
+  #toggle-ship-highlight span { display: none; }
+  #toggle-ship-highlight::before { width: 7px; height: 7px; }
   .timeline-filter-menu { right: 0; left: auto; }
   .speed-controls { display: flex; gap: 4px; margin-left: 0; }
   .speed-controls button { min-width: 38px; min-height: 34px; padding: 6px 7px; border-radius: 18px; font-size: 9px; }

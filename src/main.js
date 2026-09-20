@@ -166,6 +166,7 @@ let intergalacticMarkers = [];
 let localGroupGalaxies = [];
 let localGroupView = false;
 let localGroupFrameRadius = 36;
+let shipHighlightEnabled = false;
 let simulationBackend = '主线程';
 let keyboardStarIndex = -1;
 let keyboardStarMarker = null;
@@ -525,6 +526,20 @@ function buildLocalGroupMap() {
     hull.rotation.z = -Math.PI / 2;
     ship.add(hull);
 
+    const highlightMaterial = new THREE.SpriteMaterial({
+      map: makeRingTexture(),
+      color: species.color,
+      transparent: true,
+      opacity: 0,
+      depthTest: false,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending
+    });
+    const highlight = new THREE.Sprite(highlightMaterial);
+    highlight.scale.setScalar(1.05);
+    highlight.renderOrder = 6;
+    ship.add(highlight);
+
     const engineMaterial = new THREE.SpriteMaterial({
       map: makeGlowTexture(),
       color: species.color,
@@ -541,6 +556,9 @@ function buildLocalGroupMap() {
     ship.renderOrder = 5;
     ship.userData.hullMaterial = hullMaterial;
     ship.userData.engineMaterial = engineMaterial;
+    ship.userData.highlightMaterial = highlightMaterial;
+    ship.userData.highlightSprite = highlight;
+    ship.userData.highlightMix = shipHighlightEnabled ? 1 : 0;
     ship.userData.trafficPhase = random() * 2;
     ship.userData.trafficSpeed = randomBetween(random, .022, .034);
     ship.userData.pulsePhase = random() * Math.PI * 2;
@@ -3041,9 +3059,8 @@ function updateLocalGroupVisuals(simulationState) {
     .slice(0, maxVisibleIntergalacticShips)
     .forEach(({ ship }) => {
       ship.visible = localGroupView;
-      ship.userData.hullMaterial.opacity = ship.userData.isLost ? .32 : .9;
-      ship.userData.engineMaterial.opacity = ship.userData.isLost ? .12 : .58;
       updateIntergalacticShipPosition(ship, performance.now(), false);
+      updateIntergalacticShipAppearance(ship, performance.now());
     });
   const visibleShips = Math.min(trafficCandidates.length, maxVisibleIntergalacticShips);
   $('#local-group-routes').textContent = activeRoutes
@@ -3080,6 +3097,44 @@ function updateIntergalacticShipPosition(ship, now, animateTraffic) {
   );
 }
 
+function updateIntergalacticShipAppearance(ship, now, delta = 1 / 60) {
+  const targetMix = shipHighlightEnabled ? 1 : 0;
+  const blend = prefersReducedMotion ? 1 : 1 - Math.exp(-12 * delta);
+  const highlightMix = THREE.MathUtils.lerp(
+    ship.userData.highlightMix || 0,
+    targetMix,
+    blend
+  );
+  const lost = ship.userData.isLost;
+  const elapsed = now * .001;
+  const enginePulse = prefersReducedMotion
+    ? 1
+    : .82 + Math.sin(elapsed * 4.2 + ship.userData.pulsePhase) * .18;
+  const locatorPulse = prefersReducedMotion
+    ? 1
+    : .88 + Math.sin(elapsed * 2.8 + ship.userData.pulsePhase) * .12;
+
+  ship.userData.highlightMix = Math.abs(highlightMix - targetMix) < .001
+    ? targetMix
+    : highlightMix;
+  ship.scale.setScalar(THREE.MathUtils.lerp(1, 2.25, ship.userData.highlightMix));
+  ship.userData.hullMaterial.opacity = THREE.MathUtils.lerp(
+    lost ? .32 : .9,
+    lost ? .48 : 1,
+    ship.userData.highlightMix
+  );
+  ship.userData.engineMaterial.opacity = THREE.MathUtils.lerp(
+    lost ? .12 : .58,
+    lost ? .28 : .96,
+    ship.userData.highlightMix
+  ) * enginePulse;
+  ship.userData.highlightMaterial.opacity = ship.userData.highlightMix
+    * (lost ? .18 : .38)
+    * locatorPulse;
+  ship.userData.highlightSprite.scale.setScalar(1.02 + locatorPulse * .14);
+  ship.userData.highlightMaterial.rotation = prefersReducedMotion ? 0 : elapsed * .22;
+}
+
 function updateLocalGalaxyParticlePositions(companion, now, motionEnabled) {
   const elapsed = now * .001;
   const positions = companion.points.geometry.attributes.position.array;
@@ -3113,7 +3168,7 @@ function updateLocalGalaxyParticlePositions(companion, now, motionEnabled) {
   companion.points.geometry.attributes.position.needsUpdate = true;
 }
 
-function animateLocalGroupGalaxies(now) {
+function animateLocalGroupGalaxies(now, delta) {
   if (!localGroupView || !localGroupGroup.visible) return;
   const elapsed = now * .001;
   if (!prefersReducedMotion) {
@@ -3129,10 +3184,7 @@ function animateLocalGroupGalaxies(now) {
   intergalacticMarkers.forEach((ship) => {
     if (!ship.visible) return;
     updateIntergalacticShipPosition(ship, now, !prefersReducedMotion);
-    if (!prefersReducedMotion) {
-      ship.userData.engineMaterial.opacity = (ship.userData.isLost ? .12 : .58)
-        * (.82 + Math.sin(elapsed * 4.2 + ship.userData.pulsePhase) * .18);
-    }
+    updateIntergalacticShipAppearance(ship, now, delta);
   });
 }
 
@@ -3233,6 +3285,7 @@ function applyAccessibilityPalette(enabled) {
     localGroupRoutes[index]?.material.color.setHex(species.color);
     intergalacticMarkers[index]?.userData.hullMaterial.color.setHex(species.color);
     intergalacticMarkers[index]?.userData.engineMaterial.color.setHex(species.color);
+    intergalacticMarkers[index]?.userData.highlightMaterial.color.setHex(species.color);
     const row = document.querySelector(`.civilization-item[data-species="${index}"]`);
     row?.style.setProperty('--species', `#${species.color.toString(16).padStart(6, '0')}`);
   });
@@ -3308,7 +3361,7 @@ function animate(now) {
       camera
     });
     if (!controls.enabled) galaxyGroup.rotation.y += 0.0003;
-    animateLocalGroupGalaxies(now);
+    animateLocalGroupGalaxies(now, delta);
     if (now - lastCoordinateUpdateAt >= coordinateUpdateIntervalMs) {
       lastCoordinateUpdateAt = now;
       const time = now * 0.00012;
@@ -3394,6 +3447,16 @@ $('#multiverse-list').addEventListener('click', (event) => {
 $('#close-inspector').addEventListener('click', () => $('#star-inspector').classList.remove('is-open'));
 $('#close-chronicle').addEventListener('click', closeCivilizationChronicle);
 $('#toggle-local-group').addEventListener('click', toggleLocalGroupView);
+$('#toggle-ship-highlight').addEventListener('click', (event) => {
+  shipHighlightEnabled = !shipHighlightEnabled;
+  event.currentTarget.classList.toggle('is-active', shipHighlightEnabled);
+  event.currentTarget.setAttribute('aria-pressed', String(shipHighlightEnabled));
+  if (prefersReducedMotion) {
+    intergalacticMarkers.forEach((ship) => {
+      updateIntergalacticShipAppearance(ship, performance.now());
+    });
+  }
+});
 $('#civilization-legend').addEventListener('click', (event) => {
   const row = event.target.closest('[data-species]');
   if (row) openCivilizationChronicle(Number(row.dataset.species));
