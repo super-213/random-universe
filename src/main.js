@@ -25,6 +25,7 @@ let animateBlackHoleVisual;
 let createBlackHoleVisual;
 let applyCivilizationSnapshot;
 let syncCivilizationHosts;
+let createCivilizationEventVisual;
 let animateCosmicEvents;
 let updateCosmicEvents;
 let updateEpochVisuals;
@@ -37,6 +38,7 @@ let buildCivilizationSimulation;
 let civilizationSnapshotAt;
 let deriveCivilizationRuntime;
 let findDominantRelationship;
+let createCivilizationEventPlan;
 let expandEventSchedule;
 let applyTransientImpactScales;
 let createTransientGravityField;
@@ -98,6 +100,7 @@ let civilizationGroups = [];
 let civilizationData = [];
 let civilizationRuntimeState = [];
 let civilizationSimulation = null;
+let civilizationEvents = [];
 let blackHoleRemnants = [];
 let primordialParticles = null;
 let primordialDirections = null;
@@ -160,6 +163,7 @@ function loadExplorer() {
       createBlackHoleVisual,
       applyCivilizationSnapshot,
       syncCivilizationHosts,
+      createCivilizationEventVisual,
       animateCosmicEvents,
       updateCosmicEvents,
       updateEpochVisuals,
@@ -172,6 +176,7 @@ function loadExplorer() {
       civilizationSnapshotAt,
       deriveCivilizationRuntime,
       findDominantRelationship,
+      createCivilizationEventPlan,
       expandEventSchedule,
       applyTransientImpactScales,
       createTransientGravityField,
@@ -352,6 +357,7 @@ function buildGalaxy() {
   disposeGroup(cosmicEventGroup);
   civilizationGroups = [];
   civilizationData = [];
+  civilizationEvents = [];
   civilizationRuntimeState = [];
   civilizationSimulation = null;
   currentEras = erasForUniverse(universe);
@@ -1637,6 +1643,30 @@ function buildCosmicEvents(starPositions) {
       label: data.label
     });
   });
+  civilizationEvents.forEach((data) => {
+    const remnantIndex = civilizationSimulation.habitatRemnantIndices[data.targetNodeIndex];
+    const sourceIndex = remnantDynamics.sourceIndices[remnantIndex];
+    const sourceOffset = sourceIndex * 3;
+    const group = createCivilizationEventVisual(data);
+    group.position.set(
+      starPositions[sourceOffset],
+      starPositions[sourceOffset + 1],
+      starPositions[sourceOffset + 2]
+    );
+    group.visible = false;
+    cosmicEventGroup.add(group);
+    cosmicEvents.push({
+      ...data,
+      group,
+      sourceIndex,
+      impactPhase: (data.impactAt - data.start) / data.duration,
+      starImpacts: [],
+      waveSamples: null,
+      gravityField: null,
+      transientGravityField: null
+    });
+  });
+  cosmicEvents.sort((a, b) => a.start - b.start);
   remnantDynamics.firstBirthAt = Math.min(...remnantDynamics.birthAt);
 
   cosmicEventGroup.rotation.copy(galaxyGroup.rotation);
@@ -1649,11 +1679,14 @@ function renderCosmicEventMarkers() {
   cosmicEvents.forEach((event) => {
     const marker = document.createElement('button');
     marker.type = 'button';
-    marker.className = 'event-marker';
+    marker.className = `event-marker${event.category === 'civilization' ? ' is-speculative' : ''}`;
     marker.style.left = `${event.start / 10}%`;
     marker.style.setProperty('--event-color', event.color);
-    marker.setAttribute('aria-label', `${event.label}，${cosmicTimeLabel(event.start, universe)}；${event.outcome}`);
-    marker.title = event.outcome;
+    const eventKind = event.category === 'civilization' ? '科幻假设，' : '';
+    marker.setAttribute('aria-label', `${eventKind}${event.label}，${cosmicTimeLabel(event.start, universe)}；${event.outcome}`);
+    marker.title = event.category === 'civilization'
+      ? `科幻假设 · ${event.outcome}`
+      : event.outcome;
     marker.addEventListener('click', () => {
       timePlaying = false;
       $('#toggle-time').textContent = '▶';
@@ -1706,6 +1739,82 @@ function buildCivilizations() {
   const chosenHomes = [];
   const legend = $('#civilization-legend');
   legend.innerHTML = '';
+  const registerSpecies = ({
+    name,
+    color: speciesColor,
+    homeNodeIndex,
+    birth,
+    highDimensional = false,
+    ascensionAt = Infinity,
+    aggression,
+    cooperation,
+    expansionRate,
+    resilience,
+    technology,
+    visibility,
+    cohesion,
+    machineAutonomy,
+    originType = null,
+    parentSpeciesIndex = null
+  }) => {
+    const speciesIndex = civilizationData.length;
+    chosenHomes.push(homeNodeIndex);
+    const homeRemnantIndex = habitatRemnantIndices[homeNodeIndex];
+    const homeOffsetIndex = homeRemnantIndex * 3;
+    const home = new THREE.Vector3(
+      originalRemnantPositions[homeOffsetIndex],
+      originalRemnantPositions[homeOffsetIndex + 1],
+      originalRemnantPositions[homeOffsetIndex + 2]
+    );
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(habitatCount * 3), 3));
+    geometry.setDrawRange(0, 0);
+    const material = new THREE.PointsMaterial({
+      color: speciesColor,
+      size: .24,
+      map: getPointTexture(),
+      alphaTest: .012,
+      transparent: true,
+      opacity: .98,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending
+    });
+    const points = new THREE.Points(geometry, material);
+    galaxyGroup.add(points);
+    civilizationGroups.push(points);
+    civilizationData.push({
+      name,
+      color: speciesColor,
+      home,
+      homeNodeIndex,
+      homeRemnantIndex,
+      homeOffset: new THREE.Vector3(),
+      hostRemnantIndices: new Uint16Array(habitatCount),
+      hostOffsets: new Float32Array(habitatCount * 3),
+      displayCount: 0,
+      maxColonies: habitatCount,
+      birth,
+      highDimensional,
+      ascensionAt,
+      aggression,
+      cooperation,
+      expansionRate,
+      resilience,
+      technology,
+      visibility,
+      cohesion,
+      machineAutonomy,
+      originType,
+      parentSpeciesIndex
+    });
+    const color = `#${speciesColor.toString(16).padStart(6, '0')}`;
+    const origin = originType ? ` data-origin="${originType}"` : '';
+    legend.insertAdjacentHTML(
+      'beforeend',
+      `<div class="civilization-item" style="--species:${color}" data-species="${speciesIndex}"${origin}><i></i><span>${name}</span><b>未诞生</b></div>`
+    );
+  };
+
   for (let speciesIndex = 0; speciesIndex < speciesCount; speciesIndex++) {
     let homeNodeIndex = Math.floor(random() * habitatCount);
     let bestSeparation = -1;
@@ -1726,32 +1835,7 @@ function buildCivilizations() {
         homeNodeIndex = candidate;
       }
     }
-    chosenHomes.push(homeNodeIndex);
-    const homeRemnantIndex = habitatRemnantIndices[homeNodeIndex];
-    const homeOffsetIndex = homeRemnantIndex * 3;
-    const home = new THREE.Vector3(
-      originalRemnantPositions[homeOffsetIndex],
-      originalRemnantPositions[homeOffsetIndex + 1],
-      originalRemnantPositions[homeOffsetIndex + 2]
-    );
     const speciesColor = speciesColors[speciesIndex % speciesColors.length];
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(habitatCount * 3), 3));
-    geometry.setDrawRange(0, 0);
-    const material = new THREE.PointsMaterial({
-      color: speciesColor,
-      size: .24,
-      map: getPointTexture(),
-      alphaTest: .012,
-      transparent: true,
-      opacity: .98,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending
-    });
-    const points = new THREE.Points(geometry, material);
-    galaxyGroup.add(points);
-    civilizationGroups.push(points);
-
     const aggression = random();
     const cooperation = random();
     const expansionRate = randomBetween(random, .72, 1.36);
@@ -1760,28 +1844,37 @@ function buildCivilizations() {
     const birth = 404 + Math.round(birthSpread * 72 + random() * 11);
     const highDimensional = random() < .01;
     const ascensionAt = highDimensional ? birth + Math.round(randomBetween(random, 130, 205)) : Infinity;
-    civilizationData.push({
+    const developmentRandom = createSeededRandom(universe.seed, 4801 + speciesIndex * 31);
+    registerSpecies({
       name: speciesNames[(universe.seedValue + speciesIndex) % speciesNames.length],
       color: speciesColor,
-      home,
       homeNodeIndex,
-      homeRemnantIndex,
-      homeOffset: new THREE.Vector3(),
-      hostRemnantIndices: new Uint16Array(habitatCount),
-      hostOffsets: new Float32Array(habitatCount * 3),
-      displayCount: 0,
-      maxColonies: habitatCount,
       birth,
       highDimensional,
       ascensionAt,
       aggression,
       cooperation,
       expansionRate,
-      resilience
+      resilience,
+      technology: randomBetween(developmentRandom, .18, .48),
+      visibility: randomBetween(developmentRandom, .04, .18),
+      cohesion: randomBetween(developmentRandom, .48, .82),
+      machineAutonomy: randomBetween(developmentRandom, .08, .38)
     });
-    const color = `#${speciesColor.toString(16).padStart(6, '0')}`;
-    legend.insertAdjacentHTML('beforeend', `<div class="civilization-item" style="--species:${color}" data-species="${speciesIndex}"><i></i><span>${civilizationData[speciesIndex].name}</span><b>未诞生</b></div>`);
   }
+
+  const plan = createCivilizationEventPlan({ universe, civilizationData, habitatPositions });
+  plan.childSpecies.forEach((child) => {
+    const parentColor = new THREE.Color(civilizationData[child.parentSpeciesIndex].color);
+    parentColor.offsetHSL(child.colorShift, .04, .04);
+    registerSpecies({
+      ...child,
+      color: parentColor.getHex(),
+      highDimensional: false,
+      ascensionAt: Infinity
+    });
+  });
+  civilizationEvents = plan.events;
 }
 
 

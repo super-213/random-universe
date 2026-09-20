@@ -22,6 +22,8 @@ export function expandEventSchedule(baseEvents, universe, random) {
   );
 
   return baseEvents.flatMap((event) => {
+    if (event.occurrenceProbability !== undefined
+      && random() > clamp(event.occurrenceProbability, 0, 1)) return [];
     const maximumOccurrences = event.maximumOccurrences || 1;
     const additional = samplePoisson(
       random,
@@ -30,7 +32,13 @@ export function expandEventSchedule(baseEvents, universe, random) {
     );
     const occurrenceCount = 1 + additional;
     const repeatSpacing = event.repeatSpacing || Math.max(12, event.duration * .72);
-    const { repeatRate, repeatSpacing: ignoredSpacing, maximumOccurrences: ignoredMaximum, ...eventData } = event;
+    const {
+      repeatRate,
+      repeatSpacing: ignoredSpacing,
+      maximumOccurrences: ignoredMaximum,
+      occurrenceProbability: ignoredProbability,
+      ...eventData
+    } = event;
     const maximumStart = Math.min(
       998 - eventData.duration,
       eventData.latestStart ?? Infinity

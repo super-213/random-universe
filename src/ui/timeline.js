@@ -149,10 +149,16 @@ export function renderCivilizationRows({ position, simulationState, runtimeState
     if (state.friendlyNames.length) details.push(`与 ${state.friendlyNames.join('、')} 友好交流`);
     if (state.conflictNames.length) details.push(`与 ${state.conflictNames.join('、')} 冲突`);
     if (state.eventState.causes.length) details.push(`受 ${state.eventState.causes.join('、')} 影响`);
+    if (state.statuses.length) details.push(state.statuses.join('、'));
+    if (state.alive) {
+      details.push(`技术 ${(state.technology * 100).toFixed(0)} · 凝聚 ${(state.cohesion * 100).toFixed(0)} · 可见度 ${(state.visibility * 100).toFixed(0)}`);
+    }
     const title = state.ascended ? '1% 概率的高维转化：已脱离普通物质宿主' : details.join('；');
     if (row.title !== title) row.title = title;
     setText(row.querySelector('b'), state.alive
-      ? (state.ascended ? '超维存续' : `${state.count} 域${state.trend > 0 ? ' ↑' : state.trend < 0 ? ' ↓' : ''}`)
+      ? (state.ascended
+          ? '超维存续'
+          : `${state.count} 域${state.trend > 0 ? ' ↑' : state.trend < 0 ? ' ↓' : ''}${state.statuses[0] ? ` · ${state.statuses[0]}` : ''}`)
       : position < species.birth ? '未诞生' : '衰亡');
   });
 }

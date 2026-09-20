@@ -364,6 +364,8 @@ h1 strong {
 .civilization-item.is-impacted b { color: rgba(255, 155, 121, .88); }
 .civilization-item.is-ascended i { background: #ead9ff; box-shadow: 0 0 12px #c79cff; }
 .civilization-item.is-ascended b { color: #ead9ff; }
+.civilization-item[data-origin="fragment"] i { border-radius: 1px; transform: rotate(45deg); }
+.civilization-item[data-origin="uplift"] i { background: transparent; border: 1px solid var(--species); }
 .faction-block { --faction: var(--accent); }
 .faction-block + .faction-block { margin-top: 14px; }
 .faction-header {
@@ -536,6 +538,15 @@ h1 strong {
 }
 .event-marker:hover,
 .event-marker:focus-visible { transform: translateX(-50%) scale(1); opacity: 1; }
+.event-marker.is-speculative {
+  border-radius: 1px;
+  background: transparent;
+  border: 1px solid var(--event-color);
+  box-shadow: 0 0 7px color-mix(in srgb, var(--event-color) 72%, transparent);
+  transform: translateX(-50%) rotate(45deg) scale(.68);
+}
+.event-marker.is-speculative:hover,
+.event-marker.is-speculative:focus-visible { transform: translateX(-50%) rotate(45deg) scale(1); }
 .timeline-marks { position: absolute; left: 0; right: 0; top: 15px; }
 .timeline-marks span { position: absolute; transform: translateX(-50%); color: rgba(241,238,231,.28); font: 7px "Space Mono", monospace; white-space: nowrap; }
 .timeline-marks span:first-child { transform: none; }

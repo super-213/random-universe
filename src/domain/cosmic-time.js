@@ -142,10 +142,11 @@ export function selectTimelineNarrative({
   if (activeEvent) {
     const impacted = position >= activeEvent.impactAt;
     const aftermath = impacted ? `；${activeEvent.outcome}` : '';
+    const confidence = activeEvent.confidence === 'science-fiction' ? '科幻假设 · ' : '';
     return {
       key: `${activeEvent.id}-${impacted ? 'aftermath' : 'forming'}`,
       time: label,
-      text: `${activeEvent.label}：${activeEvent.message}${aftermath}`
+      text: `${confidence}${activeEvent.label}：${activeEvent.message}${aftermath}`
     };
   }
   if (activeRelationship) {

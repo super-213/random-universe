@@ -19,7 +19,14 @@ import {
   STELLAR_DAWN_START
 } from '../src/domain/stellar-dawn.js';
 import { createStellarGravityState } from '../src/simulation/black-hole-gravity.js';
-import { civilizationDeclineWindow } from '../src/simulation/civilization.js';
+import {
+  buildCivilizationSimulation,
+  civilizationDeclineWindow
+} from '../src/simulation/civilization.js';
+import {
+  civilizationEventTypes,
+  createCivilizationEventPlan
+} from '../src/simulation/civilization-events.js';
 import {
   blackHoleEvaporationExponent,
   blackHoleMassFromSimulation,
@@ -191,6 +198,113 @@ test('event occurrence sampling preserves one required occurrence and bounded re
   assert.ok(novaEvents.length >= 1 && novaEvents.length <= 3);
   assert.equal(rareEvents.length, 1);
   assert.ok(schedule.every((event) => event.start + event.duration <= 998));
+});
+
+test('optional events can be absent without changing required event behavior', () => {
+  const universe = createUniverse('EVNT-OPTL-0000-0001');
+  const schedule = expandEventSchedule([
+    { type: 'never', label: '不发生', start: 420, duration: 20, occurrenceProbability: 0 },
+    { type: 'required', label: '必然事件', start: 460, duration: 20 }
+  ], universe, createSeededRandom(universe.seed, 1002));
+  assert.deepEqual(schedule.map((event) => event.type), ['required']);
+});
+
+test('speculative civilization event plans are seeded, conditional, and cover every event family', () => {
+  const habitatPositions = new Float32Array(90 * 3);
+  for (let index = 0; index < 90; index++) {
+    habitatPositions[index * 3] = Math.cos(index * .71) * (2 + index * .03);
+    habitatPositions[index * 3 + 1] = Math.sin(index * .19);
+    habitatPositions[index * 3 + 2] = Math.sin(index * .71) * (2 + index * .03);
+  }
+  const seen = new Set();
+  let foundConditionalAbsence = false;
+  for (let seedIndex = 0; seedIndex < 300; seedIndex++) {
+    const universe = createUniverse(seedFor(seedIndex));
+    const civilizationData = Array.from({ length: 6 }, (_, index) => ({
+      name: `文明${index}`,
+      homeNodeIndex: index * 10,
+      birth: 404 + index * 8,
+      aggression: .15 + index * .1,
+      cooperation: .8 - index * .09,
+      expansionRate: .9 + index * .03,
+      resilience: .9 + index * .04,
+      technology: .3 + index * .02,
+      visibility: .08,
+      cohesion: .62,
+      machineAutonomy: .2
+    }));
+    const first = createCivilizationEventPlan({ universe, civilizationData, habitatPositions });
+    const second = createCivilizationEventPlan({ universe, civilizationData, habitatPositions });
+    assert.deepEqual(first, second);
+    first.events.forEach((event) => seen.add(event.type));
+    if (first.events.length < civilizationEventTypes().length) foundConditionalAbsence = true;
+    first.childSpecies.forEach((child, index) => {
+      assert.equal(first.events.some((event) => event.childSpeciesIndex === 6 + index), true);
+      assert.ok(child.birth > civilizationData[child.parentSpeciesIndex].birth);
+    });
+  }
+  assert.deepEqual([...seen].sort(), civilizationEventTypes().sort());
+  assert.equal(foundConditionalAbsence, true);
+});
+
+test('civilization events change snapshots and create active successor cultures', () => {
+  const universe = Array.from({ length: 200 }, (_, index) => createUniverse(seedFor(index)))
+    .find((candidate) => candidate.cosmicFate.type === 'heat-death');
+  const civilizationData = [
+    { name: '甲', birth: 400, homeNodeIndex: 0, aggression: .2, cooperation: .8, expansionRate: 1.2, resilience: 1, technology: .4, visibility: .1, cohesion: .7, machineAutonomy: .2 },
+    { name: '乙', birth: 402, homeNodeIndex: 2, aggression: .3, cooperation: .7, expansionRate: 1.1, resilience: 1, technology: .35, visibility: .1, cohesion: .7, machineAutonomy: .2 },
+    { name: '丙', birth: 404, homeNodeIndex: 4, aggression: .4, cooperation: .6, expansionRate: 1.1, resilience: 1, technology: .38, visibility: .1, cohesion: .7, machineAutonomy: .2 },
+    { name: '丁', birth: 406, homeNodeIndex: 6, aggression: .2, cooperation: .8, expansionRate: 1.2, resilience: 1, technology: .42, visibility: .1, cohesion: .7, machineAutonomy: .2 },
+    { name: '甲·远枝', birth: 448, homeNodeIndex: 8, aggression: .45, cooperation: .35, expansionRate: 1, resilience: 1, technology: .3, visibility: .1, cohesion: .45, machineAutonomy: .2, originType: 'fragment', parentSpeciesIndex: 0 },
+    { name: '丁·新生群', birth: 458, homeNodeIndex: 10, aggression: .15, cooperation: .85, expansionRate: 1, resilience: 1, technology: .3, visibility: .1, cohesion: .65, machineAutonomy: .2, originType: 'uplift', parentSpeciesIndex: 3 }
+  ];
+  const habitatPositions = new Float32Array(12 * 3);
+  for (let index = 0; index < 12; index++) {
+    habitatPositions[index * 3] = Math.cos(index / 12 * Math.PI * 2) * 4;
+    habitatPositions[index * 3 + 2] = Math.sin(index / 12 * Math.PI * 2) * 4;
+  }
+  const simulation = {
+    start: 390,
+    end: 1000,
+    step: 1,
+    habitatRemnantIndices: Uint16Array.from({ length: 12 }, (_, index) => index),
+    habitatPositions,
+    adjacency: [],
+    snapshots: []
+  };
+  const makeEvent = (type, impactAt, targetSpeciesIndex, extra = {}) => ({
+    id: type,
+    type,
+    label: type,
+    category: 'civilization',
+    impactAt,
+    targetSpeciesIndex,
+    civilizationImpacts: [],
+    outcome: '事件仍在演化',
+    ...extra
+  });
+  const events = [
+    makeEvent('first-signal', 420, 0, { secondarySpeciesIndex: 1, decision: 'reply' }),
+    makeEvent('self-replicating-probes', 428, 1, { runaway: false }),
+    makeEvent('stellar-megastructure', 436, 2, { unstable: false }),
+    makeEvent('knowledge-ark', 442, 3, { archiveReliability: .8 }),
+    makeEvent('civilization-fracture', 448, 0, { childSpeciesIndex: 4 }),
+    makeEvent('uplift-experiment', 458, 3, { childSpeciesIndex: 5 })
+  ];
+  buildCivilizationSimulation({
+    universe,
+    civilizationData,
+    civilizationSimulation: simulation,
+    cosmicEvents: events
+  });
+  const snapshot = simulation.snapshots.find((item) => item.time === 470);
+  assert.equal(snapshot.probeModes[1], 1);
+  assert.equal(snapshot.megastructures[2], 1);
+  assert.equal(snapshot.archives[3], 1);
+  assert.equal(snapshot.uplifts[5], 1);
+  assert.equal(simulation.snapshots.some((item) => item.time >= 448 && item.active[4]), true);
+  assert.equal(simulation.snapshots.some((item) => item.time >= 458 && item.active[5]), true);
+  assert.ok(events.every((event) => event.outcome !== '事件仍在演化'));
 });
 
 test('event repeats respect a universe-specific latest start boundary', () => {

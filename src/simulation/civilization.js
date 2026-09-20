@@ -60,7 +60,12 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
   const declineWindow = civilizationDeclineWindow(universe);
   const expansionEnd = Math.min(declineWindow.energyStart, declineWindow.fateStart);
   simulation.end = 1000;
-  const events = cosmicEvents.slice().sort((a, b) => a.impactAt - b.impactAt);
+  const events = cosmicEvents
+    .filter((event) => event.category !== 'civilization')
+    .sort((a, b) => a.impactAt - b.impactAt);
+  const civilizationEvents = cosmicEvents
+    .filter((event) => event.category === 'civilization')
+    .sort((a, b) => a.impactAt - b.impactAt);
   const eventImpactStats = new Map(events.map((event) => [event, new Map()]));
   const scheduledImpacts = events.flatMap((event) => {
     event.civilizationImpacts = [];
@@ -68,13 +73,33 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
   }).sort((a, b) => a.impact.at - b.impact.at || a.impact.nodeIndex - b.impact.nodeIndex);
 
   const relationIndex = (a, b) => a * speciesCount + b;
+  const technology = new Float32Array(speciesCount);
+  const visibility = new Float32Array(speciesCount);
+  const cohesion = new Float32Array(speciesCount);
+  const machineAutonomy = new Float32Array(speciesCount);
+  const archives = new Uint8Array(speciesCount);
+  const megastructures = new Uint8Array(speciesCount);
+  const uplifts = new Uint8Array(speciesCount);
+  const probeModes = new Int8Array(speciesCount);
+  const archiveReadyAt = new Float32Array(speciesCount);
+  archiveReadyAt.fill(Infinity);
+  civilizationData.forEach((species, index) => {
+    technology[index] = species.technology ?? .25;
+    visibility[index] = species.visibility ?? .08;
+    cohesion[index] = species.cohesion ?? .6;
+    machineAutonomy[index] = species.machineAutonomy ?? .18;
+  });
   for (let a = 0; a < speciesCount; a++) {
     for (let b = a + 1; b < speciesCount; b++) {
       const speciesA = civilizationData[a];
       const speciesB = civilizationData[b];
-      const affinity = (speciesA.cooperation + speciesB.cooperation) * .28
+      let affinity = (speciesA.cooperation + speciesB.cooperation) * .28
         - (speciesA.aggression + speciesB.aggression) * .24
         + randomBetween(random, -.16, .16);
+      if (speciesA.parentSpeciesIndex === b || speciesB.parentSpeciesIndex === a) {
+        const child = speciesA.parentSpeciesIndex === b ? speciesA : speciesB;
+        affinity += child.originType === 'uplift' ? .44 : -.38;
+      }
       relationScores[relationIndex(a, b)] = affinity;
       relationScores[relationIndex(b, a)] = affinity;
     }
@@ -147,7 +172,130 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
     lastCauses[speciesIndex] = event.label;
   };
 
+  const transferTerritory = (sourceSpeciesIndex, targetSpeciesIndex, fraction) => {
+    const targetHome = civilizationData[targetSpeciesIndex].homeNodeIndex;
+    const targetOffset = targetHome * 3;
+    const candidates = [];
+    for (let node = 0; node < nodeCount; node++) {
+      if (owners[node] !== sourceSpeciesIndex || disabledNodes[node]) continue;
+      const offset = node * 3;
+      candidates.push({
+        node,
+        distance: Math.hypot(
+          simulation.habitatPositions[offset] - simulation.habitatPositions[targetOffset],
+          simulation.habitatPositions[offset + 1] - simulation.habitatPositions[targetOffset + 1],
+          simulation.habitatPositions[offset + 2] - simulation.habitatPositions[targetOffset + 2]
+        )
+      });
+    }
+    candidates.sort((a, b) => a.distance - b.distance);
+    const transferCount = Math.max(1, Math.floor(candidates.length * fraction));
+    candidates.slice(0, transferCount).forEach(({ node }) => {
+      owners[node] = targetSpeciesIndex;
+      strength[node] = Math.max(.16, strength[node] * .76);
+    });
+    if (!disabledNodes[targetHome]) {
+      owners[targetHome] = targetSpeciesIndex;
+      strength[targetHome] = Math.max(.34, strength[targetHome]);
+    }
+    return transferCount;
+  };
+
+  const applyCivilizationEvent = (event, time) => {
+    const targetIndex = event.targetSpeciesIndex;
+    const target = civilizationData[targetIndex];
+    if (!target || !seeded[targetIndex] || territoryCountFor(targetIndex) === 0) {
+      event.outcome = `${target?.name || '目标文明'} 已在事件生效前衰亡`;
+      return;
+    }
+
+    if (event.type === 'first-signal') {
+      const otherIndex = event.secondarySpeciesIndex;
+      const other = civilizationData[otherIndex];
+      visibility[targetIndex] = Math.min(1, visibility[targetIndex] + (event.decision === 'silence' ? .04 : .2));
+      technology[targetIndex] = Math.min(1, technology[targetIndex] + .06);
+      let score = relationScores[relationIndex(targetIndex, otherIndex)];
+      if (event.decision === 'reply') score += .32;
+      if (event.decision === 'deterrence') score -= .38;
+      if (event.decision === 'silence') score -= .05;
+      const state = score > .3 ? 1 : score < -.26 ? -1 : 0;
+      setRelation(targetIndex, otherIndex, THREE.MathUtils.clamp(score, -.95, .95), state);
+      lastCauses[targetIndex] = event.decision === 'silence' ? '信号静默协议' : '星际信号接触';
+      event.outcome = event.decision === 'reply'
+        ? `${target.name} 与 ${other.name} 建立脆弱通信链路`
+        : event.decision === 'deterrence'
+          ? `${target.name} 与 ${other.name} 进入互相威慑状态`
+          : `${target.name} 降低广播功率，外部可见度受到控制`;
+      return;
+    }
+
+    if (event.type === 'self-replicating-probes') {
+      machineAutonomy[targetIndex] = Math.min(1, machineAutonomy[targetIndex] + .28);
+      technology[targetIndex] = Math.min(1, technology[targetIndex] + .1);
+      probeModes[targetIndex] = event.runaway ? -1 : 1;
+      cohesion[targetIndex] = Math.max(0, cohesion[targetIndex] - (event.runaway ? .22 : .03));
+      lastCauses[targetIndex] = event.runaway ? '自治探针失控' : '探针网络扩张';
+      event.outcome = event.runaway
+        ? '探针网络与创造者争夺物质，边缘疆域持续失联'
+        : '无人探针建立航路，殖民前沿获得持续扩张加成';
+      return;
+    }
+
+    if (event.type === 'stellar-megastructure') {
+      if (event.unstable) {
+        const targetNodes = [];
+        for (let node = 0; node < nodeCount; node++) {
+          if (owners[node] === targetIndex) targetNodes.push(node);
+        }
+        targetNodes.filter((_, index) => index % 5 === 0).forEach((node) => {
+          strength[node] *= .42;
+        });
+        cohesion[targetIndex] = Math.max(0, cohesion[targetIndex] - .16);
+        lastCauses[targetIndex] = '巨构轨道失稳';
+        event.outcome = `${target.name} 的采能群发生碎片级联，多个恒星域受损`;
+      } else {
+        megastructures[targetIndex] = 1;
+        technology[targetIndex] = Math.min(1, technology[targetIndex] + .14);
+        lastCauses[targetIndex] = '恒星巨构供能';
+        event.outcome = `${target.name} 获得恒星尺度能源，疆域恢复与防御能力上升`;
+      }
+      return;
+    }
+
+    if (event.type === 'civilization-fracture') {
+      const childIndex = event.childSpeciesIndex;
+      const transferred = transferTerritory(targetIndex, childIndex, .3);
+      cohesion[targetIndex] = Math.max(0, cohesion[targetIndex] - .36);
+      cohesion[childIndex] = Math.max(.28, cohesion[childIndex]);
+      setRelation(targetIndex, childIndex, -.58, -1);
+      lastCauses[targetIndex] = `${civilizationData[childIndex].name} 脱离`;
+      lastCauses[childIndex] = '从母文明分裂独立';
+      event.outcome = `${civilizationData[childIndex].name} 接管 ${transferred} 个疆域，并与母文明进入对峙`;
+      return;
+    }
+
+    if (event.type === 'knowledge-ark') {
+      archives[targetIndex] = 1;
+      archiveReadyAt[targetIndex] = time + 18;
+      lastCauses[targetIndex] = '分散式知识方舟';
+      event.outcome = `${target.name} 建立可在文明崩溃后重新播种的档案网络`;
+      return;
+    }
+
+    if (event.type === 'uplift-experiment') {
+      const childIndex = event.childSpeciesIndex;
+      const transferred = transferTerritory(targetIndex, childIndex, .08);
+      uplifts[targetIndex] = 1;
+      uplifts[childIndex] = 1;
+      setRelation(targetIndex, childIndex, .62, 1);
+      lastCauses[targetIndex] = '提升物种计划';
+      lastCauses[childIndex] = '被定向演化为智慧物种';
+      event.outcome = `${civilizationData[childIndex].name} 在 ${transferred} 个恒星域形成独立文明`;
+    }
+  };
+
   let scheduledImpactIndex = 0;
+  let civilizationEventIndex = 0;
   while (scheduledImpactIndex < scheduledImpacts.length
     && scheduledImpacts[scheduledImpactIndex].impact.at < simulation.start) {
     const { impact } = scheduledImpacts[scheduledImpactIndex];
@@ -174,6 +322,11 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       applyNodeImpact(event, impact, time);
       scheduledImpactIndex++;
     }
+    while (civilizationEventIndex < civilizationEvents.length
+      && civilizationEvents[civilizationEventIndex].impactAt <= time) {
+      applyCivilizationEvent(civilizationEvents[civilizationEventIndex], time);
+      civilizationEventIndex++;
+    }
 
     const friendlyCounts = new Uint8Array(speciesCount);
     const conflictCounts = new Uint8Array(speciesCount);
@@ -189,7 +342,10 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       const owner = owners[node];
       if (owner < 0) continue;
       const species = civilizationData[owner];
-      const support = 1 + friendlyCounts[owner] * .045 - conflictCounts[owner] * .028;
+      const infrastructure = 1 + megastructures[owner] * .34 + technology[owner] * .16;
+      const socialStability = .82 + cohesion[owner] * .3;
+      const support = (1 + friendlyCounts[owner] * .045 - conflictCounts[owner] * .028)
+        * infrastructure * socialStability;
       strength[node] += (.032 + species.resilience * .018) * support * (1 - strength[node]);
       strength[node] = THREE.MathUtils.clamp(strength[node], 0, 1.35);
     }
@@ -236,7 +392,10 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
     civilizationData.forEach((species, speciesIndex) => {
       const territory = ownedBySpecies[speciesIndex];
       if (!seeded[speciesIndex] || territory.length === 0 || time >= expansionEnd) return;
-      const attempts = 1 + Math.floor(species.expansionRate + friendlyCounts[speciesIndex] * .34);
+      const probeBonus = probeModes[speciesIndex] > 0 ? .8 : 0;
+      const attempts = 1 + Math.floor(
+        species.expansionRate + friendlyCounts[speciesIndex] * .34 + probeBonus + technology[speciesIndex] * .28
+      );
       for (let attempt = 0; attempt < attempts; attempt++) {
         const frontier = [];
         territory.forEach((source) => {
@@ -283,6 +442,38 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
           setRelation(speciesIndex, defender, lowered, lowered < -.26 ? -1 : 0);
         }
       }
+    });
+
+    civilizationData.forEach((species, speciesIndex) => {
+      if (probeModes[speciesIndex] >= 0 || time % 17 !== speciesIndex % 17) return;
+      const frontierNodes = [];
+      for (let node = 0; node < nodeCount; node++) {
+        if (owners[node] === speciesIndex) frontierNodes.push(node);
+      }
+      if (frontierNodes.length <= 1) return;
+      const lostNode = frontierNodes[Math.floor(random() * frontierNodes.length)];
+      owners[lostNode] = -1;
+      strength[lostNode] = 0;
+      lastCauses[speciesIndex] = '失控探针吞噬边缘基础设施';
+    });
+
+    civilizationData.forEach((species, speciesIndex) => {
+      if (!archives[speciesIndex] || time < archiveReadyAt[speciesIndex] || time >= expansionEnd) return;
+      if (territoryCountFor(speciesIndex) > 0) return;
+      let revivalNode = species.homeNodeIndex;
+      if (disabledNodes[revivalNode] || owners[revivalNode] >= 0) {
+        revivalNode = -1;
+        for (let node = 0; node < nodeCount; node++) {
+          if (!disabledNodes[node] && owners[node] < 0) { revivalNode = node; break; }
+        }
+      }
+      if (revivalNode < 0) return;
+      owners[revivalNode] = speciesIndex;
+      strength[revivalNode] = .28;
+      archives[speciesIndex] = 0;
+      technology[speciesIndex] *= .82;
+      cohesion[speciesIndex] = Math.max(.42, cohesion[speciesIndex]);
+      lastCauses[speciesIndex] = '知识方舟完成文明复兴';
     });
 
     if (time >= Math.min(declineWindow.energyStart, declineWindow.fateStart)) {
@@ -336,6 +527,14 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       trends,
       active,
       ascended,
+      technology: technology.slice(),
+      visibility: visibility.slice(),
+      cohesion: cohesion.slice(),
+      machineAutonomy: machineAutonomy.slice(),
+      archives: archives.slice(),
+      megastructures: megastructures.slice(),
+      uplifts: uplifts.slice(),
+      probeModes: probeModes.slice(),
       relations: relationStates.slice(),
       relationScores: relationScores.slice(),
       causes: lastCauses.slice()
@@ -410,11 +609,22 @@ export function deriveCivilizationRuntime(position, simulationState, civilizatio
       if (relation > 0) friendlyNames.push(other.name);
       if (relation < 0) conflictNames.push(other.name);
     });
+    const statuses = [];
+    if (simulationState?.megastructures[index]) statuses.push('巨构供能');
+    if (simulationState?.probeModes[index] > 0) statuses.push('探针网络');
+    if (simulationState?.probeModes[index] < 0) statuses.push('探针失控');
+    if (simulationState?.archives[index]) statuses.push('方舟就绪');
+    if (simulationState?.uplifts[index]) statuses.push(species.originType === 'uplift' ? '提升文明' : '提升计划');
     return {
       alive,
       ascended,
       count: simulationState?.counts[index] || 0,
       trend: simulationState?.trends[index] || 0,
+      technology: simulationState?.technology[index] || 0,
+      visibility: simulationState?.visibility[index] || 0,
+      cohesion: simulationState?.cohesion[index] || 0,
+      machineAutonomy: simulationState?.machineAutonomy[index] || 0,
+      statuses,
       eventState,
       friendlyNames,
       conflictNames

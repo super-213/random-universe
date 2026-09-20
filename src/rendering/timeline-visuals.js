@@ -12,6 +12,10 @@ import { orbitalAngleAt } from '../domain/orbital-motion.js';
 import { applyMergerGravity, applyStellarGravity, mergerPersistenceAt } from '../simulation/black-hole-gravity.js';
 import { applyTransientGravity, transientPersistenceAt } from '../simulation/transient-events.js';
 import { animateBlackHoleVisual, setBlackHoleIntensity } from './black-hole.js';
+import {
+  animateCivilizationEventVisual,
+  updateCivilizationEventVisual
+} from './civilization-events.js';
 
 const normalBackground = new THREE.Color(0x050508);
 const hotBackground = new THREE.Color(0x2a1108);
@@ -250,6 +254,13 @@ export function updateEpochVisuals(position, context) {
   cosmicEvents.forEach((event) => {
     if (position < event.impactAt) return;
     const aftermath = THREE.MathUtils.smoothstep(position, event.impactAt, event.impactAt + 24);
+    if (event.type === 'stellar-megastructure' && !event.unstable) {
+      const offset = event.sourceIndex * 3;
+      const occlusion = 1 - aftermath * .58;
+      colorArray[offset] *= occlusion;
+      colorArray[offset + 1] *= occlusion * .96;
+      colorArray[offset + 2] *= occlusion * .82;
+    }
     event.starImpacts.forEach((impact) => {
       const offset = impact.index * 3;
       positionArray[offset] += impact.kick[0] * aftermath;
@@ -574,7 +585,16 @@ export function updateCosmicEvents(position, context) {
       ? mergerPersistenceAt(position, event)
       : 0;
     const transientPersistence = transientPersistenceAt(position, event);
-    const persistence = Math.max(mergerPersistence, transientPersistence);
+    const civilizationPersistence = event.category === 'civilization'
+      && position >= event.impactAt
+      && position <= (event.persistentUntil ?? -Infinity) + (event.persistenceFadeDuration ?? 0)
+      ? 1 - THREE.MathUtils.smoothstep(
+          position,
+          event.persistentUntil,
+          event.persistentUntil + (event.persistenceFadeDuration ?? 20)
+        )
+      : 0;
+    const persistence = Math.max(mergerPersistence, transientPersistence, civilizationPersistence);
     const persistentRemnant = position >= event.impactAt && persistence > 0;
     const visible = !fateStarted && (active || persistentRemnant) && mode === 'explorer';
     event.group.visible = visible;
@@ -584,6 +604,11 @@ export function updateCosmicEvents(position, context) {
     const visualPhase = Math.min(1, phase);
     event.group.userData.phase = visualPhase;
     const effect = event.group.userData.effect;
+
+    if (event.category === 'civilization') {
+      updateCivilizationEventVisual(event, visualPhase, persistence);
+      return;
+    }
 
     if (!active && transientPersistence > 0) {
       if (event.visual === 'kilonova') {
@@ -919,7 +944,9 @@ export function animateCosmicEvents(now, context) {
     if (!event.group.visible) return;
     const phase = event.group.userData.phase;
     const effect = event.group.userData.effect;
-    if (event.visual === 'supernova' || event.visual === 'nova' || event.visual === 'kilonova') {
+    if (event.category === 'civilization') {
+      animateCivilizationEventVisual(event, now);
+    } else if (event.visual === 'supernova' || event.visual === 'nova' || event.visual === 'kilonova') {
       effect.innerFlash.material.rotation = now * .00007;
       effect.photosphere.material.rotation = -now * .000035;
       effect.ejecta.rotation.y = Math.sin(now * .00021) * .035;

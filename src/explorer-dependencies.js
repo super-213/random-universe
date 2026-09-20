@@ -14,6 +14,7 @@ export {
 export { makeGlowTexture, makeRingTexture } from './rendering/textures.js';
 export { animateBlackHoleVisual, createBlackHoleVisual } from './rendering/black-hole.js';
 export { applyCivilizationSnapshot, syncCivilizationHosts } from './rendering/civilizations.js';
+export { createCivilizationEventVisual } from './rendering/civilization-events.js';
 export { animateCosmicEvents, updateCosmicEvents, updateEpochVisuals } from './rendering/timeline-visuals.js';
 export { createMergerGravityField, createStellarGravityState } from './simulation/black-hole-gravity.js';
 export {
@@ -27,6 +28,7 @@ export {
   deriveCivilizationRuntime,
   findDominantRelationship
 } from './simulation/civilization.js';
+export { createCivilizationEventPlan } from './simulation/civilization-events.js';
 export { expandEventSchedule } from './simulation/event-occurrence.js';
 export {
   applyTransientImpactScales,
