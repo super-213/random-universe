@@ -8,6 +8,7 @@ export function createCosmicAudio() {
   let filter = null;
   let enabled = false;
   let lastEventId = null;
+  let suspendTimer = null;
 
   function ensureContext() {
     if (context) return;
@@ -40,11 +41,38 @@ export function createCosmicAudio() {
     ensureContext();
     enabled = Boolean(nextEnabled && context);
     if (!context) return false;
+    if (suspendTimer !== null) {
+      window.clearTimeout(suspendTimer);
+      suspendTimer = null;
+    }
     if (enabled) await context.resume();
     master.gain.cancelScheduledValues(context.currentTime);
     master.gain.linearRampToValueAtTime(enabled ? .032 : 0, context.currentTime + .45);
-    if (!enabled) window.setTimeout(() => context?.suspend(), 560);
+    if (!enabled) {
+      suspendTimer = window.setTimeout(() => {
+        suspendTimer = null;
+        context?.suspend();
+      }, 560);
+    }
     return enabled;
+  }
+
+  function dispose() {
+    enabled = false;
+    if (suspendTimer !== null) window.clearTimeout(suspendTimer);
+    suspendTimer = null;
+    try { drone?.stop(); } catch {}
+    try { overtone?.stop(); } catch {}
+    drone?.disconnect();
+    overtone?.disconnect();
+    filter?.disconnect();
+    master?.disconnect();
+    context?.close();
+    context = null;
+    master = null;
+    drone = null;
+    overtone = null;
+    filter = null;
   }
 
   function pulse(kind = 'event', intensity = .5) {
@@ -81,6 +109,7 @@ export function createCosmicAudio() {
   return {
     get enabled() { return enabled; },
     get supported() { return Boolean(window.AudioContext || window.webkitAudioContext); },
+    dispose,
     pulse,
     setEnabled,
     update

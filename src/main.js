@@ -4,7 +4,7 @@ import { createSeededRandom } from './domain/random.js';
 import { createUniverse } from './domain/universe.js';
 import { galaxyTypes as galaxyTypeLabels } from './domain/catalog.js';
 import { createLocalGalaxyGroup } from './domain/local-group.js';
-import { getPointTexture } from './rendering/textures.js';
+import { disposeSharedTextures, getPointTexture } from './rendering/textures.js';
 import { createUniverseRenderer } from './rendering/renderer.js';
 import { createCosmicAudio } from './audio/cosmic-audio.js';
 import { civilizationObservation } from './simulation/observation.js';
@@ -150,6 +150,8 @@ let lastTimelineUpdateAt = 0;
 let lastCoordinateUpdateAt = 0;
 let cosmicEvents = [];
 let timelineMarkerResizeFrame = null;
+let animationFrameId = null;
+let pageDisposed = false;
 let timelineViewport = { start: 0, end: 1000 };
 let timelineEventFilter = 'all';
 let timelineSnapEnabled = true;
@@ -3309,7 +3311,9 @@ function selectKeyboardStar(direction) {
 }
 
 function animate(now) {
-  requestAnimationFrame(animate);
+  animationFrameId = null;
+  if (pageDisposed || document.hidden) return;
+  animationFrameId = requestAnimationFrame(animate);
   const delta = Math.min(0.05, (now - lastFrame) / 1000);
   lastFrame = now;
   updateTransition(now);
@@ -3378,6 +3382,59 @@ function animate(now) {
   }
   renderer.render(scene, camera);
 }
+
+function startAnimation() {
+  if (pageDisposed || document.hidden || animationFrameId !== null) return;
+  lastFrame = performance.now();
+  animationFrameId = requestAnimationFrame(animate);
+}
+
+function stopAnimation() {
+  if (animationFrameId === null) return;
+  cancelAnimationFrame(animationFrameId);
+  animationFrameId = null;
+}
+
+function disposePageResources() {
+  if (pageDisposed) return;
+  pageDisposed = true;
+  stopAnimation();
+  if (timelineMarkerResizeFrame !== null) {
+    cancelAnimationFrame(timelineMarkerResizeFrame);
+    timelineMarkerResizeFrame = null;
+  }
+  controls?.dispose();
+  cosmicAudio.dispose();
+  [
+    universeGroup,
+    galaxyGroup,
+    localGroupGroup,
+    epochEffectsGroup,
+    remnantGroup,
+    heatDeathGroup,
+    cosmicFateGroup,
+    cosmicEventGroup
+  ].forEach(disposeGroup);
+  disposeSharedTextures();
+  scene.clear();
+  renderer.renderLists?.dispose();
+  renderer.dispose();
+  renderer.forceContextLoss();
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) stopAnimation();
+  else startAnimation();
+});
+
+window.addEventListener('pagehide', (event) => {
+  stopAnimation();
+  if (!event.persisted) disposePageResources();
+});
+
+window.addEventListener('pageshow', (event) => {
+  if (event.persisted) startAnimation();
+});
 
 window.addEventListener('pointermove', (event) => {
   pointer.x = (event.clientX / innerWidth) * 2 - 1;
@@ -3782,4 +3839,4 @@ universe = createUniverse(requestedSeed || undefined);
 syncUniverseUrl();
 updateUniverseData(universe);
 buildUniverseObject();
-animate(performance.now());
+startAnimation();

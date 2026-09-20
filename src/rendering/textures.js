@@ -4,6 +4,15 @@ let sharedPointTexture = null;
 let sharedRingTexture = null;
 let sharedGlowTexture = null;
 
+export function disposeSharedTextures() {
+  [sharedPointTexture, sharedRingTexture, sharedGlowTexture].forEach((texture) => {
+    texture?.dispose();
+  });
+  sharedPointTexture = null;
+  sharedRingTexture = null;
+  sharedGlowTexture = null;
+}
+
 export function makeRingTexture() {
   if (sharedRingTexture) return sharedRingTexture;
   const c = document.createElement('canvas');
