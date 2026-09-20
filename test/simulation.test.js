@@ -225,6 +225,7 @@ test('speculative civilization event plans are seeded, conditional, and cover ev
     habitatPositions[index * 3 + 2] = Math.sin(index * .71) * (2 + index * .03);
   }
   const seen = new Set();
+  const fleetOutcomes = new Set();
   let foundConditionalAbsence = false;
   for (let seedIndex = 0; seedIndex < 300; seedIndex++) {
     const universe = createUniverse(seedFor(seedIndex));
@@ -247,7 +248,16 @@ test('speculative civilization event plans are seeded, conditional, and cover ev
     assert.equal(first.speciesProfiles.length, civilizationData.length);
     assert.ok(first.speciesProfiles.every((profile) => profile.biospherePath.length >= 4));
     assert.ok(first.fermiScenario?.label);
-    first.events.forEach((event) => seen.add(event.type));
+    first.events.forEach((event) => {
+      seen.add(event.type);
+      if (event.type === 'intergalactic-diaspora') {
+        fleetOutcomes.add(event.fleetOutcome);
+        assert.ok(event.fleetDistanceMly > 1);
+        assert.ok(event.fleetSpeed > 0 && event.fleetSpeed < 1);
+        assert.ok(event.fleetPopulation > 0);
+        assert.ok(event.fleetSupplies > 0 && event.fleetSupplies <= 1);
+      }
+    });
     if (first.events.length < civilizationEventTypes().length) foundConditionalAbsence = true;
     first.childSpecies.forEach((child, index) => {
       assert.equal(first.events.some((event) => event.childSpeciesIndex === 6 + index), true);
@@ -255,6 +265,7 @@ test('speculative civilization event plans are seeded, conditional, and cover ev
     });
   }
   assert.deepEqual([...seen].sort(), civilizationEventTypes().sort());
+  assert.deepEqual([...fleetOutcomes].sort(), ['arrived', 'divided', 'lost', 'returned']);
   assert.equal(foundConditionalAbsence, true);
 });
 
@@ -438,6 +449,7 @@ test('causal evolution chains update biosphere, morphology, engineering, migrati
     cosmicEvents: events
   });
   const snapshot = simulation.snapshots.find((item) => item.time === 540);
+  const arrivalSnapshot = simulation.snapshots.find((item) => item.time === 600);
   assert.equal(snapshot.biosphereStages[0], 5);
   assert.equal(snapshot.filterStates[0], 1);
   assert.equal(snapshot.migrationModes[1], 1);
@@ -447,7 +459,9 @@ test('causal evolution chains update biosphere, morphology, engineering, migrati
   assert.equal(snapshot.artifacts[0], 1);
   assert.equal(snapshot.signalDelays[1], 42);
   assert.equal(snapshot.causalResponses[2], 1);
-  assert.equal(snapshot.diasporaModes[2], 1);
+  assert.equal(snapshot.fleetStates[2], 1);
+  assert.ok(snapshot.fleetProgress[2] > 0);
+  assert.equal(arrivalSnapshot.diasporaModes[2], 1);
   assert.equal(snapshot.blackHoleHabitats[2], 1);
   assert.equal(snapshot.escapeProjects[2], 1);
   assert.equal(snapshot.energyTiers[2], 4);
@@ -458,8 +472,12 @@ test('causal evolution chains update biosphere, morphology, engineering, migrati
   assert.ok(snapshot.research[2] > 0);
   assert.ok(snapshot.stability[2] > 0);
   assert.ok(snapshot.technologyMasks[2] & technologyBits.universeEscape);
-  assert.ok(snapshot.externalGalaxyIndices[2] > 0);
-  assert.ok(snapshot.externalPopulations[2] > 0);
+  assert.ok(arrivalSnapshot.externalGalaxyIndices[2] > 0);
+  assert.ok(arrivalSnapshot.externalPopulations[2] > 0);
+  assert.ok(snapshot.materials[2] > 0);
+  assert.ok(snapshot.compute[2] > 0);
+  assert.ok(snapshot.biosphereCapacity[2] > 0);
+  assert.ok(snapshot.logisticsThroughput[2] > 0);
   assert.ok(snapshot.fermiAwareness.some((value) => value === 1));
   assert.ok(events.every((event) => event.outcome !== '事件仍在演化'));
 });

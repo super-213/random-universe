@@ -8,7 +8,12 @@
     <title>随机宇宙发生器</title>
   </head>
   <body>
-    <canvas id="universe" aria-hidden="true"></canvas>
+    <canvas
+      id="universe"
+      tabindex="0"
+      role="region"
+      aria-label="可交互宇宙星图。进入宇宙后使用左右方向键切换可见恒星，按回车查看。"
+    ></canvas>
 
     <div class="grain" aria-hidden="true"></div>
 
@@ -28,6 +33,8 @@
         <span class="button-icon">↻</span>
       </button>
     </header>
+
+    <p class="sr-only" id="star-navigation-status" aria-live="polite"></p>
 
     <main>
       <section class="generator-view is-active" id="generator-view" aria-labelledby="universe-title">
@@ -182,6 +189,20 @@
           <h2 id="galaxy-name">赫利俄斯星系</h2>
           <p id="galaxy-meta">棒旋星系 · 直径 18.4 万光年</p>
           <button class="local-group-toggle" id="toggle-local-group" type="button" aria-pressed="false">查看局部星系群</button>
+          <button
+            class="observation-tools-toggle"
+            id="toggle-observation-tools"
+            type="button"
+            aria-label="观察设置"
+            aria-expanded="false"
+            aria-controls="observation-tools"
+          >观察设置</button>
+          <nav class="observation-tools" id="observation-tools" aria-label="沉浸与无障碍观察工具">
+            <button type="button" id="toggle-sound" aria-pressed="false">声音 关</button>
+            <button type="button" id="toggle-contrast" aria-pressed="false">高对比</button>
+            <button type="button" id="toggle-colorblind" aria-pressed="false">色盲配色</button>
+            <span id="performance-status" aria-label="渲染与推演后端">WebGL · 主线程</span>
+          </nav>
         </div>
 
         <div class="local-group-readout" id="local-group-readout" aria-live="polite">
@@ -250,6 +271,10 @@
           <section class="chronicle-section">
             <div class="chronicle-section-head"><span>文明内部状态</span><small>当前快照</small></div>
             <div class="chronicle-internal-metrics" id="chronicle-internal-metrics"></div>
+          </section>
+          <section class="chronicle-section">
+            <div class="chronicle-section-head"><span>星系际航行</span><small>舰队遥测</small></div>
+            <div class="chronicle-flight" id="chronicle-flight">尚未建立跨星系航线</div>
           </section>
           <section class="chronicle-section">
             <div class="chronicle-section-head"><span>观测层</span><small>真值 / 信号 / 推测</small></div>

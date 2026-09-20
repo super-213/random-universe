@@ -6,6 +6,7 @@ import {
   meetsEscapePrerequisites,
   technologyBits
 } from './technology-tree.js';
+import { fleetProgress, fleetStates, fleetTravelDuration } from './intergalactic-travel.js';
 
 const morphologyCodes = {
   '生物共同体': 1,
@@ -118,12 +119,28 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
   const technologyMasks = new Uint16Array(speciesCount);
   const internalPopulation = new Float32Array(speciesCount);
   const resources = new Float32Array(speciesCount);
+  const materials = new Float32Array(speciesCount);
   const energyReserves = new Float32Array(speciesCount);
+  const compute = new Float32Array(speciesCount);
+  const biosphereCapacity = new Float32Array(speciesCount);
+  const logisticsThroughput = new Float32Array(speciesCount);
   const governance = new Float32Array(speciesCount);
   const research = new Float32Array(speciesCount);
   const stability = new Float32Array(speciesCount);
   const externalGalaxyIndices = new Uint8Array(speciesCount);
   const externalPopulations = new Float32Array(speciesCount);
+  const fleetState = new Int8Array(speciesCount);
+  const fleetTargetGalaxyIndices = new Uint8Array(speciesCount);
+  const fleetDepartureAt = new Float32Array(speciesCount);
+  const fleetArrivalAt = new Float32Array(speciesCount);
+  const fleetSpeeds = new Float32Array(speciesCount);
+  const fleetPopulations = new Float32Array(speciesCount);
+  const fleetSupplies = new Float32Array(speciesCount);
+  const fleetInitialSupplies = new Float32Array(speciesCount);
+  const fleetDistances = new Float32Array(speciesCount);
+  const fleetProgressValues = new Float32Array(speciesCount);
+  const fleetOutcomeStates = new Int8Array(speciesCount);
+  const fleetEvents = Array(speciesCount).fill(null);
   const archiveReadyAt = new Float32Array(speciesCount);
   archiveReadyAt.fill(Infinity);
   civilizationData.forEach((species, index) => {
@@ -133,7 +150,10 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
     machineAutonomy[index] = species.machineAutonomy ?? .18;
     morphologyModes[index] = morphologyCodes[species.morphology] || 1;
     resources[index] = THREE.MathUtils.clamp(.48 + species.resilience * .12 + randomBetween(random, -.05, .05), .3, .78);
+    materials[index] = resources[index];
     energyReserves[index] = THREE.MathUtils.clamp(.34 + technology[index] * .28, .25, .64);
+    compute[index] = THREE.MathUtils.clamp(.18 + technology[index] * .34, .16, .58);
+    biosphereCapacity[index] = THREE.MathUtils.clamp(.42 + species.resilience * .18, .34, .76);
     governance[index] = THREE.MathUtils.clamp(.24 + species.cooperation * .36 + cohesion[index] * .24, .22, .82);
     research[index] = THREE.MathUtils.clamp(.18 + technology[index] * .54, .18, .62);
     stability[index] = THREE.MathUtils.clamp(.26 + cohesion[index] * .58, .3, .84);
@@ -657,24 +677,38 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
 
     if (event.type === 'intergalactic-diaspora') {
       const canCrossGalaxies = Boolean(technologyMasks[targetIndex] & technologyBits.stellarEngine);
-      if (event.diasporaSuccess && canCrossGalaxies) {
-        diasporaModes[targetIndex] = event.diasporaMode === '星系桥殖民地' ? 1 : 2;
-        externalGalaxyIndices[targetIndex] = event.targetCompanionIndex || targetIndex % 5 + 1;
-        externalPopulations[targetIndex] = Math.max(.18, internalPopulation[targetIndex] * .08);
-        technology[targetIndex] = Math.min(1, technology[targetIndex] + .1);
-        visibility[targetIndex] = event.diasporaMode === '星系际流浪社会'
-          ? Math.max(0, visibility[targetIndex] - .08)
-          : Math.min(1, visibility[targetIndex] + .04);
-        lastCauses[targetIndex] = event.diasporaMode;
-        event.outcome = `${target.name} 成功越过星系边界，${event.diasporaMode}开始独立存续`;
-      } else {
+      if (!canCrossGalaxies) {
         diasporaModes[targetIndex] = -1;
         cohesion[targetIndex] = Math.max(0, cohesion[targetIndex] - .09);
-        lastCauses[targetIndex] = '跨星系舰队失联';
-        event.outcome = canCrossGalaxies
-          ? `${target.name} 的跨星系舰队越过观测极限后失联，只剩引力助推记录`
-          : `${target.name} 尚未完成恒星推进器前置技术，跨星系航线无法建立`;
+        lastCauses[targetIndex] = '跨星系航线未能建立';
+        event.outcome = `${target.name} 尚未完成恒星推进器前置技术，跨星系航线无法建立`;
+        return;
       }
+      const population = Math.min(internalPopulation[targetIndex] * .18, event.fleetPopulation || .16);
+      const duration = fleetTravelDuration(event.fleetDistanceMly || 2.1, event.fleetSpeed || .2);
+      const outcomeStates = {
+        arrived: fleetStates.arrived,
+        divided: fleetStates.divided,
+        lost: fleetStates.lost,
+        returned: fleetStates.returned
+      };
+      fleetState[targetIndex] = fleetStates.outbound;
+      fleetOutcomeStates[targetIndex] = outcomeStates[event.fleetOutcome]
+        || (event.diasporaSuccess ? fleetStates.arrived : fleetStates.lost);
+      fleetTargetGalaxyIndices[targetIndex] = event.targetCompanionIndex || targetIndex % 5 + 1;
+      fleetDepartureAt[targetIndex] = time;
+      fleetArrivalAt[targetIndex] = time + duration;
+      fleetSpeeds[targetIndex] = event.fleetSpeed || .2;
+      fleetPopulations[targetIndex] = Math.max(.04, population);
+      fleetInitialSupplies[targetIndex] = event.fleetSupplies || .7;
+      fleetSupplies[targetIndex] = fleetInitialSupplies[targetIndex];
+      fleetDistances[targetIndex] = event.fleetDistanceMly || 2.1;
+      fleetEvents[targetIndex] = event;
+      internalPopulation[targetIndex] = Math.max(.02, internalPopulation[targetIndex] - population);
+      materials[targetIndex] = Math.max(.04, materials[targetIndex] - .08);
+      energyReserves[targetIndex] = Math.max(.04, energyReserves[targetIndex] - .06);
+      lastCauses[targetIndex] = '跨星系舰队启航';
+      event.outcome = `${target.name} 舰队以 ${Math.round(fleetSpeeds[targetIndex] * 100)}% 光速启航，预计航行 ${duration} 个时间单位`;
       return;
     }
 
@@ -755,6 +789,43 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       civilizationEventIndex++;
     }
 
+    for (let speciesIndex = 0; speciesIndex < speciesCount; speciesIndex++) {
+      if (fleetState[speciesIndex] !== fleetStates.outbound) continue;
+      const progress = fleetProgress(time, fleetDepartureAt[speciesIndex], fleetArrivalAt[speciesIndex]);
+      fleetProgressValues[speciesIndex] = progress;
+      fleetSupplies[speciesIndex] = Math.max(.02, fleetInitialSupplies[speciesIndex] * (1 - progress * .74));
+      fleetPopulations[speciesIndex] = Math.max(.01, fleetPopulations[speciesIndex] * .9992);
+      const outcome = fleetOutcomeStates[speciesIndex];
+      const resolvesAt = outcome === fleetStates.divided ? .58
+        : outcome === fleetStates.lost ? .68 : outcome === fleetStates.returned ? .76 : 1;
+      if (progress < resolvesAt) continue;
+      const event = fleetEvents[speciesIndex];
+      const species = civilizationData[speciesIndex];
+      fleetState[speciesIndex] = outcome;
+      if (outcome === fleetStates.arrived || outcome === fleetStates.divided) {
+        diasporaModes[speciesIndex] = outcome === fleetStates.arrived ? 1 : 2;
+        externalGalaxyIndices[speciesIndex] = fleetTargetGalaxyIndices[speciesIndex];
+        externalPopulations[speciesIndex] = fleetPopulations[speciesIndex] * (outcome === fleetStates.divided ? .72 : 1);
+        technology[speciesIndex] = Math.min(1, technology[speciesIndex] + .1);
+        lastCauses[speciesIndex] = outcome === fleetStates.arrived ? '跨星系舰队抵达' : '航行文明途中分化';
+        if (event) event.outcome = outcome === fleetStates.arrived
+          ? `${species.name} 舰队抵达目标星系，建立人口 ${externalPopulations[speciesIndex].toFixed(2)} 万亿的桥头聚居地`
+          : `${species.name} 舰队在航程中分化为自治支系，并在目标星系边缘独立存续`;
+      } else if (outcome === fleetStates.returned) {
+        internalPopulation[speciesIndex] += fleetPopulations[speciesIndex] * .72;
+        cohesion[speciesIndex] = Math.min(1, cohesion[speciesIndex] + .025);
+        diasporaModes[speciesIndex] = -1;
+        lastCauses[speciesIndex] = '跨星系舰队返航';
+        if (event) event.outcome = `${species.name} 舰队因补给余量不足返航，约七成人口重新并入母文明`;
+      } else {
+        diasporaModes[speciesIndex] = -1;
+        fleetPopulations[speciesIndex] = 0;
+        cohesion[speciesIndex] = Math.max(0, cohesion[speciesIndex] - .08);
+        lastCauses[speciesIndex] = '跨星系舰队失联';
+        if (event) event.outcome = `${species.name} 舰队在航程 ${Math.round(progress * 100)}% 处失联，补给与人口遥测终止`;
+      }
+    }
+
     civilizationData.forEach((species, speciesIndex) => {
       const advancement = advanceTechnologyTree({
         mask: technologyMasks[speciesIndex],
@@ -772,6 +843,7 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       if (advancement.mask === technologyMasks[speciesIndex]) return;
       technologyMasks[speciesIndex] = advancement.mask;
       resources[speciesIndex] = Math.max(.03, resources[speciesIndex] - advancement.cost.resources);
+      materials[speciesIndex] = Math.max(.03, materials[speciesIndex] - advancement.cost.resources);
       energyReserves[speciesIndex] = Math.max(.03, energyReserves[speciesIndex] - advancement.cost.energy);
       stability[speciesIndex] = Math.max(.08, stability[speciesIndex] - advancement.cost.stability);
       lastCauses[speciesIndex] = `${advancement.unlocked.at(-1)} 技术节点解锁`;
@@ -1018,13 +1090,36 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
           1
         );
         energyReserves[speciesIndex] += (targetEnergy - energyReserves[speciesIndex]) * .075;
-        const targetResources = THREE.MathUtils.clamp(
+        const targetMaterials = THREE.MathUtils.clamp(
           .32 + Math.min(.34, counts[speciesIndex] / 150) + terraforming[speciesIndex] * .08
             - internalPopulation[speciesIndex] / capacity * .12 - conflictPressure * .16,
           .08,
           1
         );
-        resources[speciesIndex] += (targetResources - resources[speciesIndex]) * .055;
+        materials[speciesIndex] += (targetMaterials - materials[speciesIndex]) * .055;
+        const targetCompute = THREE.MathUtils.clamp(
+          .12 + technology[speciesIndex] * .4 + research[speciesIndex] * .2
+            + substrateModes[speciesIndex] * .18 + energyReserves[speciesIndex] * .08,
+          .06,
+          1
+        );
+        compute[speciesIndex] += (targetCompute - compute[speciesIndex]) * .052;
+        const targetBiosphere = THREE.MathUtils.clamp(
+          .3 + terraforming[speciesIndex] * .22 + biosphereStages[speciesIndex] * .035
+            - internalPopulation[speciesIndex] / capacity * .15 - conflictPressure * .12,
+          .06,
+          1
+        );
+        biosphereCapacity[speciesIndex] += (targetBiosphere - biosphereCapacity[speciesIndex]) * .048;
+        logisticsThroughput[speciesIndex] = THREE.MathUtils.clamp(
+          (materials[speciesIndex] + energyReserves[speciesIndex] + compute[speciesIndex]) / 3
+            * (.45 + governance[speciesIndex] * .35 + stability[speciesIndex] * .2)
+            * Math.min(1, .25 + counts[speciesIndex] / 80),
+          0,
+          1
+        );
+        resources[speciesIndex] = materials[speciesIndex] * .5
+          + biosphereCapacity[speciesIndex] * .3 + logisticsThroughput[speciesIndex] * .2;
         const targetGovernance = THREE.MathUtils.clamp(
           .22 + species.cooperation * .26 + cohesion[speciesIndex] * .34
             + causalResponses[speciesIndex] * .04 - conflictPressure * .18,
@@ -1071,7 +1166,11 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       populations: internalPopulation.slice(),
       infrastructureCapacity,
       resources: resources.slice(),
+      materials: materials.slice(),
       energyReserves: energyReserves.slice(),
+      compute: compute.slice(),
+      biosphereCapacity: biosphereCapacity.slice(),
+      logisticsThroughput: logisticsThroughput.slice(),
       governance: governance.slice(),
       research: research.slice(),
       stability: stability.slice(),
@@ -1107,6 +1206,15 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       technologyMasks: technologyMasks.slice(),
       externalGalaxyIndices: externalGalaxyIndices.slice(),
       externalPopulations: externalPopulations.slice(),
+      fleetStates: fleetState.slice(),
+      fleetTargetGalaxyIndices: fleetTargetGalaxyIndices.slice(),
+      fleetDepartureAt: fleetDepartureAt.slice(),
+      fleetArrivalAt: fleetArrivalAt.slice(),
+      fleetSpeeds: fleetSpeeds.slice(),
+      fleetPopulations: fleetPopulations.slice(),
+      fleetSupplies: fleetSupplies.slice(),
+      fleetDistances: fleetDistances.slice(),
+      fleetProgress: fleetProgressValues.slice(),
       energyTiers,
       relations: relationStates.slice(),
       relationScores: relationScores.slice(),
@@ -1221,6 +1329,9 @@ export function deriveCivilizationRuntime(position, simulationState, civilizatio
     if (simulationState?.diasporaModes[index] === 1) statuses.push('星系桥殖民地');
     if (simulationState?.diasporaModes[index] === 2) statuses.push('星系际流浪');
     if (simulationState?.diasporaModes[index] < 0) statuses.push('跨星系失联');
+    if (simulationState?.fleetStates?.[index] === fleetStates.outbound) statuses.push('跨星系航行中');
+    if (simulationState?.fleetStates?.[index] === fleetStates.divided) statuses.push('航行支系分化');
+    if (simulationState?.fleetStates?.[index] === fleetStates.returned) statuses.push('跨星系舰队返航');
     if (simulationState?.blackHoleHabitats[index] > 0) statuses.push('黑洞能源');
     if (simulationState?.blackHoleHabitats[index] < 0) statuses.push('黑洞设施失稳');
     if (simulationState?.escapeProjects[index] > 0) statuses.push('母宇宙外存续');
@@ -1239,12 +1350,25 @@ export function deriveCivilizationRuntime(position, simulationState, civilizatio
       technologyMask: simulationState?.technologyMasks?.[index] || 0,
       population: simulationState?.populations?.[index] || 0,
       resources: simulationState?.resources?.[index] || 0,
+      materials: simulationState?.materials?.[index] || 0,
       energy: simulationState?.energyReserves?.[index] || 0,
+      compute: simulationState?.compute?.[index] || 0,
+      biosphere: simulationState?.biosphereCapacity?.[index] || 0,
+      logistics: simulationState?.logisticsThroughput?.[index] || 0,
       governance: simulationState?.governance?.[index] || 0,
       research: simulationState?.research?.[index] || 0,
       stability: simulationState?.stability?.[index] || 0,
       externalGalaxyIndex: simulationState?.externalGalaxyIndices?.[index] || 0,
       externalPopulation: simulationState?.externalPopulations?.[index] || 0,
+      fleetState: simulationState?.fleetStates?.[index] || 0,
+      fleetTargetGalaxyIndex: simulationState?.fleetTargetGalaxyIndices?.[index] || 0,
+      fleetDepartureAt: simulationState?.fleetDepartureAt?.[index] || 0,
+      fleetArrivalAt: simulationState?.fleetArrivalAt?.[index] || 0,
+      fleetSpeed: simulationState?.fleetSpeeds?.[index] || 0,
+      fleetPopulation: simulationState?.fleetPopulations?.[index] || 0,
+      fleetSupplies: simulationState?.fleetSupplies?.[index] || 0,
+      fleetDistance: simulationState?.fleetDistances?.[index] || 0,
+      fleetProgress: simulationState?.fleetProgress?.[index] || 0,
       statuses,
       eventState,
       friendlyNames,

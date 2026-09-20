@@ -40,7 +40,26 @@ export function renderCausalGraph(container, history, timeLabel, universe) {
   const svg = svgElement('svg', { role: 'img', 'aria-label': '文明事件因果图', viewBox: '0 0 620 300' });
   const viewport = svgElement('g');
   svg.appendChild(viewport);
-  container.append(controls, svg);
+  const textEquivalent = document.createElement('details');
+  textEquivalent.className = 'causal-text-equivalent';
+  const summary = document.createElement('summary');
+  summary.textContent = '读取文本因果链';
+  const list = document.createElement('ol');
+  history.forEach(({ event, role }) => {
+    const item = document.createElement('li');
+    const source = event.sourceEventId
+      ? history.find((entry) => entry.event.id === event.sourceEventId)?.event.label
+      : null;
+    item.textContent = `${timeLabel(event.impactAt, universe)}：${event.label}（${role}）${source ? `，由“${source}”导致` : ''}。${event.outcome || event.message}`;
+    list.appendChild(item);
+  });
+  if (!history.length) {
+    const item = document.createElement('li');
+    item.textContent = '尚无可描述的因果事件。';
+    list.appendChild(item);
+  }
+  textEquivalent.append(summary, list);
+  container.append(controls, svg, textEquivalent);
   graphStates.set(container, {
     scale: previous.scale,
     x: previous.x,

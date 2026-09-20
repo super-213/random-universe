@@ -153,7 +153,7 @@ export function renderCivilizationRows({ position, simulationState, runtimeState
     if (state.eventState.causes.length) details.push(`受 ${state.eventState.causes.join('、')} 影响`);
     if (state.statuses.length) details.push(state.statuses.join('、'));
     if (state.alive) {
-      details.push(`${energyTierLabels[state.energyTier] || '前工业能源'} · 人口 ${state.population.toFixed(2)} 万亿 · 资源 ${(state.resources * 100).toFixed(0)} · 能源 ${(state.energy * 100).toFixed(0)} · 治理 ${(state.governance * 100).toFixed(0)} · 科研 ${(state.research * 100).toFixed(0)} · 稳定 ${(state.stability * 100).toFixed(0)}`);
+      details.push(`${energyTierLabels[state.energyTier] || '前工业能源'} · 人口 ${state.population.toFixed(2)} 万亿 · 物质 ${(state.materials * 100).toFixed(0)} · 能源 ${(state.energy * 100).toFixed(0)} · 算力 ${(state.compute * 100).toFixed(0)} · 承载力 ${(state.biosphere * 100).toFixed(0)} · 物流 ${(state.logistics * 100).toFixed(0)} · 治理 ${(state.governance * 100).toFixed(0)} · 科研 ${(state.research * 100).toFixed(0)} · 稳定 ${(state.stability * 100).toFixed(0)}`);
     }
     const title = state.ascended ? '1% 概率的高维转化：已脱离普通物质宿主' : details.join('；');
     if (row.title !== title) row.title = title;

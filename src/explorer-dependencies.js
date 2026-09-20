@@ -23,11 +23,11 @@ export {
   selectBlackHoleProgenitors
 } from './simulation/compact-objects.js';
 export {
-  buildCivilizationSimulation,
   civilizationSnapshotAt,
   deriveCivilizationRuntime,
   findDominantRelationship
 } from './simulation/civilization.js';
+export { buildCivilizationSimulationAsync } from './simulation/civilization-worker-client.js';
 export { createCivilizationEventPlan } from './simulation/civilization-events.js';
 export { expandEventSchedule } from './simulation/event-occurrence.js';
 export {
