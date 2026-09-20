@@ -2085,10 +2085,6 @@ function animate(now) {
 window.addEventListener('pointermove', (event) => {
   pointer.x = (event.clientX / innerWidth) * 2 - 1;
   pointer.y = -(event.clientY / innerHeight) * 2 + 1;
-  const cursor = $('#cursor');
-  cursor.style.left = `${event.clientX}px`;
-  cursor.style.top = `${event.clientY}px`;
-  cursor.style.opacity = '1';
 });
 
 window.addEventListener('resize', () => {

@@ -572,19 +572,6 @@ h1 strong {
 }
 .creation-flash.is-flashing { animation: creation .9s cubic-bezier(.7,0,.2,1); }
 
-.cursor {
-  position: fixed;
-  z-index: 50;
-  width: 7px;
-  height: 7px;
-  border: 1px solid var(--accent);
-  border-radius: 50%;
-  pointer-events: none;
-  opacity: 0;
-  transform: translate(-50%, -50%);
-  transition: width .2s, height .2s, opacity .2s;
-}
-
 @keyframes metric-in { to { opacity: 1; transform: translateY(0); } }
 @keyframes pulse { 50% { opacity: .3; transform: scale(.7); } }
 @keyframes grain-shift { 0% { transform: translate(0,0); } 25% { transform: translate(2%, -2%); } 50% { transform: translate(-2%, 2%); } 75% { transform: translate(1%, 2%); } }
@@ -777,8 +764,6 @@ h1 strong {
   .time-console { bottom: calc(env(safe-area-inset-bottom) + 10px); }
   .star-inspector { bottom: calc(env(safe-area-inset-bottom) + 108px); }
 }
-
-@media (hover: none) { .cursor { display: none; } }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; }
