@@ -81,27 +81,34 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
   };
 
   const applyNodeImpact = (event, impact, time) => {
-    const { nodeIndex, severity, permanent, destructionRoll } = impact;
+    const { nodeIndex, severity, permanent, destructionRoll, kind = 'damage' } = impact;
     if (permanent) disabledNodes[nodeIndex] = 1;
     const speciesIndex = owners[nodeIndex];
     if (speciesIndex < 0) return;
     const species = civilizationData[speciesIndex];
     if (species.highDimensional && time >= species.ascensionAt) return;
+    if (kind === 'recovery') {
+      if (!disabledNodes[nodeIndex]) {
+        strength[nodeIndex] = Math.min(1.35, strength[nodeIndex] + severity);
+        lastCauses[speciesIndex] = `${event.label} 后恢复`;
+      }
+      return;
+    }
 
     const statsBySpecies = eventImpactStats.get(event);
     let stats = statsBySpecies.get(speciesIndex);
     if (!stats) {
       stats = {
         initialCount: territoryCountFor(speciesIndex),
-        affectedDomains: 0,
-        lostDomains: 0,
-        weakenedDomains: 0,
+        affectedNodes: new Set(),
+        lostNodes: new Set(),
+        weakenedNodes: new Set(),
         effectiveLoss: 0,
         collapse: false
       };
       statsBySpecies.set(speciesIndex, stats);
     }
-    stats.affectedDomains++;
+    stats.affectedNodes.add(nodeIndex);
 
     const destructionChance = THREE.MathUtils.clamp(
       severity * .62 / Math.max(.65, species.resilience),
@@ -112,12 +119,13 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
     if (destroyed) {
       owners[nodeIndex] = -1;
       strength[nodeIndex] = 0;
-      stats.lostDomains++;
+      stats.lostNodes.add(nodeIndex);
+      stats.weakenedNodes.delete(nodeIndex);
       stats.effectiveLoss += 1;
     } else {
       const strengthLoss = severity * .46;
       strength[nodeIndex] *= Math.max(.18, 1 - strengthLoss);
-      stats.weakenedDomains++;
+      if (!stats.lostNodes.has(nodeIndex)) stats.weakenedNodes.add(nodeIndex);
       stats.effectiveLoss += strengthLoss;
     }
     stats.collapse ||= territoryCountFor(speciesIndex) === 0;
@@ -128,7 +136,7 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
   while (scheduledImpactIndex < scheduledImpacts.length
     && scheduledImpacts[scheduledImpactIndex].impact.at < simulation.start) {
     const { impact } = scheduledImpacts[scheduledImpactIndex];
-    if (impact.permanent) disabledNodes[impact.nodeIndex] = 1;
+    if (impact.kind !== 'recovery' && impact.permanent) disabledNodes[impact.nodeIndex] = 1;
     scheduledImpactIndex++;
   }
 
@@ -312,9 +320,9 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       speciesIndex,
       lossFraction: THREE.MathUtils.clamp(stats.effectiveLoss / Math.max(1, stats.initialCount), 0, 1),
       collapse: stats.collapse,
-      affectedDomains: stats.affectedDomains,
-      lostDomains: stats.lostDomains,
-      weakenedDomains: stats.weakenedDomains
+      affectedDomains: stats.affectedNodes.size,
+      lostDomains: stats.lostNodes.size,
+      weakenedDomains: stats.weakenedNodes.size
     }));
     event.civilizationImpacts = impacts;
     const civilizationSummary = impacts.length

@@ -11,6 +11,12 @@ import { applyCivilizationSnapshot, syncCivilizationHosts } from './rendering/ci
 import { animateCosmicEvents, updateCosmicEvents, updateEpochVisuals } from './rendering/timeline-visuals.js';
 import { createMergerGravityField, createStellarGravityState } from './simulation/black-hole-gravity.js';
 import { buildCivilizationSimulation, civilizationSnapshotAt, deriveCivilizationRuntime, findDominantRelationship } from './simulation/civilization.js';
+import {
+  applyTransientImpactScales,
+  createTransientGravityField,
+  createTransientSimulation,
+  describeTransientSimulation
+} from './simulation/transient-events.js';
 import { updateUniverseData } from './ui/universe-data.js';
 import { renderCivilizationRows, renderTimelineEvent, renderTimelineHeader } from './ui/timeline.js';
 import { organizeCivilizationLegend, resetCivilizationLegend } from './ui/civilization-legend.js';
@@ -596,16 +602,37 @@ function buildCosmicEvents(starPositions) {
       start: 302 + random() * 18, duration: 27, color: '#68c8ff'
     },
     {
+      type: 'classical-nova', visual: 'nova', label: '经典新星爆发',
+      message: '白矮星表面的吸积氢发生热核失控，抛出明亮但低质量的壳层',
+      start: 336 + random() * 12, duration: 20, color: '#ffe4a8'
+    },
+    {
       type: 'type-ia-supernova', visual: 'supernova', label: 'Ia 型超新星爆发',
       message: '白矮星发生热核失控，将铁族元素抛入星际空间',
       start: 368 + random() * 22, duration: 25, color: '#ffd08a'
+    },
+    {
+      type: 'red-dwarf-superflare', visual: 'stellar-flare', label: '红矮星超级耀斑',
+      message: '磁场突然重联，高能辐射与带电粒子冲击近轨行星',
+      start: 396 + random() * 12, duration: 21, color: '#ffcb72'
     },
     {
       type: 'gamma-ray-burst', visual: 'pulsar', label: '长伽马射线暴',
       message: '垂死巨星坍缩，狭窄高能喷流贯穿恒星外层',
       start: 420 + random() * 20, duration: 24, color: '#89b9ff'
     },
+    {
+      type: 'neutron-star-kilonova', visual: 'kilonova', label: '中子星并合千新星',
+      message: '双中子星旋近并合，短伽马射线束与富含重元素的抛射物同时释放',
+      start: 450 + random() * 12, duration: 25, color: '#caa5ff'
+    },
     nucleusEvent,
+    {
+      type: 'tidal-disruption-event', visual: 'tidal-disruption', label: '潮汐瓦解事件',
+      message: '恒星掠过中央黑洞的潮汐半径，被拉成长流并逐步吸积', preferCenter: true,
+      requiresCentralBlackHole: true,
+      start: 502 + random() * 10, duration: 30, color: '#72e4ff'
+    },
     {
       type: 'core-collapse-supernova', visual: 'supernova', label: '核坍缩超新星',
       message: '恒星核心坍缩，冲击波把新合成元素送入星际云',
@@ -620,6 +647,11 @@ function buildCosmicEvents(starPositions) {
       type: 'superluminous-supernova', visual: 'supernova', label: '超亮超新星',
       message: '磁星引擎持续注入能量，爆发亮度超过普通超新星',
       start: 552 + random() * 16, duration: 26, color: '#ff6b52'
+    },
+    {
+      type: 'failed-supernova', visual: 'stellar-collapse', label: '失败超新星',
+      message: '冲击波未能掀开恒星外层，亮度短暂上升后整体坍缩为黑洞',
+      start: 586 + random() * 14, duration: 29, color: '#b87958'
     },
     {
       type: 'stellar-black-hole-merger', visual: 'black-hole-merger', label: '双黑洞合并',
@@ -637,20 +669,36 @@ function buildCosmicEvents(starPositions) {
       radiatedMassFraction: randomBetween(random, .028, .052),
       recoilKms: Math.round(randomBetween(random, 420, 1640))
     }
-  ].filter((event) => event.type !== 'late-black-hole-merger'
-    || universe.cosmicFate.type === 'heat-death'
-    || universe.cosmicFate.outcomeExponent > 45);
+  ].filter((event) => (!event.requiresCentralBlackHole || universe.hasCentralBlackHole)
+    && (event.type !== 'late-black-hole-merger'
+      || universe.cosmicFate.type === 'heat-death'
+      || universe.cosmicFate.outcomeExponent > 45))
+    .map((event, eventIndex) => {
+      const simulation = createTransientSimulation(event, universe, eventIndex);
+      if (!simulation?.persistentRemnant) return { ...event, simulation };
+      return {
+        ...event,
+        simulation,
+        persistUntil: Math.min(845, universe.cosmicFate.onsetAt || 845),
+        persistenceFadeDuration: 24
+      };
+    });
 
   const impactProfiles = {
     'pair-instability-supernova': { radius: .55, maxStars: 5, sourceDim: .02, neighborDim: .96, kick: .018, civilization: .08, range: 2.4 },
     'young-pulsar-birth': { radius: .42, maxStars: 2, sourceDim: .12, neighborDim: .99, kick: .01, civilization: .035, range: 1.8, directional: true, beamAngle: .12 },
+    'classical-nova': { radius: .18, maxStars: 1, sourceDim: 1, neighborDim: 1, kick: 0, civilization: .012, range: .75, maxSpecies: 1 },
     'type-ia-supernova': { radius: .48, maxStars: 4, sourceDim: .02, neighborDim: .97, kick: .012, civilization: .06, range: 2.1 },
+    'red-dwarf-superflare': { radius: .22, maxStars: 1, sourceDim: 1, neighborDim: 1, kick: 0, civilization: .09, range: 1.15, maxSpecies: 1 },
     'gamma-ray-burst': { radius: 7.5, maxStars: 46, sourceDim: .025, neighborDim: .82, kick: 0, civilization: .42, range: 12, maxSpecies: 1, directional: true, beamAngle: .1 },
+    'neutron-star-kilonova': { radius: 4.8, maxStars: 24, sourceDim: .03, neighborDim: .9, kick: .006, civilization: .24, range: 8.5, maxSpecies: 1, directional: true, beamAngle: .14 },
     'quasar-awakening': { radius: 8.5, maxStars: 60, sourceDim: .95, neighborDim: .96, kick: 0, civilization: .16, range: 14, maxSpecies: 2, directional: true, beamAngle: .16 },
     'magnetar-flare': { radius: 1.1, maxStars: 8, sourceDim: .82, neighborDim: .94, kick: 0, civilization: .12, range: 3.2, maxSpecies: 1 },
+    'tidal-disruption-event': { radius: .32, maxStars: 2, sourceDim: .015, neighborDim: .995, kick: .008, civilization: .075, range: 2.8, maxSpecies: 1 },
     'core-collapse-supernova': { radius: .5, maxStars: 4, sourceDim: .025, neighborDim: .97, kick: .014, civilization: .06, range: 2.2 },
     'pulsar-glitch': { radius: .01, maxStars: 1, sourceDim: .985, neighborDim: 1, kick: 0, civilization: 0, range: 0, maxSpecies: 0 },
     'superluminous-supernova': { radius: .62, maxStars: 6, sourceDim: .02, neighborDim: .95, kick: .02, civilization: .09, range: 2.8, maxSpecies: 1 },
+    'failed-supernova': { radius: .24, maxStars: 2, sourceDim: .008, neighborDim: .995, kick: .003, civilization: .025, range: 1.25, maxSpecies: 1 },
     'stellar-black-hole-merger': { radius: .08, maxStars: 1, sourceDim: .06, neighborDim: 1, kick: 0, civilization: 0, range: 0, maxSpecies: 0 },
     'late-black-hole-merger': { radius: .08, maxStars: 1, sourceDim: .04, neighborDim: 1, kick: 0, civilization: 0, range: 0, maxSpecies: 0 }
   };
@@ -673,8 +721,18 @@ function buildCosmicEvents(starPositions) {
   };
 
   const deriveConsequences = (data, location) => {
-    const profile = impactProfiles[data.type];
-    const impactPhase = data.visual === 'supernova' ? .08 : data.visual === 'pulsar' ? .46 : .68;
+    const profile = applyTransientImpactScales(impactProfiles[data.type], data.simulation);
+    const impactPhases = {
+      supernova: .08,
+      nova: .14,
+      kilonova: .22,
+      pulsar: .46,
+      'stellar-flare': .38,
+      'tidal-disruption': .58,
+      'stellar-collapse': .64,
+      'black-hole-merger': .68
+    };
+    const impactPhase = impactPhases[data.visual] ?? .5;
     const impactAt = data.start + data.duration * impactPhase;
     const nearbyStars = [];
     for (let index = 0; index < starPositions.length / 3; index++) {
@@ -721,27 +779,37 @@ function buildCosmicEvents(starPositions) {
 
     const sourceOutcomes = {
       'pair-instability-supernova': '爆发源完全解体且没有致密残骸',
+      'classical-nova': '白矮星保留下来，重新开始从伴星吸积物质',
       'type-ia-supernova': '白矮星被热核爆炸完全摧毁',
+      'red-dwarf-superflare': '宿主恒星保持完整，但近轨行星大气受到高能粒子冲击',
+      'neutron-star-kilonova': '并合形成大质量中子星或黑洞，并把重元素抛入星际空间',
+      'tidal-disruption-event': '恒星被撕碎，部分物质形成吸积流，部分沿轨道逃逸',
       'core-collapse-supernova': '坍缩核心留下中子星或恒星级黑洞',
-      'superluminous-supernova': '恒星外层被大规模抛射，中心结局仍不确定'
+      'superluminous-supernova': '恒星外层被大规模抛射，中心结局仍不确定',
+      'failed-supernova': '恒星几乎没有明亮爆炸便消失，留下新生黑洞'
     };
+    const simulatedOutcome = describeTransientSimulation(data);
     const systemSummary = data.visual === 'black-hole-merger'
       ? `约 ${(data.radiatedMassFraction * 100).toFixed(1)}% 总质量以引力波带走，残余黑洞以约 ${data.recoilKms} km/s 反冲${data.gasRich ? '，周围气体受热形成短暂余辉' : '；真空环境中没有超新星式爆炸'}`
       : data.type === 'pulsar-glitch'
         ? '自转频率发生微小跃变，没有可见的大规模破坏'
+        : simulatedOutcome
+          ? simulatedOutcome
+        : sourceOutcomes[data.type]
+          ? `${sourceOutcomes[data.type]}，${Math.max(0, starImpacts.length - 1)} 个邻近恒星系受影响`
         : data.visual === 'pulsar'
           ? `${starImpacts.length} 个位于辐射束或近场内的恒星系受到影响`
-        : `${sourceOutcomes[data.type] || '爆发源发生结构性改变'}，${Math.max(0, starImpacts.length - 1)} 个邻近恒星系受冲击`;
+          : `爆发源发生结构性改变，${Math.max(0, starImpacts.length - 1)} 个邻近恒星系受冲击`;
     return { impactAt, impactPhase, starImpacts, systemOutcome: systemSummary };
   };
 
   const deriveCivilizationNodeImpacts = (data, location, consequences, gravityField, eventIndex) => {
     if (!civilizationSimulation || !remnantDynamics) return [];
-    const profile = impactProfiles[data.type];
+    const profile = applyTransientImpactScales(impactProfiles[data.type], data.simulation);
     const impactRandom = createSeededRandom(universe.seed, 6203 + eventIndex * 131);
     const impactMap = new Map();
-    const addImpact = (nodeIndex, at, severity, permanent = false) => {
-      const key = `${nodeIndex}:${at.toFixed(4)}`;
+    const addImpact = (nodeIndex, at, severity, permanent = false, kind = 'damage') => {
+      const key = `${kind}:${nodeIndex}:${at.toFixed(4)}`;
       const existing = impactMap.get(key);
       if (existing) {
         existing.severity = 1 - (1 - existing.severity) * (1 - severity);
@@ -753,6 +821,7 @@ function buildCosmicEvents(starPositions) {
         at,
         severity: THREE.MathUtils.clamp(severity, 0, 1),
         permanent,
+        kind,
         destructionRoll: impactRandom()
       });
     };
@@ -780,7 +849,20 @@ function buildCosmicEvents(starPositions) {
           0,
           .58
         );
-        addImpact(nodeIndex, consequences.impactAt, severity);
+        const pulsePhases = data.simulation?.pulsePhases;
+        if (pulsePhases?.length) {
+          pulsePhases.forEach((pulsePhase, pulseIndex) => {
+            const weight = data.simulation.pulseWeights?.[pulseIndex] ?? 1;
+            addImpact(nodeIndex, data.start + data.duration * pulsePhase, severity * weight);
+          });
+        } else {
+          addImpact(nodeIndex, consequences.impactAt, severity);
+        }
+        if (data.simulation?.recoveryDuration && data.simulation.recoveryFraction > 0) {
+          const lastPulsePhase = pulsePhases?.length ? Math.max(...pulsePhases) : consequences.impactPhase;
+          const recoveryAt = data.start + data.duration * lastPulsePhase + data.simulation.recoveryDuration;
+          addImpact(nodeIndex, recoveryAt, severity * data.simulation.recoveryFraction, false, 'recovery');
+        }
       }
     }
 
@@ -814,8 +896,9 @@ function buildCosmicEvents(starPositions) {
   };
 
   const buildWaveSamples = (data, location, eventIndex) => {
-    if (data.visual !== 'black-hole-merger') return null;
-    const waveRadius = data.type === 'late-black-hole-merger' ? 7.2 : 8.8;
+    const isKilonova = data.visual === 'kilonova';
+    if (data.visual !== 'black-hole-merger' && !isKilonova) return null;
+    const waveRadius = isKilonova ? 6.4 : data.type === 'late-black-hole-merger' ? 7.2 : 8.8;
     const candidates = [];
     for (let index = 0; index < starPositions.length / 3; index++) {
       const offset = index * 3;
@@ -827,7 +910,7 @@ function buildCosmicEvents(starPositions) {
     }
 
     const sampleRandom = createSeededRandom(universe.seed, 9107 + eventIndex * 97);
-    const sampleCount = Math.min(1800, candidates.length);
+    const sampleCount = Math.min(isKilonova ? 900 : 1800, candidates.length);
     const stride = candidates.length / Math.max(1, sampleCount);
     const indices = new Uint16Array(sampleCount);
     const distances = new Float32Array(sampleCount);
@@ -854,7 +937,10 @@ function buildCosmicEvents(starPositions) {
       transverse.set([tx, ty, tz], sample * 3);
       polarities[sample] = Math.cos(Math.atan2(nz, nx) * 2) * (.72 + sampleRandom() * .28);
     }
-    return { waveRadius, indices, distances, transverse, polarities };
+    const waveAmplitude = isKilonova
+      ? THREE.MathUtils.clamp((data.simulation?.radiatedMassFraction || .025) / .04, .38, 1)
+      : 1;
+    return { waveRadius, waveAmplitude, indices, distances, transverse, polarities };
   };
 
   schedule.forEach((data, index) => {
@@ -869,31 +955,39 @@ function buildCosmicEvents(starPositions) {
       group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), data.beamDirection);
     }
 
-    if (data.visual === 'supernova') {
+    if (data.visual === 'supernova' || data.visual === 'nova' || data.visual === 'kilonova') {
+      const isNova = data.visual === 'nova';
+      const isKilonova = data.visual === 'kilonova';
+      const photosphereColor = isKilonova ? 0xb89dff : isNova ? 0xffe6ad : 0xffad63;
+      const remnantColor = isKilonova ? 0xe0c8ff : isNova ? 0xf8fbff : 0xaed8ff;
       const innerFlash = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeGlowTexture(), color: 0xffffff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
-      const photosphere = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeGlowTexture(), color: 0xffad63, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
-      const remnant = new THREE.Sprite(new THREE.SpriteMaterial({ map: getPointTexture(), color: 0xaed8ff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
+      const photosphere = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeGlowTexture(), color: photosphereColor, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
+      const remnant = new THREE.Sprite(new THREE.SpriteMaterial({ map: getPointTexture(), color: remnantColor, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
       remnant.scale.set(.16, .16, 1);
 
-      const ejectaCount = 620;
+      const ejectaCount = isNova ? 360 : 620;
       const ejectaPositions = new Float32Array(ejectaCount * 3);
       const ejectaColors = new Float32Array(ejectaCount * 3);
       const ejectaDirections = new Float32Array(ejectaCount * 3);
       const ejectaVelocity = new Float32Array(ejectaCount);
       const ejectaDelay = new Float32Array(ejectaCount);
-      const hot = new THREE.Color(0xfff0c7);
-      const cool = new THREE.Color(0xff4b32);
+      const hot = new THREE.Color(isKilonova ? 0xd9f3ff : isNova ? 0xfff8d8 : 0xfff0c7);
+      const cool = new THREE.Color(isKilonova ? 0x8d4fd1 : isNova ? 0xffb568 : 0xff4b32);
       for (let i = 0; i < ejectaCount; i++) {
         const theta = random() * Math.PI * 2;
         const phi = Math.acos(2 * random() - 1);
         const clustered = 1 + Math.sin(theta * 5 + phi * 3) * .18 + (random() - .5) * .24;
         const direction = new THREE.Vector3(
           Math.sin(phi) * Math.cos(theta) * clustered,
-          Math.cos(phi) * (1.08 + random() * .34),
+          Math.cos(phi) * (isKilonova ? .34 : 1.08 + random() * .34),
           Math.sin(phi) * Math.sin(theta) * clustered
         ).normalize();
         ejectaDirections.set([direction.x, direction.y, direction.z], i * 3);
-        ejectaVelocity[i] = .38 + Math.pow(random(), .48) * 1.45 + Math.abs(direction.y) * .22;
+        const simulatedVelocityScale = isKilonova
+          ? THREE.MathUtils.clamp((data.simulation?.ejectaVelocityC || .2) / .18, .72, 1.55)
+          : 1;
+        const velocityScale = isNova ? .46 : isKilonova ? simulatedVelocityScale : 1;
+        ejectaVelocity[i] = (.38 + Math.pow(random(), .48) * 1.45 + Math.abs(direction.y) * .22) * velocityScale;
         ejectaDelay[i] = Math.pow(random(), 2.4) * .22;
         const color = hot.clone().lerp(cool, Math.pow(random(), .52));
         ejectaColors.set([color.r, color.g, color.b], i * 3);
@@ -903,7 +997,7 @@ function buildCosmicEvents(starPositions) {
       ejectaGeometry.setAttribute('color', new THREE.BufferAttribute(ejectaColors, 3));
       const ejecta = new THREE.Points(ejectaGeometry, new THREE.PointsMaterial({ size: .1, map: getPointTexture(), alphaTest: .008, vertexColors: true, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
 
-      const shellCount = 280;
+      const shellCount = isNova ? 160 : 280;
       const shellPositions = new Float32Array(shellCount * 3);
       const shellDirections = new Float32Array(shellCount * 3);
       const shellNoise = new Float32Array(shellCount);
@@ -916,10 +1010,115 @@ function buildCosmicEvents(starPositions) {
       }
       const shellGeometry = new THREE.BufferGeometry();
       shellGeometry.setAttribute('position', new THREE.BufferAttribute(shellPositions, 3));
-      const shell = new THREE.Points(shellGeometry, new THREE.PointsMaterial({ color: 0xffd4a0, size: .072, map: getPointTexture(), alphaTest: .01, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
+      const shellColor = isKilonova ? 0xa57cff : isNova ? 0xffe0a0 : 0xffd4a0;
+      const shell = new THREE.Points(shellGeometry, new THREE.PointsMaterial({ color: shellColor, size: isNova ? .052 : .072, map: getPointTexture(), alphaTest: .01, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
+
+      let polarJets = null;
+      let gravityWave = null;
+      if (isKilonova) {
+        const jetLength = 2.6 + (data.simulation?.ejectaVelocityC || .2) * 4.2;
+        const jetGeometry = new THREE.BufferGeometry();
+        jetGeometry.setAttribute('position', new THREE.Float32BufferAttribute([
+          0, -.12, 0, 0, -jetLength, 0,
+          0, .12, 0, 0, jetLength, 0
+        ], 3));
+        polarJets = new THREE.LineSegments(jetGeometry, new THREE.LineBasicMaterial({ color: 0xc9efff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
+        gravityWave = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeRingTexture(), color: 0xc4b4ff, transparent: true, opacity: 0, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending }));
+      }
 
       group.add(photosphere, innerFlash, ejecta, shell, remnant);
-      group.userData.effect = { innerFlash, photosphere, remnant, ejecta, ejectaDirections, ejectaVelocity, ejectaDelay, shell, shellDirections, shellNoise };
+      if (polarJets) group.add(polarJets);
+      if (gravityWave) group.add(gravityWave);
+      group.userData.effect = { innerFlash, photosphere, remnant, ejecta, ejectaDirections, ejectaVelocity, ejectaDelay, shell, shellDirections, shellNoise, polarJets, gravityWave };
+    } else if (data.visual === 'tidal-disruption') {
+      const hole = createBlackHoleVisual({ color: 0x85ddff, tilt: .22, phase: random() * Math.PI * 2, visualScale: .86 });
+      hole.userData.spinDirection = 1;
+      const starCore = new THREE.Sprite(new THREE.SpriteMaterial({ map: getPointTexture(), color: 0xfff1c9, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
+      starCore.scale.set(.28, .28, 1);
+      const flare = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeGlowTexture(), color: 0x8eeaff, transparent: true, opacity: 0, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending }));
+      const disk = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeRingTexture(), color: 0x6bdcff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, rotation: random() * Math.PI }));
+      disk.scale.set(1.5, .48, 1);
+
+      const debrisCount = 480;
+      const debrisPositions = new Float32Array(debrisCount * 3);
+      const debrisOffsets = new Float32Array(debrisCount);
+      const debrisNoise = new Float32Array(debrisCount);
+      const debrisColors = new Float32Array(debrisCount * 3);
+      const debrisHot = new THREE.Color(0xf9f1c7);
+      const debrisCool = new THREE.Color(0x55cfff);
+      for (let i = 0; i < debrisCount; i++) {
+        const bound = random() < (data.simulation?.boundFraction || .5);
+        debrisOffsets[i] = bound ? -random() : random();
+        debrisNoise[i] = random() * Math.PI * 2;
+        const color = debrisHot.clone().lerp(debrisCool, Math.pow(random(), .62));
+        debrisColors.set([color.r, color.g, color.b], i * 3);
+      }
+      const debrisGeometry = new THREE.BufferGeometry();
+      debrisGeometry.setAttribute('position', new THREE.BufferAttribute(debrisPositions, 3));
+      debrisGeometry.setAttribute('color', new THREE.BufferAttribute(debrisColors, 3));
+      const debris = new THREE.Points(debrisGeometry, new THREE.PointsMaterial({ size: .075, map: getPointTexture(), alphaTest: .008, vertexColors: true, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
+
+      group.add(flare, disk, debris, starCore, hole);
+      group.userData.effect = { hole, starCore, flare, disk, debris, debrisOffsets, debrisNoise };
+    } else if (data.visual === 'stellar-flare') {
+      const starCore = new THREE.Sprite(new THREE.SpriteMaterial({ map: getPointTexture(), color: 0xffb75a, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
+      const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeGlowTexture(), color: 0xff7a32, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
+      const shock = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeRingTexture(), color: 0xffd27b, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
+      starCore.scale.set(.25, .25, 1);
+
+      const loops = [];
+      for (let loopIndex = 0; loopIndex < 3; loopIndex++) {
+        const points = [];
+        for (let i = 0; i <= 72; i++) {
+          const angle = i / 72 * Math.PI;
+          points.push(new THREE.Vector3(
+            Math.cos(angle) * (.42 + loopIndex * .16),
+            Math.sin(angle) * (.68 + loopIndex * .18),
+            Math.sin(angle * 2) * .06
+          ));
+        }
+        const loop = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), new THREE.LineBasicMaterial({ color: loopIndex === 1 ? 0xfff0a3 : 0xff9b52, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
+        loop.rotation.y = loopIndex * 1.86 + random() * .35;
+        loops.push(loop);
+      }
+
+      const particleCount = 320;
+      const particlePositions = new Float32Array(particleCount * 3);
+      const particleDirections = new Float32Array(particleCount * 3);
+      for (let i = 0; i < particleCount; i++) {
+        const theta = random() * Math.PI * 2;
+        const y = randomBetween(random, -.28, 1);
+        const radial = Math.sqrt(1 - Math.min(1, y * y));
+        particleDirections.set([Math.cos(theta) * radial, y, Math.sin(theta) * radial], i * 3);
+      }
+      const particleGeometry = new THREE.BufferGeometry();
+      particleGeometry.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
+      const particles = new THREE.Points(particleGeometry, new THREE.PointsMaterial({ color: 0xffc970, size: .06, map: getPointTexture(), alphaTest: .008, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
+
+      group.add(halo, shock, starCore, particles, ...loops);
+      group.userData.effect = { starCore, halo, shock, loops, particles, particleDirections };
+    } else if (data.visual === 'stellar-collapse') {
+      const starCore = new THREE.Sprite(new THREE.SpriteMaterial({ map: getPointTexture(), color: 0xffa45b, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
+      const shroud = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeGlowTexture(), color: 0x9a5538, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
+      const remnantHole = createBlackHoleVisual({ color: 0x9d6b58, tilt: -.18, phase: random() * Math.PI * 2, visualScale: .72 });
+      remnantHole.userData.spinDirection = -1;
+      remnantHole.visible = false;
+
+      const dustCount = Math.round(180 + (data.simulation?.ejectedEnvelopeFraction || .08) * 920);
+      const dustPositions = new Float32Array(dustCount * 3);
+      const dustDirections = new Float32Array(dustCount * 3);
+      for (let i = 0; i < dustCount; i++) {
+        const theta = random() * Math.PI * 2;
+        const y = random() * 2 - 1;
+        const radial = Math.sqrt(1 - y * y);
+        dustDirections.set([Math.cos(theta) * radial, y, Math.sin(theta) * radial], i * 3);
+      }
+      const dustGeometry = new THREE.BufferGeometry();
+      dustGeometry.setAttribute('position', new THREE.BufferAttribute(dustPositions, 3));
+      const dust = new THREE.Points(dustGeometry, new THREE.PointsMaterial({ color: 0x8c533b, size: .065, map: getPointTexture(), alphaTest: .008, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
+
+      group.add(shroud, dust, starCore, remnantHole);
+      group.userData.effect = { starCore, shroud, remnantHole, dust, dustDirections };
     } else if (data.visual === 'pulsar') {
       const core = new THREE.Sprite(new THREE.SpriteMaterial({ map: getPointTexture(), color: 0xf4fbff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
       const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeGlowTexture(), color: 0x4bb9ff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
@@ -975,7 +1174,7 @@ function buildCosmicEvents(starPositions) {
       }
       group.add(nebula, halo, sweepGlow, core, rotor);
       group.userData.effect = { core, halo, nebula, sweepGlow, rotor, jets, fieldLines, knots };
-    } else {
+    } else if (data.visual === 'black-hole-merger') {
       const makeHole = (color, direction) => {
         const hole = createBlackHoleVisual({
           color,
@@ -1065,6 +1264,13 @@ function buildCosmicEvents(starPositions) {
           eventIndex: index
         })
       : null;
+    const transientGravityField = createTransientGravityField(
+      starPositions,
+      location.position,
+      data.simulation,
+      universe.seedValue,
+      index
+    );
     const civilizationNodeImpacts = deriveCivilizationNodeImpacts(
       data,
       location,
@@ -1080,6 +1286,7 @@ function buildCosmicEvents(starPositions) {
       outcome: consequences.systemOutcome,
       waveSamples,
       gravityField,
+      transientGravityField,
       group,
       sourceIndex: location.index,
       id: `${data.type}-${index}-${universe.seed}`,
@@ -1105,7 +1312,17 @@ function renderCosmicEventMarkers() {
     marker.addEventListener('click', () => {
       timePlaying = false;
       $('#toggle-time').textContent = '▶';
-      const previewPhase = event.visual === 'supernova' ? .14 : event.visual === 'black-hole-merger' ? .76 : .54;
+      const previewPhases = {
+        supernova: .14,
+        nova: .2,
+        kilonova: .28,
+        pulsar: .54,
+        'stellar-flare': .44,
+        'tidal-disruption': .62,
+        'stellar-collapse': .7,
+        'black-hole-merger': .76
+      };
+      const previewPhase = previewPhases[event.visual] ?? .5;
       updateCosmicTime(event.start + event.duration * previewPhase, true);
     });
     container.appendChild(marker);

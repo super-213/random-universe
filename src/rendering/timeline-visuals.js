@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { stellarEndTimelinePosition } from '../domain/universe.js';
 import { orbitalAngleAt } from '../domain/orbital-motion.js';
 import { applyMergerGravity, applyStellarGravity, mergerPersistenceAt } from '../simulation/black-hole-gravity.js';
+import { applyTransientGravity, transientPersistenceAt } from '../simulation/transient-events.js';
 import { animateBlackHoleVisual, setBlackHoleIntensity } from './black-hole.js';
 
 export function updateEpochVisuals(position, context) {
@@ -130,8 +131,12 @@ export function updateEpochVisuals(position, context) {
       z: positionArray[sourceOffset + 2]
     };
     event.group.position.set(center.x, center.y, center.z);
-    if (event.visual !== 'black-hole-merger') return;
-    applyMergerGravity(position, positionArray, colorArray, event, center);
+    if (event.visual === 'black-hole-merger') {
+      applyMergerGravity(position, positionArray, colorArray, event, center);
+    }
+    if (event.transientGravityField) {
+      applyTransientGravity(position, positionArray, event, center);
+    }
   });
   cosmicEvents.forEach((event) => {
     if (position < event.impactAt) return;
@@ -146,14 +151,14 @@ export function updateEpochVisuals(position, context) {
       colorArray[offset + 2] *= impact.dimFactor;
     });
 
-    if (event.visual !== 'black-hole-merger' || !event.waveSamples) return;
+    if (!event.waveSamples) return;
     const waveDuration = event.duration * (1 - event.impactPhase);
     const waveProgress = THREE.MathUtils.clamp((position - event.impactAt) / waveDuration, 0, 1);
     if (waveProgress <= 0 || waveProgress >= 1) return;
-    const { waveRadius, indices, distances, transverse, polarities } = event.waveSamples;
+    const { waveRadius, waveAmplitude = 1, indices, distances, transverse, polarities } = event.waveSamples;
     const crestRadius = .18 + Math.pow(waveProgress, .72) * waveRadius;
     const thickness = .18 + waveProgress * .34;
-    const attenuation = .13 * (1 - waveProgress * .58);
+    const attenuation = .13 * waveAmplitude * (1 - waveProgress * .58);
     for (let sample = 0; sample < indices.length; sample++) {
       const delta = distances[sample] - crestRadius;
       if (Math.abs(delta) > thickness * 2.8) continue;
@@ -384,12 +389,12 @@ export function updateCosmicEvents(position, context) {
   cosmicEvents.forEach((event) => {
     const phase = (position - event.start) / event.duration;
     const active = phase >= 0 && phase <= 1;
-    const persistence = event.visual === 'black-hole-merger'
+    const mergerPersistence = event.visual === 'black-hole-merger'
       ? mergerPersistenceAt(position, event)
       : 0;
-    const persistentRemnant = event.visual === 'black-hole-merger'
-      && position >= event.impactAt
-      && persistence > 0;
+    const transientPersistence = transientPersistenceAt(position, event);
+    const persistence = Math.max(mergerPersistence, transientPersistence);
+    const persistentRemnant = position >= event.impactAt && persistence > 0;
     const visible = (active || persistentRemnant) && mode === 'explorer';
     event.group.visible = visible;
     if (!visible) return;
@@ -399,18 +404,49 @@ export function updateCosmicEvents(position, context) {
     event.group.userData.phase = visualPhase;
     const effect = event.group.userData.effect;
 
-    if (event.visual === 'supernova') {
+    if (!active && transientPersistence > 0) {
+      if (event.visual === 'kilonova') {
+        effect.innerFlash.material.opacity = 0;
+        effect.photosphere.material.opacity = 0;
+        effect.ejecta.material.opacity = 0;
+        effect.shell.material.opacity = 0;
+        if (effect.polarJets) effect.polarJets.material.opacity = 0;
+        if (effect.gravityWave) effect.gravityWave.material.opacity = 0;
+        effect.remnant.material.opacity = transientPersistence * .72;
+      } else if (event.visual === 'stellar-collapse') {
+        effect.starCore.material.opacity = 0;
+        effect.shroud.material.opacity = 0;
+        effect.dust.material.opacity = 0;
+        effect.remnantHole.visible = true;
+        setBlackHoleIntensity(effect.remnantHole, .8, transientPersistence);
+      }
+      return;
+    }
+
+    if (event.visual === 'supernova' || event.visual === 'nova' || event.visual === 'kilonova') {
       const phase = visualPhase;
+      const isNova = event.visual === 'nova';
+      const isKilonova = event.visual === 'kilonova';
+      const visualScale = isNova ? .48 : isKilonova ? 1.18 : 1;
       const ignition = THREE.MathUtils.smoothstep(phase, 0, .028);
-      const flash = ignition * (1 - THREE.MathUtils.smoothstep(phase, .045, .19));
+      const simulatedPulse = event.simulation?.pulsePhases?.reduce((strongest, pulsePhase, pulseIndex) => {
+        const weight = event.simulation.pulseWeights?.[pulseIndex] ?? 1;
+        const distance = Math.abs(phase - pulsePhase);
+        return Math.max(strongest, Math.exp(-distance * distance * 1500) * weight);
+      }, 0) || 0;
+      const flash = Math.max(
+        ignition * (1 - THREE.MathUtils.smoothstep(phase, .045, .19)),
+        simulatedPulse
+      );
       const afterglow = (1 - THREE.MathUtils.smoothstep(phase, .12, 1)) * ignition;
-      effect.innerFlash.material.opacity = flash * .98;
-      const flashScale = .08 + Math.pow(Math.min(1, phase / .16), .28) * .72;
+      effect.innerFlash.material.opacity = flash * (isNova ? .72 : .98);
+      const flashScale = (.08 + Math.pow(Math.min(1, phase / .16), .28) * .72) * visualScale;
       effect.innerFlash.scale.set(flashScale, flashScale, 1);
       effect.photosphere.material.opacity = flash * .58 + afterglow * .2;
-      const photosphereScale = .16 + Math.pow(phase, .56) * 1.15;
+      const photosphereScale = (.16 + Math.pow(phase, .56) * 1.15) * visualScale;
       effect.photosphere.scale.set(photosphereScale, photosphereScale * .9, 1);
-      effect.remnant.material.opacity = THREE.MathUtils.smoothstep(phase, .2, .52) * (1 - THREE.MathUtils.smoothstep(phase, .82, 1)) * .72;
+      const remnantFade = isNova ? 1 : 1 - THREE.MathUtils.smoothstep(phase, .82, 1);
+      effect.remnant.material.opacity = THREE.MathUtils.smoothstep(phase, .2, .52) * remnantFade * .72;
 
       const ejectaArray = effect.ejecta.geometry.attributes.position.array;
       for (let i = 0; i < effect.ejectaVelocity.length; i++) {
@@ -426,7 +462,12 @@ export function updateCosmicEvents(position, context) {
       effect.ejecta.material.opacity = ignition * (1 - THREE.MathUtils.smoothstep(phase, .58, 1)) * .86;
 
       const shellArray = effect.shell.geometry.attributes.position.array;
-      const shellRadius = .12 + (1 - Math.pow(1 - phase, 2.4)) * 2.25;
+      const shellExtent = isNova
+        ? .72 + (event.simulation?.ejectaVelocityKms || 1800) / 10000
+        : isKilonova
+          ? 2.15 + (event.simulation?.ejectaVelocityC || .2) * 3.1
+          : 2.25;
+      const shellRadius = .12 + (1 - Math.pow(1 - phase, 2.4)) * shellExtent;
       for (let i = 0; i < effect.shellNoise.length; i++) {
         const offset = i * 3;
         const uneven = 1 + Math.sin(effect.shellNoise[i] + phase * 4.5) * .055 + Math.sin(i * 2.1) * .025;
@@ -436,6 +477,118 @@ export function updateCosmicEvents(position, context) {
       }
       effect.shell.geometry.attributes.position.needsUpdate = true;
       effect.shell.material.opacity = THREE.MathUtils.smoothstep(phase, .04, .14) * (1 - THREE.MathUtils.smoothstep(phase, .5, 1)) * .34;
+      if (effect.polarJets) {
+        effect.polarJets.material.opacity = THREE.MathUtils.smoothstep(phase, .015, .08)
+          * (1 - THREE.MathUtils.smoothstep(phase, .18, .5)) * .72;
+      }
+      if (effect.gravityWave) {
+        const waveProgress = THREE.MathUtils.clamp(
+          (phase - event.impactPhase) / Math.max(.001, 1 - event.impactPhase),
+          0,
+          1
+        );
+        const waveScale = .25 + Math.pow(waveProgress, .72) * 7.2;
+        effect.gravityWave.scale.set(waveScale, waveScale, 1);
+        effect.gravityWave.material.opacity = Math.pow(Math.sin(waveProgress * Math.PI), .72)
+          * .28 * (event.waveSamples?.waveAmplitude || 1);
+      }
+    } else if (event.visual === 'tidal-disruption') {
+      const phase = visualPhase;
+      const approach = THREE.MathUtils.smoothstep(phase, 0, .42);
+      const disrupted = THREE.MathUtils.smoothstep(phase, .3, .62);
+      const accretion = THREE.MathUtils.smoothstep(phase, .4, .72);
+      const fallbackStart = event.simulation?.pulsePhases?.[0] || .58;
+      const fallbackProgress = Math.max(0, (phase - fallbackStart) / Math.max(.001, 1 - fallbackStart));
+      const fallbackLuminosity = THREE.MathUtils.smoothstep(phase, .4, fallbackStart)
+        * Math.pow(1 + fallbackProgress * 6, event.simulation?.fallbackExponent || -5 / 3);
+      effect.starCore.position.set(
+        THREE.MathUtils.lerp(2.5, .48, approach),
+        Math.sin(approach * Math.PI) * .34,
+        THREE.MathUtils.lerp(.34, 0, approach)
+      );
+      effect.starCore.material.opacity = (1 - disrupted) * .96;
+      effect.starCore.scale.set(.28 + disrupted * .68, Math.max(.035, .28 * (1 - disrupted * .88)), 1);
+      effect.disk.material.opacity = fallbackLuminosity * .5;
+      effect.flare.material.opacity = fallbackLuminosity * .62;
+      const flareScale = .24 + Math.sqrt(fallbackLuminosity) * 2.5;
+      effect.flare.scale.set(flareScale, flareScale, 1);
+      setBlackHoleIntensity(effect.hole, .62 + accretion * .38);
+
+      const debrisArray = effect.debris.geometry.attributes.position.array;
+      for (let i = 0; i < effect.debrisOffsets.length; i++) {
+        const offset = i * 3;
+        const stream = effect.debrisOffsets[i];
+        const bound = stream < 0;
+        const radius = bound
+          ? .34 + Math.abs(stream) * (1.15 - accretion * .72)
+          : .42 + stream * (.65 + accretion * 3.4);
+        const angle = stream * 1.8 + accretion * (bound ? 6.4 : 1.25);
+        const thickness = Math.sin(effect.debrisNoise[i] + accretion * 5) * .045 * (1 - accretion * .45);
+        debrisArray[offset] = Math.cos(angle) * radius;
+        debrisArray[offset + 1] = Math.sin(angle) * radius * .38 + thickness;
+        debrisArray[offset + 2] = Math.sin(angle * .5 + effect.debrisNoise[i]) * .075;
+      }
+      effect.debris.geometry.attributes.position.needsUpdate = true;
+      effect.debris.material.opacity = disrupted * (1 - THREE.MathUtils.smoothstep(phase, .9, 1)) * .82;
+    } else if (event.visual === 'stellar-flare') {
+      const phase = visualPhase;
+      const stormPulse = event.simulation?.pulsePhases?.reduce((strongest, pulsePhase, pulseIndex) => {
+        const weight = event.simulation.pulseWeights?.[pulseIndex] ?? 1;
+        const distance = Math.abs(phase - pulsePhase);
+        return Math.max(strongest, Math.exp(-distance * distance * 900) * weight);
+      }, 0) || 0;
+      const envelope = Math.max(Math.pow(Math.sin(phase * Math.PI), .5) * .22, stormPulse);
+      const pulse = .72 + stormPulse * .28;
+      effect.starCore.material.opacity = .48 + envelope * .5;
+      effect.halo.material.opacity = envelope * pulse * .32;
+      const haloScale = .45 + envelope * 1.25;
+      effect.halo.scale.set(haloScale, haloScale, 1);
+      effect.shock.material.opacity = envelope * (1 - phase) * .46;
+      const shockScale = .25 + Math.pow(phase, .62) * 3.4;
+      effect.shock.scale.set(shockScale, shockScale, 1);
+      effect.loops.forEach((loop, loopIndex) => {
+        loop.material.opacity = envelope * (.32 - loopIndex * .065);
+      });
+
+      const particleArray = effect.particles.geometry.attributes.position.array;
+      const cmeScale = THREE.MathUtils.clamp((event.simulation?.cmeVelocityKms || 2200) / 2200, .55, 2.2);
+      for (let i = 0; i < effect.particleDirections.length / 3; i++) {
+        const offset = i * 3;
+        const distance = .18 + Math.pow(phase, .58) * (1.25 + (i % 17) * .045) * cmeScale;
+        particleArray[offset] = effect.particleDirections[offset] * distance;
+        particleArray[offset + 1] = effect.particleDirections[offset + 1] * distance;
+        particleArray[offset + 2] = effect.particleDirections[offset + 2] * distance;
+      }
+      effect.particles.geometry.attributes.position.needsUpdate = true;
+      effect.particles.material.opacity = envelope * .64;
+    } else if (event.visual === 'stellar-collapse') {
+      const phase = visualPhase;
+      const collapse = THREE.MathUtils.smoothstep(phase, .32, .68);
+      const briefBrightening = THREE.MathUtils.smoothstep(phase, .04, .2)
+        * (1 - THREE.MathUtils.smoothstep(phase, .3, .52));
+      effect.starCore.material.opacity = (1 - collapse) * (.58 + briefBrightening * .42);
+      const coreScale = Math.max(.025, .34 * (1 - collapse * .94) + briefBrightening * .24);
+      effect.starCore.scale.set(coreScale, coreScale, 1);
+      const dustOpacity = THREE.MathUtils.clamp((event.simulation?.dustOpticalDepth || 2) / 8, .16, .68);
+      effect.shroud.material.opacity = THREE.MathUtils.smoothstep(phase, .18, .46)
+        * (1 - THREE.MathUtils.smoothstep(phase, .74, 1)) * dustOpacity;
+      const shroudScale = .32 + phase * 1.45;
+      effect.shroud.scale.set(shroudScale, shroudScale, 1);
+
+      const dustArray = effect.dust.geometry.attributes.position.array;
+      const ejectaScale = THREE.MathUtils.clamp((event.simulation?.ejectedEnvelopeFraction || .08) / .08, .45, 1.8);
+      for (let i = 0; i < effect.dustDirections.length / 3; i++) {
+        const offset = i * 3;
+        const distance = .1 + THREE.MathUtils.smoothstep(phase, .16, .82) * (.32 + (i % 19) * .018) * ejectaScale;
+        dustArray[offset] = effect.dustDirections[offset] * distance;
+        dustArray[offset + 1] = effect.dustDirections[offset + 1] * distance;
+        dustArray[offset + 2] = effect.dustDirections[offset + 2] * distance;
+      }
+      effect.dust.geometry.attributes.position.needsUpdate = true;
+      effect.dust.material.opacity = THREE.MathUtils.smoothstep(phase, .22, .48)
+        * (1 - THREE.MathUtils.smoothstep(phase, .82, 1)) * .46;
+      effect.remnantHole.visible = collapse > .72;
+      if (effect.remnantHole.visible) setBlackHoleIntensity(effect.remnantHole, .58 + collapse * .34);
     } else if (event.visual === 'pulsar') {
       const phase = visualPhase;
       const envelope = Math.pow(Math.sin(phase * Math.PI), .45);
@@ -449,7 +602,7 @@ export function updateCosmicEvents(position, context) {
         field.material.opacity = envelope * (.055 - fieldIndex * .007) * glitchScale;
       });
       event.group.userData.intensity = envelope;
-    } else {
+    } else if (event.visual === 'black-hole-merger') {
       const phase = visualPhase;
       const mergePoint = .68;
       const merged = phase >= mergePoint;
@@ -551,10 +704,21 @@ export function animateCosmicEvents(now, context) {
     if (!event.group.visible) return;
     const phase = event.group.userData.phase;
     const effect = event.group.userData.effect;
-    if (event.visual === 'supernova') {
+    if (event.visual === 'supernova' || event.visual === 'nova' || event.visual === 'kilonova') {
       effect.innerFlash.material.rotation = now * .00007;
       effect.photosphere.material.rotation = -now * .000035;
       effect.ejecta.rotation.y = Math.sin(now * .00021) * .035;
+    } else if (event.visual === 'tidal-disruption') {
+      effect.disk.material.rotation = now * .0014;
+      effect.debris.rotation.y = Math.sin(now * .00017) * .08;
+      animateBlackHoleVisual(effect.hole, now, effect.hole.userData.spinDirection);
+    } else if (event.visual === 'stellar-flare') {
+      effect.loops.forEach((loop, index) => {
+        loop.rotation.z = Math.sin(now * .0009 + index) * .16;
+      });
+      effect.particles.rotation.y = now * .00022;
+    } else if (event.visual === 'stellar-collapse') {
+      if (effect.remnantHole.visible) animateBlackHoleVisual(effect.remnantHole, now, effect.remnantHole.userData.spinDirection);
     } else if (event.visual === 'pulsar') {
       effect.rotor.rotation.y = now * .0024;
       const worldQuaternion = new THREE.Quaternion();
@@ -579,7 +743,7 @@ export function animateCosmicEvents(now, context) {
       effect.fieldLines.forEach((field, index) => {
         field.rotation.y += .006 + index * .001;
       });
-    } else {
+    } else if (event.visual === 'black-hole-merger') {
       animateBlackHoleVisual(effect.holeA, now, effect.holeA.userData.spinDirection);
       animateBlackHoleVisual(effect.holeB, now, effect.holeB.userData.spinDirection);
       animateBlackHoleVisual(effect.remnantHole, now, effect.remnantHole.userData.spinDirection);
