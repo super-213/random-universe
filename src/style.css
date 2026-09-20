@@ -183,16 +183,6 @@ h1 strong {
   white-space: nowrap;
 }
 
-.hero-note {
-  max-width: 270px;
-  margin: 24px 0 0 2px;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 300;
-  line-height: 1.75;
-  letter-spacing: 0.05em;
-}
-
 .orbit-label {
   position: absolute;
   color: rgba(241, 238, 231, 0.28);
@@ -611,7 +601,6 @@ h1 strong {
   .hero-copy { top: 13vh; left: 20px; }
   h1 span { font-size: 42px; }
   h1 strong { margin: 8px 0 0; font-size: clamp(15px, 4.5vw, 23px); }
-  .hero-note { display: none; }
   .orbit-label { display: none; }
 
   .universe-data {

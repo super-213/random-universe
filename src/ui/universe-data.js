@@ -2,7 +2,7 @@ import {
   formatArmStructure, formatCivilizations, formatGalaxyHue, formatProbability, formatStars,
   stellarEndTimelinePosition
 } from '../domain/universe.js';
-import { galaxyRoots, galaxyTypes, notes } from '../domain/catalog.js';
+import { galaxyRoots, galaxyTypes } from '../domain/catalog.js';
 import { formatOutcomeTime, formatVacuumState } from '../domain/cosmic-fate.js';
 
 const $ = (selector) => document.querySelector(selector);
@@ -51,7 +51,6 @@ export function updateUniverseData(universe) {
   lateLabel.style.left = `${(fate.type === 'heat-death' ? 845 : fate.onsetAt) / 10}%`;
   $('#timeline-final-label').textContent = fate.shortLabel;
   $('#cosmic-timeline').setAttribute('aria-label', `从大爆炸到${fate.label}的宇宙时间`);
-  $('#universe-note').textContent = notes[universe.seedValue % notes.length];
   $('#galaxy-name').textContent = `${galaxyRoots[universe.seedValue % galaxyRoots.length]}星系`;
   const diameter = (8 + universe.stars * 4.7).toFixed(1);
   $('#galaxy-meta').textContent = `${galaxyTypes[universe.galaxyType]} · 直径 ${diameter} 万光年`;

@@ -1,13 +1,5 @@
 import { cosmicYearsToTimelinePosition } from './cosmic-time.js';
 
-export const notes = [
-  '一次偶然涨落，一组全新的自然法则。',
-  '这里的星光，以陌生的速度穿过真空。',
-  '引力写下结构，时间负责把它读完。',
-  '一个从未存在过，也不会再次出现的宇宙。',
-  '尘埃正在聚集，第一颗恒星即将点亮。'
-];
-
 export const galaxyRoots = ['赫利俄斯', '弥涅耳瓦', '伊奥', '俄耳甫斯', '忒弥斯', '厄里倪厄斯', '欧律狄刻', '阿斯忒里亚'];
 
 export const galaxyTypes = ['棒旋星系', '絮状螺旋星系', '环状星系', '椭圆星系', '不规则星系'];
