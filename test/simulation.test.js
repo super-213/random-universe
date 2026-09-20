@@ -236,6 +236,9 @@ test('speculative civilization event plans are seeded, conditional, and cover ev
     const first = createCivilizationEventPlan({ universe, civilizationData, habitatPositions });
     const second = createCivilizationEventPlan({ universe, civilizationData, habitatPositions });
     assert.deepEqual(first, second);
+    assert.equal(first.speciesProfiles.length, civilizationData.length);
+    assert.ok(first.speciesProfiles.every((profile) => profile.biospherePath.length >= 4));
+    assert.ok(first.fermiScenario?.label);
     first.events.forEach((event) => seen.add(event.type));
     if (first.events.length < civilizationEventTypes().length) foundConditionalAbsence = true;
     first.childSpecies.forEach((child, index) => {
@@ -367,6 +370,73 @@ test('second-wave civilization events persist outcomes and relativistic lineages
   assert.equal(snapshot.temporalDrift[0], 1);
   assert.equal(snapshot.temporalDrift[4], 1);
   assert.equal(simulation.snapshots.some((item) => item.time >= 462 && item.active[4]), true);
+  assert.ok(events.every((event) => event.outcome !== '事件仍在演化'));
+});
+
+test('causal evolution chains update biosphere, morphology, engineering, migration, and archaeology', () => {
+  const universe = Array.from({ length: 200 }, (_, index) => createUniverse(seedFor(index)))
+    .find((candidate) => candidate.cosmicFate.type === 'heat-death');
+  const civilizationData = [
+    { name: '甲', birth: 400, homeNodeIndex: 0, aggression: .2, cooperation: .8, expansionRate: 1.2, resilience: 1, technology: .5, visibility: .1, cohesion: .75, machineAutonomy: .2, morphology: '生物共同体', fermiScenario: '大过滤器' },
+    { name: '乙', birth: 402, homeNodeIndex: 5, aggression: .25, cooperation: .75, expansionRate: 1.15, resilience: 1, technology: .5, visibility: .1, cohesion: .7, machineAutonomy: .2, morphology: '低可见度文明', fermiScenario: '大过滤器' },
+    { name: '丙', birth: 404, homeNodeIndex: 10, aggression: .3, cooperation: .7, expansionRate: 1.1, resilience: 1, technology: .55, visibility: .1, cohesion: .7, machineAutonomy: .2, morphology: '生物共同体', fermiScenario: '大过滤器' },
+    { name: '丁', birth: 406, homeNodeIndex: 15, aggression: .25, cooperation: .75, expansionRate: 1.1, resilience: 1, technology: .5, visibility: .1, cohesion: .7, machineAutonomy: .2, morphology: '群体意识', fermiScenario: '大过滤器' }
+  ];
+  const habitatPositions = new Float32Array(24 * 3);
+  for (let index = 0; index < 24; index++) {
+    habitatPositions[index * 3] = Math.cos(index / 24 * Math.PI * 2) * (4 + index * .05);
+    habitatPositions[index * 3 + 1] = Math.sin(index * .31) * .3;
+    habitatPositions[index * 3 + 2] = Math.sin(index / 24 * Math.PI * 2) * (4 + index * .05);
+  }
+  const simulation = {
+    start: 390,
+    end: 1000,
+    step: 1,
+    habitatRemnantIndices: Uint16Array.from({ length: 24 }, (_, index) => index),
+    habitatPositions,
+    adjacency: [],
+    snapshots: []
+  };
+  const makeEvent = (type, impactAt, targetSpeciesIndex, extra = {}) => ({
+    id: type,
+    type,
+    label: type,
+    category: 'civilization',
+    impactAt,
+    targetSpeciesIndex,
+    civilizationImpacts: [],
+    outcome: '事件仍在演化',
+    ...extra
+  });
+  const events = [
+    makeEvent('biosphere-transition', 395, 0, { biospherePath: ['原始生命', '复杂生命', '技术物种'] }),
+    makeEvent('fermi-paradigm', 410, 0, { fermiScenario: { label: '大过滤器' } }),
+    makeEvent('great-filter-crisis', 420, 0, { filterOutcome: '跨越过滤器' }),
+    makeEvent('generation-ship', 430, 1, { migrationOutcome: '建立远端殖民地' }),
+    makeEvent('stellar-engineering', 440, 2, { engineeringMode: '恒星抬升', engineeringStable: true }),
+    makeEvent('morphology-transition', 450, 3, { previousMorphology: '群体意识', newMorphology: '数字文明' }),
+    makeEvent('cosmic-archaeology', 460, 0, { artifactType: '星图档案', artifactOutcome: '继承' }),
+    makeEvent('ghost-signal', 470, 1, { delayUnits: 42 }),
+    makeEvent('exposure-response', 480, 2, { responsePolicy: '跨文明验证协议' }),
+    makeEvent('galactic-aftermath', 490, 3, { galacticStage: '潮汐尾与恒星形成潮' })
+  ];
+  buildCivilizationSimulation({
+    universe,
+    civilizationData,
+    civilizationSimulation: simulation,
+    cosmicEvents: events
+  });
+  const snapshot = simulation.snapshots.find((item) => item.time === 500);
+  assert.equal(snapshot.biosphereStages[0], 5);
+  assert.equal(snapshot.filterStates[0], 1);
+  assert.equal(snapshot.migrationModes[1], 1);
+  assert.equal(snapshot.engineeringModes[2], 1);
+  assert.equal(snapshot.morphologyModes[3], 4);
+  assert.equal(snapshot.substrateModes[3], 1);
+  assert.equal(snapshot.artifacts[0], 1);
+  assert.equal(snapshot.signalDelays[1], 42);
+  assert.equal(snapshot.causalResponses[2], 1);
+  assert.ok(snapshot.fermiAwareness.some((value) => value === 1));
   assert.ok(events.every((event) => event.outcome !== '事件仍在演化'));
 });
 

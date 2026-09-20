@@ -3,6 +3,42 @@ import { createSeededRandom, randomBetween } from '../domain/random.js';
 
 const clamp = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, value));
 
+const civilizationMorphologies = [
+  '生物共同体',
+  '机器文明',
+  '群体意识',
+  '数字文明',
+  '低可见度文明'
+];
+
+const fermiScenarios = [
+  {
+    id: 'great-filter',
+    label: '大过滤器',
+    description: '多数生物圈在跨入星际阶段前消失，幸存文明极为稀少'
+  },
+  {
+    id: 'dark-forest',
+    label: '静默博弈',
+    description: '文明主动降低可见度，星际空间因此显得异常安静'
+  },
+  {
+    id: 'rare-earth',
+    label: '稀有生物圈',
+    description: '复杂生命需要罕见的长期稳定条件，宜居世界并不等于有生命'
+  },
+  {
+    id: 'zoo',
+    label: '观察者隔离',
+    description: '成熟文明可能限制对年轻文明的直接干预'
+  },
+  {
+    id: 'brief-window',
+    label: '短暂技术窗口',
+    description: '文明可被探测的广播阶段远短于宇宙尺度的时间间隔'
+  }
+];
+
 const eventCatalog = [
   {
     type: 'first-signal',
@@ -121,6 +157,51 @@ const eventCatalog = [
     visual: 'galactic-encounter',
     label: '伴星系近掠',
     confidence: 'astrophysical-model'
+  },
+  {
+    type: 'great-filter-crisis',
+    probability: .58,
+    duration: 34,
+    offset: [46, 116],
+    color: '#ff756f',
+    visual: 'information-plague',
+    label: '文明过滤器危机'
+  },
+  {
+    type: 'generation-ship',
+    probability: .56,
+    duration: 40,
+    offset: [54, 138],
+    color: '#8bd8ff',
+    visual: 'relativistic-divergence',
+    label: '世代舰队远征'
+  },
+  {
+    type: 'stellar-engineering',
+    probability: .48,
+    duration: 42,
+    offset: [104, 182],
+    color: '#ffe182',
+    visual: 'stellar-engine',
+    label: '恒星工程时代'
+  },
+  {
+    type: 'morphology-transition',
+    probability: .52,
+    duration: 32,
+    offset: [86, 158],
+    color: '#80ffd9',
+    visual: 'digital-migration',
+    label: '文明形态分化'
+  },
+  {
+    type: 'cosmic-archaeology',
+    probability: .6,
+    duration: 34,
+    offset: [62, 146],
+    color: '#d6b4ff',
+    visual: 'precursor-ruins',
+    label: '宇宙考古发现'
   }
 ];
 
@@ -130,6 +211,37 @@ function chooseSpecies(random, civilizationData, predicate = () => true) {
     .filter(({ species, index }) => !species.originType && predicate(species, index));
   if (candidates.length === 0) return null;
   return candidates[Math.floor(random() * candidates.length)];
+}
+
+function createSpeciesProfiles(universe, civilizationData) {
+  const random = createSeededRandom(universe.seed, 13722);
+  const fermiScenario = fermiScenarios[universe.seedValue % fermiScenarios.length];
+  const speciesProfiles = civilizationData.map((species, index) => {
+    const setback = random() < .42
+      ? ['雪球期', '大灭绝', '海洋酸化', '恒星耀斑期'][Math.floor(random() * 4)]
+      : null;
+    const morphology = civilizationMorphologies[Math.floor(random() * civilizationMorphologies.length)];
+    const biospherePath = [
+      '原始生命',
+      random() < .5 ? '光合作用扩张' : '化能生态扩张',
+      setback,
+      '复杂多细胞生命',
+      '技术物种'
+    ].filter(Boolean);
+    return {
+      morphology,
+      biospherePath,
+      biosphereOriginAt: Math.max(350, species.birth - Math.round(randomBetween(random, 34, 72))),
+      fermiScenario: fermiScenario.label,
+      filterResilience: clamp(
+        species.resilience * .38 + species.cooperation * .28 + randomBetween(random, .06, .3),
+        0,
+        1
+      ),
+      profileIndex: index
+    };
+  });
+  return { speciesProfiles, fermiScenario };
 }
 
 function chooseLineageHome(random, parent, civilizationData, habitatPositions, preferNear) {
@@ -215,6 +327,36 @@ function eventMessage(event, target, secondary, child) {
   if (event.type === 'relativistic-divergence') {
     return `${target.name} 的高速远征队在巨大时间差后归来，${child.name} 已形成独立历史`;
   }
+  if (event.type === 'great-filter-crisis') {
+    return `${target.name} 同时遭遇生态、资源与自治系统压力，进入决定能否长期存续的过滤器阶段`;
+  }
+  if (event.type === 'generation-ship') {
+    return `${target.name} 派出无法在单一生命期内抵达目的地的世代舰队`;
+  }
+  if (event.type === 'stellar-engineering') {
+    return `${target.name} 开始实施${event.engineeringMode}，主动改变恒星的物质与能量流`;
+  }
+  if (event.type === 'morphology-transition') {
+    return `${target.name} 从${event.previousMorphology}分化出${event.newMorphology}社会`;
+  }
+  if (event.type === 'cosmic-archaeology') {
+    return `${target.name} 在失活恒星域发现一处灭亡文明留下的${event.artifactType}`;
+  }
+  if (event.type === 'biosphere-transition') {
+    return `${target.name} 的母世界经历${event.biospherePath.join(' → ')}`;
+  }
+  if (event.type === 'fermi-paradigm') {
+    return `${event.fermiScenario.label}成为本宇宙的主导解释：${event.fermiScenario.description}`;
+  }
+  if (event.type === 'ghost-signal') {
+    return `${target.name} 收到延迟 ${event.delayUnits} 个时间单位的旧广播；发信文明当前状态已无法由信号确认`;
+  }
+  if (event.type === 'exposure-response') {
+    return `${target.name} 根据早期信号接触结果启动${event.responsePolicy}`;
+  }
+  if (event.type === 'galactic-aftermath') {
+    return `伴星系近掠继续演化为${event.galacticStage}，改变星系的恒星形成与轨道环境`;
+  }
   return event.encounterMode === 'agn-feedback'
     ? '伴星系近掠扰动核区气体，活动星系核反馈开始压制恒星形成'
     : '伴星系近掠压缩气体云，星系尺度的恒星形成潮被触发';
@@ -224,6 +366,7 @@ export function createCivilizationEventPlan({ universe, civilizationData, habita
   const random = createSeededRandom(universe.seed, 13721);
   const events = [];
   const childSpecies = [];
+  const { speciesProfiles, fermiScenario } = createSpeciesProfiles(universe, civilizationData);
   const baseSpeciesCount = civilizationData.length;
   const fateBoundary = universe.cosmicFate.type === 'heat-death' ? 760 : universe.cosmicFate.onsetAt - 12;
   const eventBoundary = Math.min(760, stellarEndTimelinePosition(universe) - 18, fateBoundary);
@@ -231,7 +374,8 @@ export function createCivilizationEventPlan({ universe, civilizationData, habita
   eventCatalog.forEach((definition, catalogIndex) => {
     if (random() > definition.probability) return;
     const targetEntry = chooseSpecies(random, civilizationData, (species) => (
-      definition.type !== 'stellar-megastructure' || species.technology >= .24
+      (definition.type !== 'stellar-megastructure' || species.technology >= .24)
+      && (definition.type !== 'stellar-engineering' || species.technology >= .28)
     ));
     if (!targetEntry) return;
     const target = targetEntry.species;
@@ -258,7 +402,9 @@ export function createCivilizationEventPlan({ universe, civilizationData, habita
       civilizationImpacts: [],
       outcome: '事件仍在演化'
     };
-    if (definition.type === 'stellar-megastructure' || definition.type === 'knowledge-ark') {
+    if (definition.type === 'stellar-megastructure'
+      || definition.type === 'knowledge-ark'
+      || definition.type === 'stellar-engineering') {
       event.persistentUntil = eventBoundary;
       event.persistenceFadeDuration = 20;
     }
@@ -287,6 +433,25 @@ export function createCivilizationEventPlan({ universe, civilizationData, habita
       event.encounterMode = universe.hasCentralBlackHole && random() < .46
         ? 'agn-feedback'
         : 'starburst';
+    } else if (definition.type === 'great-filter-crisis') {
+      const resilience = speciesProfiles[targetEntry.index].filterResilience;
+      event.filterOutcome = resilience > .62
+        ? '跨越过滤器'
+        : resilience > .38 ? '制度重构' : '系统性崩溃';
+    } else if (definition.type === 'generation-ship') {
+      const roll = random() + target.resilience * .22 + target.cooperation * .12;
+      event.migrationOutcome = roll > 1.05 ? '建立远端殖民地' : roll > .58 ? '形成流浪舰队' : '舰队失联';
+    } else if (definition.type === 'stellar-engineering') {
+      event.engineeringMode = ['恒星抬升', '套娃脑', '恒星推进器'][Math.floor(random() * 3)];
+      event.engineeringStable = random() < .44 + target.technology * .36 + target.resilience * .16;
+    } else if (definition.type === 'morphology-transition') {
+      event.previousMorphology = speciesProfiles[targetEntry.index].morphology;
+      const alternatives = civilizationMorphologies.filter((item) => item !== event.previousMorphology);
+      event.newMorphology = alternatives[Math.floor(random() * alternatives.length)];
+    } else if (definition.type === 'cosmic-archaeology') {
+      event.artifactType = ['巨构残骸', '休眠探针', '星图档案', '污染隔离区'][Math.floor(random() * 4)];
+      const roll = random() + target.technology * .3 - target.aggression * .12;
+      event.artifactOutcome = roll > .78 ? '继承' : roll > .38 ? '误读' : '唤醒';
     } else if (definition.type === 'civilization-fracture'
       || definition.type === 'uplift-experiment'
       || definition.type === 'relativistic-divergence') {
@@ -310,6 +475,11 @@ export function createCivilizationEventPlan({ universe, civilizationData, habita
         ),
         birth: Math.ceil(impactAt),
         colorShift: originType === 'fragment' ? .08 : originType === 'uplift' ? -.1 : .18,
+        morphology: originType === 'uplift'
+          ? '生物共同体'
+          : speciesProfiles[targetEntry.index].morphology,
+        biospherePath: speciesProfiles[targetEntry.index].biospherePath,
+        fermiScenario: fermiScenario.label,
         ...lineageTraits(random, target, originType)
       };
       childSpecies.push(child);
@@ -323,10 +493,134 @@ export function createCivilizationEventPlan({ universe, civilizationData, habita
     events.push(event);
   });
 
+  const appendDerivedEvent = ({
+    type,
+    label,
+    visual,
+    color,
+    start,
+    duration,
+    targetSpeciesIndex,
+    confidence = 'science-fiction',
+    ...details
+  }) => {
+    const impactAt = start + duration * .56;
+    if (impactAt >= eventBoundary) return null;
+    const target = civilizationData[targetSpeciesIndex];
+    const event = {
+      id: `civilization-${type}-derived-${universe.seed}`,
+      type,
+      label,
+      visual,
+      color,
+      start,
+      duration,
+      impactAt,
+      category: 'civilization',
+      confidence,
+      targetSpeciesIndex,
+      secondarySpeciesIndex: null,
+      targetNodeIndex: target.homeNodeIndex,
+      civilizationImpacts: [],
+      outcome: '事件仍在演化',
+      ...details
+    };
+    event.message = eventMessage(event, target, null, null);
+    events.push(event);
+    return event;
+  };
+
+  const earliestSpeciesIndex = civilizationData.reduce((selected, species, index) => (
+    species.birth < civilizationData[selected].birth ? index : selected
+  ), 0);
+  const earliestSpecies = civilizationData[earliestSpeciesIndex];
+  const earliestProfile = speciesProfiles[earliestSpeciesIndex];
+  appendDerivedEvent({
+    type: 'biosphere-transition',
+    label: '复杂生物圈形成',
+    visual: 'biosphere-chain',
+    color: '#7ee7a8',
+    start: Math.max(372, earliestSpecies.birth - 30),
+    duration: 20,
+    targetSpeciesIndex: earliestSpeciesIndex,
+    confidence: 'astrobiology-model',
+    biospherePath: earliestProfile.biospherePath
+  });
+  appendDerivedEvent({
+    type: 'fermi-paradigm',
+    label: `费米情景：${fermiScenario.label}`,
+    visual: 'signal-wave',
+    color: '#c7e6ff',
+    start: earliestSpecies.birth + 10,
+    duration: 24,
+    targetSpeciesIndex: earliestSpeciesIndex,
+    confidence: 'astrobiology-model',
+    fermiScenario
+  });
+
+  const signalEvent = events.find((event) => event.type === 'first-signal');
+  if (signalEvent) {
+    const ghostTargetIndex = signalEvent.secondarySpeciesIndex ?? signalEvent.targetSpeciesIndex;
+    const ghostSignal = appendDerivedEvent({
+      type: 'ghost-signal',
+      label: '光锥中的幽灵信号',
+      visual: 'light-cone',
+      color: '#8adfff',
+      start: signalEvent.impactAt + randomBetween(random, 18, 34),
+      duration: 28,
+      targetSpeciesIndex: ghostTargetIndex,
+      delayUnits: Math.round(randomBetween(random, 22, 68)),
+      sourceEventId: signalEvent.id,
+      causalRootId: signalEvent.id
+    });
+    if (ghostSignal) {
+      appendDerivedEvent({
+        type: 'exposure-response',
+        label: '信号暴露后续',
+        visual: 'signal-wave',
+        color: '#ffb36b',
+        start: ghostSignal.impactAt + randomBetween(random, 16, 28),
+        duration: 30,
+        targetSpeciesIndex: signalEvent.targetSpeciesIndex,
+        responsePolicy: signalEvent.decision === 'reply'
+          ? '跨文明验证协议'
+          : signalEvent.decision === 'deterrence' ? '深空威慑部署' : '全域静默工程',
+        sourceEventId: ghostSignal.id,
+        causalRootId: signalEvent.id
+      });
+    }
+  }
+
+  const galacticEncounter = events.find((event) => event.type === 'galactic-encounter');
+  if (galacticEncounter) {
+    appendDerivedEvent({
+      type: 'galactic-aftermath',
+      label: '星系近掠后续演化',
+      visual: 'galactic-encounter',
+      color: '#ffcf7b',
+      start: galacticEncounter.impactAt + 22,
+      duration: 46,
+      targetSpeciesIndex: galacticEncounter.targetSpeciesIndex,
+      confidence: 'astrophysical-model',
+      galacticStage: galacticEncounter.encounterMode === 'starburst'
+        ? (random() < .55 ? '潮汐尾与恒星形成潮' : '流浪恒星与核区增亮')
+        : (random() < .5 ? '气体加热与恒星形成熄灭' : '流浪黑洞扰动'),
+      sourceEventId: galacticEncounter.id,
+      causalRootId: galacticEncounter.id
+    });
+  }
+
   events.sort((a, b) => a.start - b.start);
-  return { events, childSpecies };
+  return { events, childSpecies, speciesProfiles, fermiScenario };
 }
 
 export function civilizationEventTypes() {
-  return eventCatalog.map((event) => event.type);
+  return [
+    ...eventCatalog.map((event) => event.type),
+    'biosphere-transition',
+    'fermi-paradigm',
+    'ghost-signal',
+    'exposure-response',
+    'galactic-aftermath'
+  ];
 }

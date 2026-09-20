@@ -1693,19 +1693,25 @@ function renderCosmicEventMarkers() {
     marker.type = 'button';
     const confidenceClass = event.confidence === 'science-fiction'
       ? ' is-speculative'
-      : event.confidence === 'astrophysical-model' ? ' is-hypothesis' : '';
+      : event.confidence === 'astrophysical-model' || event.confidence === 'astrobiology-model'
+        ? ' is-hypothesis'
+        : '';
     marker.className = `event-marker${confidenceClass}`;
     marker.style.left = `${event.start / 10}%`;
     marker.style.setProperty('--event-color', event.color);
     const eventKind = event.confidence === 'science-fiction'
       ? '科幻假设，'
-      : event.confidence === 'astrophysical-model' ? '天体演化模型，' : '';
+      : event.confidence === 'astrophysical-model'
+        ? '天体演化模型，'
+        : event.confidence === 'astrobiology-model' ? '天体生物学模型，' : '';
     marker.setAttribute('aria-label', `${eventKind}${event.label}，${cosmicTimeLabel(event.start, universe)}；${event.outcome}`);
     marker.title = event.confidence === 'science-fiction'
       ? `科幻假设 · ${event.outcome}`
       : event.confidence === 'astrophysical-model'
         ? `天体演化模型 · ${event.outcome}`
-        : event.outcome;
+        : event.confidence === 'astrobiology-model'
+          ? `天体生物学模型 · ${event.outcome}`
+          : event.outcome;
     marker.addEventListener('click', () => {
       timePlaying = false;
       $('#toggle-time').textContent = '▶';
@@ -1773,6 +1779,9 @@ function buildCivilizations() {
     visibility,
     cohesion,
     machineAutonomy,
+    morphology = '生物共同体',
+    biospherePath = [],
+    fermiScenario = '',
     originType = null,
     parentSpeciesIndex = null
   }) => {
@@ -1823,6 +1832,9 @@ function buildCivilizations() {
       visibility,
       cohesion,
       machineAutonomy,
+      morphology,
+      biospherePath,
+      fermiScenario,
       originType,
       parentSpeciesIndex
     });
@@ -1883,6 +1895,9 @@ function buildCivilizations() {
   }
 
   const plan = createCivilizationEventPlan({ universe, civilizationData, habitatPositions });
+  plan.speciesProfiles.forEach((profile, index) => {
+    Object.assign(civilizationData[index], profile);
+  });
   plan.childSpecies.forEach((child) => {
     const parentColor = new THREE.Color(civilizationData[child.parentSpeciesIndex].color);
     parentColor.offsetHSL(child.colorShift, .04, .04);

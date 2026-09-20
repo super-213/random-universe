@@ -144,7 +144,9 @@ export function selectTimelineNarrative({
     const aftermath = impacted ? `；${activeEvent.outcome}` : '';
     const confidence = activeEvent.confidence === 'science-fiction'
       ? '科幻假设 · '
-      : activeEvent.confidence === 'astrophysical-model' ? '天体演化模型 · ' : '';
+      : activeEvent.confidence === 'astrophysical-model'
+        ? '天体演化模型 · '
+        : activeEvent.confidence === 'astrobiology-model' ? '天体生物学模型 · ' : '';
     return {
       key: `${activeEvent.id}-${impacted ? 'aftermath' : 'forming'}`,
       time: label,

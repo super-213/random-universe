@@ -2,6 +2,16 @@ import * as THREE from 'three';
 import { stellarEndTimelinePosition } from '../domain/universe.js';
 import { createSeededRandom, randomBetween } from '../domain/random.js';
 
+const morphologyCodes = {
+  '生物共同体': 1,
+  '机器文明': 2,
+  '群体意识': 3,
+  '数字文明': 4,
+  '低可见度文明': 5
+};
+
+const morphologyLabels = ['', '生物共同体', '机器文明', '群体意识', '数字文明', '低可见度文明'];
+
 export function civilizationDeclineWindow(universe) {
   const stellarEnd = stellarEndTimelinePosition(universe);
   const finiteOutcome = universe.cosmicFate?.type !== 'heat-death';
@@ -66,6 +76,7 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
   const civilizationEvents = cosmicEvents
     .filter((event) => event.category === 'civilization')
     .sort((a, b) => a.impactAt - b.impactAt);
+  const fermiParadigmAt = civilizationEvents.find((event) => event.type === 'fermi-paradigm')?.impactAt ?? Infinity;
   const eventImpactStats = new Map(events.map((event) => [event, new Map()]));
   const scheduledImpacts = events.flatMap((event) => {
     event.civilizationImpacts = [];
@@ -87,6 +98,15 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
   const contamination = new Int8Array(speciesCount);
   const temporalDrift = new Uint8Array(speciesCount);
   const evacuations = new Uint8Array(speciesCount);
+  const biosphereStages = new Uint8Array(speciesCount);
+  const filterStates = new Int8Array(speciesCount);
+  const migrationModes = new Int8Array(speciesCount);
+  const engineeringModes = new Int8Array(speciesCount);
+  const morphologyModes = new Uint8Array(speciesCount);
+  const artifacts = new Int8Array(speciesCount);
+  const signalDelays = new Uint8Array(speciesCount);
+  const fermiAwareness = new Uint8Array(speciesCount);
+  const causalResponses = new Int8Array(speciesCount);
   const archiveReadyAt = new Float32Array(speciesCount);
   archiveReadyAt.fill(Infinity);
   civilizationData.forEach((species, index) => {
@@ -94,6 +114,7 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
     visibility[index] = species.visibility ?? .08;
     cohesion[index] = species.cohesion ?? .6;
     machineAutonomy[index] = species.machineAutonomy ?? .18;
+    morphologyModes[index] = morphologyCodes[species.morphology] || 1;
   });
   for (let a = 0; a < speciesCount; a++) {
     for (let b = a + 1; b < speciesCount; b++) {
@@ -211,6 +232,39 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
   const applyCivilizationEvent = (event, time) => {
     const targetIndex = event.targetSpeciesIndex;
     const target = civilizationData[targetIndex];
+    if (event.type === 'biosphere-transition') {
+      biosphereStages[targetIndex] = 5;
+      event.outcome = `${target.name} 的生物圈跨过复杂生命门槛，并最终演化出技术物种`;
+      return;
+    }
+    if (event.type === 'fermi-paradigm') {
+      let observers = 0;
+      civilizationData.forEach((species, speciesIndex) => {
+        if (!seeded[speciesIndex] || territoryCountFor(speciesIndex) === 0) return;
+        fermiAwareness[speciesIndex] = 1;
+        observers++;
+      });
+      event.outcome = `${observers} 个存续文明开始用“${event.fermiScenario.label}”解释宇宙静默`;
+      return;
+    }
+    if (event.type === 'galactic-aftermath') {
+      let affected = 0;
+      const disruptive = event.galacticStage.includes('熄灭') || event.galacticStage.includes('黑洞');
+      civilizationData.forEach((species, speciesIndex) => {
+        if (!seeded[speciesIndex] || territoryCountFor(speciesIndex) === 0) return;
+        affected++;
+        for (let node = 0; node < nodeCount; node++) {
+          if (owners[node] !== speciesIndex) continue;
+          if (disruptive && (node + speciesIndex) % 5 === 0) strength[node] *= .58;
+          if (!disruptive) strength[node] = Math.min(1.35, strength[node] + .08);
+        }
+        lastCauses[speciesIndex] = event.galacticStage;
+      });
+      event.outcome = disruptive
+        ? `${event.galacticStage}扰动 ${affected} 个文明的边缘疆域`
+        : `${event.galacticStage}为 ${affected} 个文明打开新的恒星形成窗口`;
+      return;
+    }
     if (event.type === 'galactic-encounter') {
       let affected = 0;
       civilizationData.forEach((species, speciesIndex) => {
@@ -429,6 +483,153 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       lastCauses[targetIndex] = '相对论远征队归来';
       lastCauses[childIndex] = '经历独立的相对论历史';
       event.outcome = `${civilizationData[childIndex].name} 接管 ${transferred} 个恒星域，与母文明保持疏远中立`;
+      return;
+    }
+
+    if (event.type === 'great-filter-crisis') {
+      if (event.filterOutcome === '跨越过滤器') {
+        filterStates[targetIndex] = 1;
+        cohesion[targetIndex] = Math.min(1, cohesion[targetIndex] + .12);
+        technology[targetIndex] = Math.min(1, technology[targetIndex] + .08);
+        lastCauses[targetIndex] = '跨越文明过滤器';
+        event.outcome = `${target.name} 建立长期风险治理体系，跨越本轮文明过滤器`;
+      } else if (event.filterOutcome === '制度重构') {
+        filterStates[targetIndex] = 2;
+        cohesion[targetIndex] = Math.max(.35, cohesion[targetIndex] - .06);
+        for (let node = 0; node < nodeCount; node++) {
+          if (owners[node] === targetIndex && node % 6 === 0) strength[node] *= .7;
+        }
+        lastCauses[targetIndex] = '过滤器后制度重构';
+        event.outcome = `${target.name} 失去部分增长能力，但通过制度重构避免系统性灭亡`;
+      } else {
+        filterStates[targetIndex] = -1;
+        let lost = 0;
+        for (let node = 0; node < nodeCount; node++) {
+          if (owners[node] === targetIndex && (node + targetIndex) % 3 === 0) {
+            owners[node] = -1;
+            strength[node] = 0;
+            lost++;
+          }
+        }
+        cohesion[targetIndex] = Math.max(0, cohesion[targetIndex] - .32);
+        lastCauses[targetIndex] = '文明过滤器崩溃';
+        event.outcome = `${target.name} 在复合危机中失去 ${lost} 个疆域，进入长期衰退`;
+      }
+      return;
+    }
+
+    if (event.type === 'generation-ship') {
+      if (event.migrationOutcome === '建立远端殖民地') {
+        migrationModes[targetIndex] = 1;
+        const homeOffset = target.homeNodeIndex * 3;
+        let destination = -1;
+        let greatestDistance = -1;
+        for (let node = 0; node < nodeCount; node++) {
+          if (owners[node] >= 0 || disabledNodes[node]) continue;
+          const offset = node * 3;
+          const distance = Math.hypot(
+            simulation.habitatPositions[offset] - simulation.habitatPositions[homeOffset],
+            simulation.habitatPositions[offset + 1] - simulation.habitatPositions[homeOffset + 1],
+            simulation.habitatPositions[offset + 2] - simulation.habitatPositions[homeOffset + 2]
+          );
+          if (distance > greatestDistance) { destination = node; greatestDistance = distance; }
+        }
+        if (destination >= 0) {
+          owners[destination] = targetIndex;
+          strength[destination] = .26;
+        }
+        lastCauses[targetIndex] = '世代舰队建立远端殖民地';
+        event.outcome = `${target.name} 的世代舰队抵达远端恒星域，建立不连续疆域`;
+      } else if (event.migrationOutcome === '形成流浪舰队') {
+        migrationModes[targetIndex] = 2;
+        cohesion[targetIndex] = Math.min(1, cohesion[targetIndex] + .04);
+        lastCauses[targetIndex] = '流浪舰队保持自治';
+        event.outcome = `${target.name} 的舰队放弃固定目的地，形成可迁移的深空社会`;
+      } else {
+        migrationModes[targetIndex] = -1;
+        cohesion[targetIndex] = Math.max(0, cohesion[targetIndex] - .08);
+        lastCauses[targetIndex] = '世代舰队失联';
+        event.outcome = `${target.name} 再未收到舰队遥测，只留下持续衰减的导航信标`;
+      }
+      return;
+    }
+
+    if (event.type === 'stellar-engineering') {
+      if (event.engineeringStable) {
+        engineeringModes[targetIndex] = event.engineeringMode === '恒星抬升'
+          ? 1
+          : event.engineeringMode === '套娃脑' ? 2 : 3;
+        technology[targetIndex] = Math.min(1, technology[targetIndex] + .14);
+        visibility[targetIndex] = Math.min(1, visibility[targetIndex] + .12);
+        lastCauses[targetIndex] = `${event.engineeringMode}稳定运行`;
+        event.outcome = `${target.name} 完成${event.engineeringMode}，延长能源窗口并获得恒星尺度基础设施`;
+      } else {
+        engineeringModes[targetIndex] = -1;
+        for (let node = 0; node < nodeCount; node++) {
+          if (owners[node] === targetIndex && node % 7 === 0) strength[node] *= .46;
+        }
+        lastCauses[targetIndex] = `${event.engineeringMode}失稳`;
+        event.outcome = `${target.name} 的${event.engineeringMode}出现反馈失稳，多个恒星域进入紧急停机`;
+      }
+      return;
+    }
+
+    if (event.type === 'morphology-transition') {
+      morphologyModes[targetIndex] = morphologyCodes[event.newMorphology] || morphologyModes[targetIndex];
+      if (event.newMorphology === '机器文明' || event.newMorphology === '数字文明') {
+        substrateModes[targetIndex] = 1;
+        machineAutonomy[targetIndex] = Math.min(1, machineAutonomy[targetIndex] + .24);
+      }
+      if (event.newMorphology === '群体意识') cohesion[targetIndex] = Math.min(1, cohesion[targetIndex] + .18);
+      if (event.newMorphology === '低可见度文明') visibility[targetIndex] = Math.max(0, visibility[targetIndex] - .22);
+      lastCauses[targetIndex] = `转化为${event.newMorphology}`;
+      event.outcome = `${target.name} 完成形态分化，扩张、通信与灾害响应规则随之改变`;
+      return;
+    }
+
+    if (event.type === 'cosmic-archaeology') {
+      if (event.artifactOutcome === '继承') {
+        artifacts[targetIndex] = 1;
+        technology[targetIndex] = Math.min(1, technology[targetIndex] + .13);
+        lastCauses[targetIndex] = '继承灭亡文明遗产';
+        event.outcome = `${target.name} 验证遗产来源并安全继承其中的工程知识`;
+      } else if (event.artifactOutcome === '误读') {
+        artifacts[targetIndex] = 2;
+        cohesion[targetIndex] = Math.max(0, cohesion[targetIndex] - .07);
+        lastCauses[targetIndex] = '误读宇宙遗产';
+        event.outcome = `${target.name} 将残缺记录误读为完整历史，社会路线因此分裂`;
+      } else {
+        artifacts[targetIndex] = -1;
+        contamination[targetIndex] = 1;
+        lastCauses[targetIndex] = '唤醒古代自治系统';
+        event.outcome = `${target.name} 唤醒休眠自治系统，遗迹转变为持续风险源`;
+      }
+      return;
+    }
+
+    if (event.type === 'ghost-signal') {
+      signalDelays[targetIndex] = Math.min(255, event.delayUnits);
+      technology[targetIndex] = Math.min(1, technology[targetIndex] + .035);
+      lastCauses[targetIndex] = '接收光锥幽灵信号';
+      event.outcome = `${target.name} 只能重建发信文明的过去，无法确认其现在是否仍然存在`;
+      return;
+    }
+
+    if (event.type === 'exposure-response') {
+      if (event.responsePolicy === '跨文明验证协议') {
+        causalResponses[targetIndex] = 1;
+        cohesion[targetIndex] = Math.min(1, cohesion[targetIndex] + .07);
+        technology[targetIndex] = Math.min(1, technology[targetIndex] + .05);
+      } else if (event.responsePolicy === '深空威慑部署') {
+        causalResponses[targetIndex] = -1;
+        visibility[targetIndex] = Math.min(1, visibility[targetIndex] + .16);
+        cohesion[targetIndex] = Math.max(0, cohesion[targetIndex] - .06);
+      } else {
+        causalResponses[targetIndex] = 2;
+        visibility[targetIndex] = Math.max(0, visibility[targetIndex] - .2);
+      }
+      lastCauses[targetIndex] = event.responsePolicy;
+      event.outcome = `${target.name} 的${event.responsePolicy}成为早期接触事件的长期制度后果`;
     }
   };
 
@@ -445,6 +646,8 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
     civilizationData.forEach((species, speciesIndex) => {
       if (seeded[speciesIndex] || time < species.birth) return;
       seeded[speciesIndex] = 1;
+      biosphereStages[speciesIndex] = Math.max(5, biosphereStages[speciesIndex]);
+      if (time >= fermiParadigmAt) fermiAwareness[speciesIndex] = 1;
       if (disabledNodes[species.homeNodeIndex]) {
         lastCauses[speciesIndex] = '母星在文明诞生前失去宜居条件';
         return;
@@ -481,10 +684,15 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       if (owner < 0) continue;
       const species = civilizationData[owner];
       const infrastructure = 1 + megastructures[owner] * .34 + technology[owner] * .16
-        + terraforming[owner] * .1 + substrateModes[owner] * .12 + precursorKnowledge[owner] * .08;
+        + terraforming[owner] * .1 + substrateModes[owner] * .12 + precursorKnowledge[owner] * .08
+        + Math.max(0, engineeringModes[owner]) * .1 + Math.max(0, artifacts[owner]) * .045;
       const socialStability = .82 + cohesion[owner] * .3;
+      const morphologySupport = morphologyModes[owner] === 2 || morphologyModes[owner] === 4
+        ? 1.08
+        : morphologyModes[owner] === 3 ? 1.05 : 1;
       const support = (1 + friendlyCounts[owner] * .045 - conflictCounts[owner] * .028)
-        * infrastructure * socialStability * (contamination[owner] > 0 ? .72 : 1);
+        * infrastructure * socialStability * morphologySupport
+        * (contamination[owner] > 0 ? .72 : 1) * (filterStates[owner] < 0 ? .78 : 1);
       strength[node] += (.032 + species.resilience * .018) * support * (1 - strength[node]);
       strength[node] = THREE.MathUtils.clamp(strength[node], 0, 1.35);
     }
@@ -535,9 +743,12 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       const frontierBonus = terraforming[speciesIndex] > 0 ? .48 : 0;
       const substrateBonus = substrateModes[speciesIndex] ? .28 : 0;
       const precursorBonus = precursorKnowledge[speciesIndex] > 0 ? .32 : 0;
+      const migrationBonus = migrationModes[speciesIndex] > 0 ? .34 : 0;
+      const engineeringBonus = engineeringModes[speciesIndex] > 0 ? .38 : 0;
       const attempts = 1 + Math.floor(
         species.expansionRate + friendlyCounts[speciesIndex] * .34 + probeBonus + frontierBonus
-          + substrateBonus + precursorBonus + technology[speciesIndex] * .28
+          + substrateBonus + precursorBonus + migrationBonus + engineeringBonus
+          + technology[speciesIndex] * .28
       );
       for (let attempt = 0; attempt < attempts; attempt++) {
         const frontier = [];
@@ -636,9 +847,12 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       for (let node = 0; node < nodeCount; node++) {
         const owner = owners[node];
         if (owner < 0 || civilizationData[owner].highDimensional && time >= civilizationData[owner].ascensionAt) continue;
-        const digitalEnergyRefuge = substrateModes[owner] && fateDecline === 0;
-        const declineLoss = (.004 + decline * .052) * (digitalEnergyRefuge ? .38 : 1);
-        const ownerDeclineFinished = declineFinished && (!digitalEnergyRefuge
+        const lateEnergyRefuge = (substrateModes[owner] || engineeringModes[owner] > 0) && fateDecline === 0;
+        const refugeFactor = substrateModes[owner] && engineeringModes[owner] > 0
+          ? .28
+          : substrateModes[owner] ? .38 : engineeringModes[owner] > 0 ? .62 : 1;
+        const declineLoss = (.004 + decline * .052) * refugeFactor;
+        const ownerDeclineFinished = declineFinished && (!lateEnergyRefuge
           || time >= Math.min(1000, declineWindow.energyEnd + 70));
         strength[node] -= declineLoss;
         if (strength[node] <= .035 || ownerDeclineFinished) {
@@ -688,6 +902,15 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       contamination: contamination.slice(),
       temporalDrift: temporalDrift.slice(),
       evacuations: evacuations.slice(),
+      biosphereStages: biosphereStages.slice(),
+      filterStates: filterStates.slice(),
+      migrationModes: migrationModes.slice(),
+      engineeringModes: engineeringModes.slice(),
+      morphologyModes: morphologyModes.slice(),
+      artifacts: artifacts.slice(),
+      signalDelays: signalDelays.slice(),
+      fermiAwareness: fermiAwareness.slice(),
+      causalResponses: causalResponses.slice(),
       relations: relationStates.slice(),
       relationScores: relationScores.slice(),
       causes: lastCauses.slice()
@@ -777,6 +1000,27 @@ export function deriveCivilizationRuntime(position, simulationState, civilizatio
     if (simulationState?.contamination[index] < 0) statuses.push('验证网络');
     if (simulationState?.temporalDrift[index]) statuses.push('相对论分支');
     if (simulationState?.evacuations[index]) statuses.push('轨道避难');
+    if (simulationState?.filterStates[index] === 1) statuses.push('跨越过滤器');
+    if (simulationState?.filterStates[index] === 2) statuses.push('过滤器重构');
+    if (simulationState?.filterStates[index] < 0) statuses.push('过滤器衰退');
+    if (simulationState?.migrationModes[index] === 1) statuses.push('远端舰队');
+    if (simulationState?.migrationModes[index] === 2) statuses.push('流浪舰队');
+    if (simulationState?.migrationModes[index] < 0) statuses.push('舰队失联');
+    if (simulationState?.engineeringModes[index] > 0) {
+      statuses.push(['', '恒星抬升', '套娃脑', '恒星推进器'][simulationState.engineeringModes[index]]);
+    }
+    if (simulationState?.engineeringModes[index] < 0) statuses.push('恒星工程失稳');
+    if (simulationState?.artifacts[index] === 1) statuses.push('遗产继承');
+    if (simulationState?.artifacts[index] === 2) statuses.push('遗产误读');
+    if (simulationState?.artifacts[index] < 0) statuses.push('遗迹风险');
+    if (simulationState?.signalDelays[index]) statuses.push('幽灵信号');
+    if (simulationState?.causalResponses[index] === 1) statuses.push('验证协议');
+    if (simulationState?.causalResponses[index] === -1) statuses.push('深空威慑');
+    if (simulationState?.causalResponses[index] === 2) statuses.push('全域静默');
+    const morphology = morphologyLabels[simulationState?.morphologyModes[index]] || species.morphology;
+    if (morphology) statuses.push(morphology);
+    if (simulationState?.biosphereStages[index] >= 5) statuses.push('复杂生物圈');
+    if (simulationState?.fermiAwareness[index]) statuses.push(`费米：${species.fermiScenario}`);
     return {
       alive,
       ascended,

@@ -224,6 +224,55 @@ export function createCivilizationEventVisual(event) {
       return trail;
     });
     effect.relativisticTrails = trails;
+  } else if (event.visual === 'biosphere-chain') {
+    const biosphereShells = [0, 1, 2, 3].map((index) => {
+      const shell = new THREE.LineSegments(
+        new THREE.EdgesGeometry(new THREE.SphereGeometry(.2 + index * .1, 10 + index * 2, 6)),
+        new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending })
+      );
+      shell.userData.stage = index;
+      group.add(shell);
+      return shell;
+    });
+    effect.biosphereShells = biosphereShells;
+  } else if (event.visual === 'light-cone') {
+    const lightCones = [-1, 1].map((direction) => {
+      const cone = new THREE.LineSegments(
+        new THREE.EdgesGeometry(new THREE.ConeGeometry(.62, 1.7, 18, 1, true)),
+        new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending })
+      );
+      cone.position.y = direction * .82;
+      cone.rotation.z = direction < 0 ? Math.PI : 0;
+      group.add(cone);
+      return cone;
+    });
+    effect.lightCones = lightCones;
+  } else if (event.visual === 'stellar-engine') {
+    const engineRings = [0, 1].map((index) => {
+      const engineRing = new THREE.LineSegments(
+        new THREE.EdgesGeometry(new THREE.TorusGeometry(.48 + index * .2, .018, 4, 72)),
+        new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending })
+      );
+      engineRing.rotation.set(.45 + index * .4, index * .7, .2);
+      group.add(engineRing);
+      return engineRing;
+    });
+    const beamGeometry = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(-1.5, 0, 0),
+      new THREE.Vector3(1.5, 0, 0),
+      new THREE.Vector3(0, -1.5, 0),
+      new THREE.Vector3(0, 1.5, 0)
+    ]);
+    const engineBeams = new THREE.LineSegments(beamGeometry, new THREE.LineBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending
+    }));
+    group.add(engineBeams);
+    effect.engineRings = engineRings;
+    effect.engineBeams = engineBeams;
   } else if (event.visual === 'galactic-encounter') {
     const companion = new THREE.Sprite(additiveMaterial({ map: makeGlowTexture(), color }));
     const tidalRing = new THREE.Sprite(additiveMaterial({ map: makeRingTexture(), color }));
@@ -325,6 +374,27 @@ export function updateCivilizationEventVisual(event, phase, persistence = 0) {
       trail.scale.setScalar(.32 + reveal * .68);
     });
   }
+  if (effect.biosphereShells) {
+    effect.biosphereShells.forEach((shell, index) => {
+      const stageReveal = THREE.MathUtils.smoothstep(phase, index * .16, index * .16 + .22);
+      shell.material.opacity = stageReveal * fade * (.62 - index * .08);
+      shell.scale.setScalar(.58 + stageReveal * .42);
+    });
+  }
+  if (effect.lightCones) {
+    effect.lightCones.forEach((cone) => {
+      cone.material.opacity = intensity * .34;
+      cone.scale.setScalar(.3 + reveal * .7);
+    });
+  }
+  if (effect.engineRings) {
+    effect.engineRings.forEach((engineRing, index) => {
+      engineRing.material.opacity = Math.max(persistence * .42, intensity * (.68 - index * .14));
+      engineRing.scale.setScalar(.45 + reveal * .55);
+    });
+    effect.engineBeams.material.opacity = intensity * .44;
+    effect.engineBeams.scale.setScalar(.4 + reveal * .6);
+  }
   if (effect.companion) {
     effect.glow.scale.setScalar(6 + phase * 5);
     effect.glow.material.opacity = intensity * .16;
@@ -363,5 +433,15 @@ export function animateCivilizationEventVisual(event, now) {
   effect.relativisticTrails?.forEach((trail, index) => {
     trail.rotation.z = Math.sin(now * .0008 + index * Math.PI) * .08;
   });
+  effect.biosphereShells?.forEach((shell, index) => {
+    shell.rotation.y = now * (.00012 + index * .00004) * (index % 2 ? -1 : 1);
+  });
+  effect.lightCones?.forEach((cone, index) => {
+    cone.rotation.y = now * (index ? -.00014 : .00014);
+  });
+  effect.engineRings?.forEach((engineRing, index) => {
+    engineRing.rotation.y += .0028 + index * .0014;
+  });
+  if (effect.engineBeams) effect.engineBeams.rotation.z = now * .00018;
   if (effect.tidalRing) effect.tidalRing.material.rotation = now * .00004;
 }
