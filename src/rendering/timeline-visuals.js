@@ -10,8 +10,14 @@ export function updateEpochVisuals(position, context) {
     clickableStars, originalGalaxyPositions, universe, transition, galaxyGroup,
     starDeathThresholds, originalGalaxyColors, cosmicEvents, remnantGroup,
     stellarRemnants, originalRemnantPositions, remnantDynamics, blackHoleRemnants,
-    heatDeathGroup, coldPhotons, originalPhotonPositions, originalPhotonColors
+    heatDeathGroup, coldPhotons, originalPhotonPositions, originalPhotonColors,
+    cosmicFateGroup, fateBubble, fateGlow
   } = context;
+  const fate = universe.cosmicFate;
+  const finiteOutcome = fate && fate.type !== 'heat-death';
+  const fatePhase = finiteOutcome
+    ? THREE.MathUtils.smoothstep(position, fate.onsetAt, 1000)
+    : 0;
   const earlyVisible = position < 150 && mode === 'explorer';
   epochEffectsGroup.visible = earlyVisible;
   if (earlyVisible && primordialParticles) {
@@ -69,6 +75,16 @@ export function updateEpochVisuals(position, context) {
     const cooling = THREE.MathUtils.smoothstep(position, 0, 70);
     currentBackground.lerpColors(new THREE.Color(0x2a1108), normalBackground, cooling);
     renderer.toneMappingExposure = 1.15 + (1 - cooling) * 2.2;
+  } else if (finiteOutcome && fatePhase > 0) {
+    const fateColors = {
+      'big-rip': new THREE.Color(0x071324),
+      'big-crunch': new THREE.Color(0x260806),
+      'vacuum-decay': new THREE.Color(0x160a25)
+    };
+    currentBackground.lerpColors(normalBackground, fateColors[fate.type], fatePhase * .72);
+    renderer.toneMappingExposure = fate.type === 'big-crunch'
+      ? 1.15 + fatePhase * 1.45
+      : 1.15 - fatePhase * .38;
   } else if (position > 950) {
     // Heat death is the disappearance of usable gradients, not a global dimmer.
     const cooling = THREE.MathUtils.smoothstep(position, 950, 1000);
@@ -113,13 +129,51 @@ export function updateEpochVisuals(position, context) {
       colorArray[offset + 2] *= impact.dimFactor;
     });
   });
+
+  if (finiteOutcome && fatePhase > 0) {
+    const bubbleX = fateBubble?.position.x || 0;
+    const bubbleY = fateBubble?.position.y || 0;
+    const bubbleZ = fateBubble?.position.z || 0;
+    const bubbleRadius = .18 + Math.pow(fatePhase, .58) * 36;
+    for (let i = 0; i < originalGalaxyPositions.length; i += 3) {
+      if (fate.type === 'big-rip') {
+        const radius = Math.hypot(originalGalaxyPositions[i], originalGalaxyPositions[i + 1], originalGalaxyPositions[i + 2]);
+        const separation = 1 + Math.pow(fatePhase, 1.7) * (2.8 + radius * .16);
+        positionArray[i] *= separation;
+        positionArray[i + 1] *= separation;
+        positionArray[i + 2] *= separation;
+        const survival = Math.pow(1 - fatePhase, .72);
+        colorArray[i] *= survival;
+        colorArray[i + 1] *= survival;
+        colorArray[i + 2] *= survival;
+      } else if (fate.type === 'big-crunch') {
+        const contraction = Math.max(.012, 1 - Math.pow(fatePhase, 1.35) * .988);
+        positionArray[i] *= contraction;
+        positionArray[i + 1] *= contraction;
+        positionArray[i + 2] *= contraction;
+        colorArray[i] *= 1 + fatePhase * 1.4;
+        colorArray[i + 1] *= 1 - fatePhase * .5;
+        colorArray[i + 2] *= 1 - fatePhase * .72;
+      } else {
+        const distance = Math.hypot(
+          positionArray[i] - bubbleX,
+          positionArray[i + 1] - bubbleY,
+          positionArray[i + 2] - bubbleZ
+        );
+        const survival = THREE.MathUtils.smoothstep(bubbleRadius - 1.2, bubbleRadius + .4, distance);
+        colorArray[i] *= survival;
+        colorArray[i + 1] *= survival;
+        colorArray[i + 2] *= survival;
+      }
+    }
+  }
   clickableStars.geometry.attributes.position.needsUpdate = true;
   clickableStars.geometry.attributes.color.needsUpdate = true;
 
   const coreGlow = galaxyGroup.children.find((item) => item.userData.isCoreGlow);
   if (coreGlow) {
     const { scale, opacity } = coreGlow.userData.profile;
-    coreGlow.material.opacity = formation * stellarPopulation * opacity;
+    coreGlow.material.opacity = formation * stellarPopulation * opacity * (1 - fatePhase);
     coreGlow.scale.set(scale, scale, 1);
   }
   const agnGlow = galaxyGroup.children.find((item) => item.userData.isAgnGlow);
@@ -131,13 +185,14 @@ export function updateEpochVisuals(position, context) {
     agnJet.material.opacity = activePhase * .18;
   }
 
-  const remnantsVisible = position > stellarEnd - 80 && position < 930;
-  const blackHolesVisible = position > 825 && position < 960;
+  const allowsDeepFuture = !finiteOutcome || fate.outcomeExponent > 38;
+  const remnantsVisible = allowsDeepFuture && position > stellarEnd - 80 && position < 930;
+  const blackHolesVisible = allowsDeepFuture && position > 825 && position < 960;
   remnantGroup.visible = (remnantsVisible || blackHolesVisible) && mode === 'explorer';
   if (remnantsVisible && stellarRemnants) {
     const remnantBirth = THREE.MathUtils.smoothstep(position, stellarEnd - 80, stellarEnd + 15);
     const remnantFade = 1 - THREE.MathUtils.smoothstep(position, 845, 930);
-    stellarRemnants.material.opacity = remnantBirth * remnantFade * .64;
+    stellarRemnants.material.opacity = remnantBirth * remnantFade * .64 * (1 - fatePhase);
     const remnantArray = stellarRemnants.geometry.attributes.position.array;
     const writeOrbit = (index, samplePosition) => {
       const offset = index * 3;
@@ -213,7 +268,7 @@ export function updateEpochVisuals(position, context) {
     const pulseWindow = 7.5;
     const pulseDistance = Math.abs(position - data.evaporationAt);
     const pulse = pulseDistance < pulseWindow ? Math.sin((1 - pulseDistance / pulseWindow) * Math.PI / 2) : 0;
-    hole.visible = mode === 'explorer' && position >= data.birthAt && position <= data.evaporationAt + pulseWindow;
+    hole.visible = allowsDeepFuture && mode === 'explorer' && position >= data.birthAt && position <= data.evaporationAt + pulseWindow;
     const massScale = data.baseScale * (.18 + .82 * Math.cbrt(Math.max(0, remaining)));
     hole.scale.setScalar(Math.max(.035, massScale));
     const accretionIntensity = born * (.78 + lateEvaporation * .22) * Math.sqrt(Math.max(0, remaining));
@@ -224,7 +279,7 @@ export function updateEpochVisuals(position, context) {
     data.finalPulse.scale.set(pulseScale, pulseScale, 1);
   });
 
-  heatDeathGroup.visible = position > 910 && mode === 'explorer';
+  heatDeathGroup.visible = !finiteOutcome && position > 910 && mode === 'explorer';
   if (coldPhotons && originalPhotonPositions && originalPhotonColors) {
     const radiationBirth = THREE.MathUtils.smoothstep(position, 910, 940);
     const redshift = THREE.MathUtils.smoothstep(position, 938, 1000);
@@ -242,6 +297,29 @@ export function updateEpochVisuals(position, context) {
     }
     coldPhotons.geometry.attributes.position.needsUpdate = true;
     coldPhotons.geometry.attributes.color.needsUpdate = true;
+  }
+
+  cosmicFateGroup.visible = finiteOutcome && fatePhase > 0 && mode === 'explorer';
+  if (cosmicFateGroup.visible && fateBubble && fateGlow) {
+    if (fate.type === 'vacuum-decay') {
+      const radius = .18 + Math.pow(fatePhase, .58) * 36;
+      fateBubble.visible = true;
+      fateBubble.scale.setScalar(radius);
+      fateBubble.material.opacity = Math.sin(Math.min(.98, fatePhase) * Math.PI) * .18 + .035;
+      fateGlow.position.copy(fateBubble.position);
+      fateGlow.material.opacity = (1 - fatePhase) * .42;
+      fateGlow.scale.setScalar(1.2 + fatePhase * 5.5);
+    } else {
+      fateBubble.visible = false;
+      fateGlow.position.set(0, 0, 0);
+      fateGlow.material.opacity = fate.type === 'big-crunch'
+        ? Math.pow(fatePhase, 2.4) * .92
+        : Math.sin(fatePhase * Math.PI) * .28;
+      const glowScale = fate.type === 'big-crunch'
+        ? .4 + (1 - fatePhase) * 8
+        : 3 + fatePhase * 28;
+      fateGlow.scale.setScalar(glowScale);
+    }
   }
 }
 

@@ -40,6 +40,10 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
   civilizationData.forEach((species, index) => { reservedFor[species.homeNodeIndex] = index; });
   const lastCounts = new Uint16Array(speciesCount);
   const lastCauses = Array(speciesCount).fill('自主扩张');
+  const finiteOutcome = universe.cosmicFate?.type !== 'heat-death';
+  const declineStart = finiteOutcome ? universe.cosmicFate.onsetAt : 620;
+  const declineEnd = finiteOutcome ? 1000 : 710;
+  const declineCause = finiteOutcome ? universe.cosmicFate.label : '恒星能源枯竭';
 
   const relationIndex = (a, b) => a * speciesCount + b;
   for (let a = 0; a < speciesCount; a++) {
@@ -213,16 +217,16 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       }
     });
 
-    if (time >= 620) {
-      const decline = THREE.MathUtils.smoothstep(time, 620, 710);
+    if (time >= declineStart) {
+      const decline = THREE.MathUtils.smoothstep(time, declineStart, declineEnd);
       for (let node = 0; node < nodeCount; node++) {
         const owner = owners[node];
         if (owner < 0 || civilizationData[owner].highDimensional && time >= civilizationData[owner].ascensionAt) continue;
         strength[node] -= .004 + decline * .052;
-        if (strength[node] <= .035 || time >= 710) {
+        if (strength[node] <= .035 || time >= declineEnd) {
           owners[node] = -1;
           strength[node] = 0;
-          lastCauses[owner] = '恒星能源枯竭';
+          lastCauses[owner] = declineCause;
         }
       }
     }

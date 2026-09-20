@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { galaxyTypes } from './catalog.js';
+import { createCosmicFate } from './cosmic-fate.js';
+import { cosmicYearsToTimelinePosition } from './cosmic-time.js';
 import { mulberry32, randomBetween } from './random.js';
 
 export function formatGalaxyHue(hue) {
@@ -28,7 +30,8 @@ export function formatCivilizations(value) {
 }
 
 export function stellarEndTimelinePosition(universe) {
-  return THREE.MathUtils.clamp(570 + (universe.stellarFormationEndExponent - 12) / 2 * 80, 578, 654);
+  const exponent = universe.lastStarDeathExponent ?? universe.stellarFormationEndExponent;
+  return THREE.MathUtils.clamp(cosmicYearsToTimelinePosition(10 ** exponent, universe), 478, 1000);
 }
 
 export function formatStars(value) {
@@ -51,12 +54,13 @@ export function createUniverse(seed = Math.floor(Math.random() * 900000) + 10000
   const structureEfficiency = THREE.MathUtils.clamp(gravity * primordialFluctuation / Math.pow(expansionRate, .72), .12, 2.8);
   const elements = Math.max(2, Math.round(118 * chemistryStability * randomBetween(random, .82, 1.08)));
   const stars = THREE.MathUtils.clamp(randomBetween(random, .35, 3.2) * structureEfficiency, .08, 7.2);
-  const stellarFormationEndExponent = THREE.MathUtils.clamp(13.4 - (darkEnergyDensity - .68) * 2.1 - (expansionRate - 1) * .55, 12.2, 14.1);
+  const stellarFormationEndExponent = THREE.MathUtils.clamp(12.5 - (darkEnergyDensity - .68) * 1.35 - (expansionRate - 1) * .42, 11.8, 13.25);
+  const lastStarDeathExponent = THREE.MathUtils.clamp(stellarFormationEndExponent + randomBetween(random, .68, 1.08), 12.8, 14.25);
   const habitability = chemistryStability * THREE.MathUtils.clamp(1 - Math.abs(cmbTemperature - 2.725) / 3.5, .12, 1);
   const lifeProbability = Math.pow(random(), 4) * .08 * habitability;
   const speciesCount = Math.floor(randomBetween(random, 5, 16));
   const civilizations = Math.max(speciesCount, Math.floor(stars * 1e5 * lifeProbability * randomBetween(random, 0.02, 0.7)));
-  const lifetime = Math.round(Math.pow(10, stellarFormationEndExponent - 8) / 10) * 10;
+  const lifetime = Math.round(Math.pow(10, lastStarDeathExponent - 8) / 10) * 10;
   const armCount = Math.floor(randomBetween(random, 3, 7));
   const galaxyType = seed % galaxyTypes.length;
   const blackHoleProbability = [.96, .92, .72, .99, .34][galaxyType];
@@ -64,11 +68,12 @@ export function createUniverse(seed = Math.floor(Math.random() * 900000) + 10000
   const activeNucleus = hasCentralBlackHole && random() < [.1, .07, .05, .045, .025][galaxyType];
   const blackHoleEvaporationExponent = Math.floor(randomBetween(random, 97, 103));
   const hue = randomBetween(random, 0.48, 0.76);
+  const cosmicFate = createCosmicFate(seed, { expansionRate, darkEnergyDensity });
   return {
     seed, speed, gravity, fineStructure, massRatio, expansionRate, darkEnergyDensity,
     primordialFluctuation, cmbTemperature, chemistryStability, structureEfficiency,
-    stellarFormationEndExponent, elements, stars, lifeProbability,
+    stellarFormationEndExponent, lastStarDeathExponent, elements, stars, lifeProbability,
     civilizations, speciesCount, lifetime, blackHoleEvaporationExponent, armCount, galaxyType,
-    hasCentralBlackHole, activeNucleus, hue
+    hasCentralBlackHole, activeNucleus, hue, cosmicFate
   };
 }

@@ -1,10 +1,10 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import './style.css';
-import { galaxyTypes, speciesColors, speciesNames, eras } from './domain/catalog.js';
+import { erasForUniverse, galaxyTypes, speciesColors, speciesNames } from './domain/catalog.js';
 import { mulberry32, randomBetween, gaussianRandom } from './domain/random.js';
 import { createUniverse, stellarEndTimelinePosition } from './domain/universe.js';
-import { cosmicTimeLabel, createCosmicTimelineState, selectTimelineNarrative, timelineUnitsPerSecond } from './domain/cosmic-time.js';
+import { cosmicTimeLabel, cosmicYearsToTimelinePosition, createCosmicTimelineState, selectTimelineNarrative, timelineUnitsPerSecond } from './domain/cosmic-time.js';
 import { getPointTexture, makeGlowTexture, makeRingTexture } from './rendering/textures.js';
 import { animateBlackHoleVisual, createBlackHoleVisual } from './rendering/black-hole.js';
 import { applyCivilizationSnapshot, syncCivilizationHosts } from './rendering/civilizations.js';
@@ -47,8 +47,9 @@ let galaxyGroup = new THREE.Group();
 let epochEffectsGroup = new THREE.Group();
 let remnantGroup = new THREE.Group();
 let heatDeathGroup = new THREE.Group();
+let cosmicFateGroup = new THREE.Group();
 let cosmicEventGroup = new THREE.Group();
-scene.add(universeGroup, galaxyGroup, epochEffectsGroup, remnantGroup, heatDeathGroup, cosmicEventGroup);
+scene.add(universeGroup, galaxyGroup, epochEffectsGroup, remnantGroup, heatDeathGroup, cosmicFateGroup, cosmicEventGroup);
 
 let universe = null;
 let mode = 'generator';
@@ -71,6 +72,8 @@ let expansionDirections = null;
 let bangCore = null;
 let shockwaves = [];
 let coldPhotons = null;
+let fateBubble = null;
+let fateGlow = null;
 let originalPhotonPositions = null;
 let originalPhotonColors = null;
 let stellarRemnants = null;
@@ -151,6 +154,7 @@ function buildGalaxy() {
   disposeGroup(epochEffectsGroup);
   disposeGroup(remnantGroup);
   disposeGroup(heatDeathGroup);
+  disposeGroup(cosmicFateGroup);
   disposeGroup(cosmicEventGroup);
   civilizationGroups = [];
   civilizationData = [];
@@ -164,6 +168,7 @@ function buildGalaxy() {
   const core = new THREE.Color(0xffe7b4);
   const edge = new THREE.Color().setHSL(universe.hue, 0.65, 0.56);
   const stellarEnd = stellarEndTimelinePosition(universe);
+  const stellarDeathStart = Math.min(stellarEnd, cosmicYearsToTimelinePosition(4e10, universe));
   const irregularClumps = Array.from({ length: 4 + universe.seed % 3 }, (_, index) => ({
     x: randomBetween(random, -8, 8) + index * .35,
     y: randomBetween(random, -.6, .6),
@@ -249,7 +254,7 @@ function buildGalaxy() {
     colors[i * 3 + 2] = color.b * brightness;
     // Massive stars disappear early; the last low-mass red dwarfs survive to
     // roughly 10^14 years, at the end of the Stelliferous Era.
-    starDeathThresholds[i] = 495 + Math.pow(random(), 1.9) * (stellarEnd - 495);
+    starDeathThresholds[i] = stellarDeathStart + Math.pow(random(), 1.9) * (stellarEnd - stellarDeathStart);
   }
 
   originalGalaxyPositions = positions.slice();
@@ -524,9 +529,38 @@ function buildEpochEffects(starPositions) {
   }));
   heatDeathGroup.add(coldPhotons);
 
+  const fateColor = universe.cosmicFate.type === 'vacuum-decay'
+    ? 0xc6a7ff
+    : universe.cosmicFate.type === 'big-rip' ? 0x80c8ff : 0xff805f;
+  fateBubble = new THREE.Mesh(
+    new THREE.SphereGeometry(1, 40, 24),
+    new THREE.MeshBasicMaterial({
+      color: fateColor,
+      transparent: true,
+      opacity: 0,
+      wireframe: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending
+    })
+  );
+  fateBubble.position.set(4.2, -1.4, 2.6);
+  fateGlow = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: makeGlowTexture(),
+    color: fateColor,
+    transparent: true,
+    opacity: 0,
+    depthTest: false,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+  }));
+  fateGlow.scale.set(.2, .2, 1);
+  cosmicFateGroup.add(fateBubble, fateGlow);
+  cosmicFateGroup.rotation.copy(galaxyGroup.rotation);
+
   epochEffectsGroup.visible = false;
   remnantGroup.visible = false;
   heatDeathGroup.visible = false;
+  cosmicFateGroup.visible = false;
 }
 
 function buildCosmicEvents(starPositions) {
@@ -592,7 +626,9 @@ function buildCosmicEvents(starPositions) {
       message: '漫长引力散射后，两颗孤立黑洞形成并合系统', preferCenter: true,
       start: 872 + random() * 18, duration: 34, color: '#9bb8ff'
     }
-  ];
+  ].filter((event) => event.type !== 'late-black-hole-merger'
+    || universe.cosmicFate.type === 'heat-death'
+    || universe.cosmicFate.outcomeExponent > 45);
 
   const impactProfiles = {
     'pair-instability-supernova': { radius: .55, maxStars: 5, sourceDim: .02, neighborDim: .96, kick: .018, civilization: .08, range: 2.4 },
@@ -936,7 +972,7 @@ function buildCivilizations() {
 
   civilizationSimulation = {
     start: 390,
-    end: 710,
+    end: universe.cosmicFate.type === 'heat-death' ? 710 : 1000,
     step: 1,
     habitatRemnantIndices,
     habitatPositions,
@@ -1015,7 +1051,7 @@ function buildCivilizations() {
       birth,
       highDimensional,
       ascensionAt,
-      extinction: highDimensional ? 1001 : 710,
+      extinction: highDimensional ? 1001 : (universe.cosmicFate.type === 'heat-death' ? 710 : 1000),
       aggression,
       cooperation,
       expansionRate,
@@ -1179,23 +1215,26 @@ function timelineVisualContext() {
     starDeathThresholds, originalGalaxyColors, cosmicEvents, remnantGroup,
     stellarRemnants, originalRemnantPositions, remnantDynamics, blackHoleRemnants,
     heatDeathGroup, coldPhotons, originalPhotonPositions, originalPhotonColors,
-    cosmicEventGroup
+    cosmicFateGroup, fateBubble, fateGlow, cosmicEventGroup
   };
 }
 
 function applyCivilizationVisuals(runtimeState) {
+  const fateFade = universe.cosmicFate.type === 'heat-death'
+    ? 0
+    : THREE.MathUtils.smoothstep(cosmicPosition, universe.cosmicFate.onsetAt, 995);
   runtimeState.forEach((state, index) => {
     const group = civilizationGroups[index];
     const species = civilizationData[index];
     group.visible = state.alive && state.count > 0;
-    group.material.opacity = state.ascended ? .88 : .98;
+    group.material.opacity = (state.ascended ? .88 : .98) * (1 - fateFade);
     group.material.size = state.ascended ? .31 : .24;
     group.material.color.setHex(state.ascended ? 0xe9d7ff : species.color);
   });
 }
 
 function updateCosmicTime(value, force = false) {
-  const timelineState = createCosmicTimelineState(value, universe, eras);
+  const timelineState = createCosmicTimelineState(value, universe, erasForUniverse(universe));
   cosmicPosition = timelineState.position;
   renderTimelineHeader(timelineState);
 
@@ -1242,6 +1281,7 @@ function updateCosmicTime(value, force = false) {
   const narrative = selectTimelineNarrative({
     position: cosmicPosition,
     label: timelineState.label,
+    universe,
     activeEvent,
     activeRelationship,
     ascendedSpecies,
@@ -1280,6 +1320,11 @@ function animate(now) {
     if (heatDeathGroup.visible && !prefersReducedMotion) {
       coldPhotons.rotation.y += .000035;
       coldPhotons.rotation.x += .000009;
+    }
+    if (cosmicFateGroup.visible && !prefersReducedMotion) {
+      fateBubble.rotation.y += .0014;
+      fateBubble.rotation.x -= .0007;
+      fateGlow.material.rotation = now * .00008;
     }
     if (!prefersReducedMotion) {
       blackHoleRemnants.forEach((hole, index) => {

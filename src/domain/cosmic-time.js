@@ -6,6 +6,24 @@ const smoothstep = (value, min, max) => {
   return progress * progress * (3 - 2 * progress);
 };
 
+export function cosmicYearsToTimelinePosition(years, universe) {
+  const exponent = Math.log10(Math.max(1.38e10, years));
+  const presentExponent = Math.log10(1.38e10);
+  const fate = universe?.cosmicFate;
+  if (fate && Number.isFinite(fate.outcomeYears)) {
+    if (years >= fate.outcomeYears) return 1000;
+    const progress = (exponent - presentExponent) / (fate.outcomeExponent - presentExponent);
+    return clamp(470 + progress * (fate.onsetAt - 470), 470, fate.onsetAt);
+  }
+  if (exponent < 12) return 470 + (exponent - presentExponent) / (12 - presentExponent) * 100;
+  if (exponent < 14) return 570 + (exponent - 12) / 2 * 80;
+  if (exponent < 15) return 650 + (exponent - 14) * 30;
+  if (exponent < 38) return 680 + (exponent - 15) / 23 * 165;
+  const evaporationExponent = universe?.blackHoleEvaporationExponent || 100;
+  if (exponent < evaporationExponent) return 845 + (exponent - 38) / (evaporationExponent - 38) * 105;
+  return 950;
+}
+
 export function createCosmicTimelineState(value, universe, eras) {
   const position = clamp(Number(value), 0, 1000);
   const label = cosmicTimeLabel(position, universe);
@@ -33,6 +51,7 @@ export function timelineUnitsPerSecond(position) {
 export function selectTimelineNarrative({
   position,
   label,
+  universe,
   activeEvent,
   activeRelationship,
   ascendedSpecies,
@@ -46,6 +65,37 @@ export function selectTimelineNarrative({
       key: `${activeEvent.id}-${impacted ? 'aftermath' : 'forming'}`,
       time: label,
       text: `${activeEvent.label}：${activeEvent.message}${aftermath}`
+    };
+  }
+  const fate = universe?.cosmicFate;
+  if (fate && fate.type !== 'heat-death' && position >= fate.onsetAt) {
+    if (fate.type === 'vacuum-decay') {
+      const terminal = position >= 985;
+      return {
+        key: `fate-vacuum-${terminal ? 'terminal' : 'bubble'}`,
+        time: label,
+        text: terminal
+          ? '低能真空泡已经穿过可观测区域，原有粒子与相互作用不再适用'
+          : '量子隧穿产生了低能真空泡，泡壁以接近光速向外扩张'
+      };
+    }
+    if (fate.type === 'big-rip') {
+      const terminal = position >= 985;
+      return {
+        key: `fate-rip-${terminal ? 'terminal' : 'unbinding'}`,
+        time: label,
+        text: terminal
+          ? '膨胀率在有限时间内发散，局部束缚结构相继失效'
+          : '幽灵暗能量密度持续上升，星系团与星系开始逐层解束缚'
+      };
+    }
+    const terminal = position >= 985;
+    return {
+      key: `fate-crunch-${terminal ? 'terminal' : 'turnaround'}`,
+      time: label,
+      text: terminal
+        ? '坍缩使物质与辐射密度急剧升高，经典演化在高曲率阶段失效'
+        : '宇宙膨胀已经停止，大尺度距离开始反向缩小'
     };
   }
   if (activeRelationship) {
@@ -96,6 +146,13 @@ export function cosmicTimeLabel(position, universe) {
   if (position < 245) return `T+${formatYears(logLerp(380000, 1.8e8, (position - 145) / 100))}`;
   if (position < 340) return `T+${formatYears(logLerp(1.8e8, 1e9, (position - 245) / 95))}`;
   if (position < 470) return `T+${formatYears(logLerp(1e9, 1.38e10, (position - 340) / 130))}`;
+  const fate = universe?.cosmicFate;
+  if (fate && Number.isFinite(fate.outcomeYears)) {
+    if (position >= 999) return fate.label;
+    const progress = clamp((position - 470) / (fate.onsetAt - 470), 0, 1);
+    const years = logLerp(1.38e10, fate.outcomeYears, progress);
+    return `T+${formatYears(years)}`;
+  }
   if (position < 570) return `T+${formatYears(logLerp(1.38e10, 1e12, (position - 470) / 100))}`;
   if (position < 650) return `T+10^${(12 + (position - 570) / 80 * 2).toFixed(1)} 年`;
   if (position < 680) return `T+10^${(14 + (position - 650) / 30).toFixed(1)} 年`;
