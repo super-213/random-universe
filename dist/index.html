@@ -6,10 +6,10 @@
     <meta name="theme-color" content="#050508" />
     <meta name="description" content="每一次刷新，都会诞生一个独一无二的宇宙。" />
     <title>随机宇宙发生器</title>
-    <script type="module" crossorigin src="/assets/index-Co36p6Nq.js"></script>
+    <script type="module" crossorigin src="/assets/index-vpDL9oCP.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/three-core-DiGVz1Z0.js">
     <link rel="modulepreload" crossorigin href="/assets/intergalactic-travel-D39XioIx.js">
-    <link rel="stylesheet" crossorigin href="/assets/index-DOj9yRTL.css">
+    <link rel="stylesheet" crossorigin href="/assets/index-CuHhPEo1.css">
   </head>
   <body>
     <canvas
@@ -304,6 +304,17 @@
         </aside>
 
         <div class="time-console" aria-label="宇宙时间控制">
+          <section class="timeline-event-detail" id="timeline-event-detail" aria-label="事件局部详情" hidden>
+            <div class="timeline-event-detail-head">
+              <b id="timeline-event-detail-title">事件详情</b>
+              <button type="button" id="close-timeline-event-detail" aria-label="关闭事件详情">×</button>
+            </div>
+            <div class="timeline-event-detail-axis" aria-hidden="true">
+              <span id="timeline-event-detail-start"></span>
+              <span id="timeline-event-detail-end"></span>
+            </div>
+            <div class="timeline-event-detail-list" id="timeline-event-detail-list"></div>
+          </section>
           <div class="timeline-head">
             <button class="play-button" id="toggle-time" type="button" aria-label="播放时间">▶</button>
             <b id="timeline-value">T+0.001 s</b>

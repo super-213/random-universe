@@ -45,4 +45,5 @@ export {
   resetTimelineScaleFocus,
   restartTimelineScaleIntro
 } from './ui/timeline.js';
+export { clusterTimelineEvents, timelineDetailWindow } from './ui/timeline-layout.js';
 export { organizeCivilizationLegend, resetCivilizationLegend } from './ui/civilization-legend.js';

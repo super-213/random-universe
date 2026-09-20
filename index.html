@@ -300,6 +300,17 @@
         </aside>
 
         <div class="time-console" aria-label="宇宙时间控制">
+          <section class="timeline-event-detail" id="timeline-event-detail" aria-label="事件局部详情" hidden>
+            <div class="timeline-event-detail-head">
+              <b id="timeline-event-detail-title">事件详情</b>
+              <button type="button" id="close-timeline-event-detail" aria-label="关闭事件详情">×</button>
+            </div>
+            <div class="timeline-event-detail-axis" aria-hidden="true">
+              <span id="timeline-event-detail-start"></span>
+              <span id="timeline-event-detail-end"></span>
+            </div>
+            <div class="timeline-event-detail-list" id="timeline-event-detail-list"></div>
+          </section>
           <div class="timeline-head">
             <button class="play-button" id="toggle-time" type="button" aria-label="播放时间">▶</button>
             <b id="timeline-value">T+0.001 s</b>

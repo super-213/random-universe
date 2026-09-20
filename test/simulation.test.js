@@ -36,6 +36,7 @@ import {
 import { expandEventSchedule } from '../src/simulation/event-occurrence.js';
 import { blackHoleRecoilKms, createTransientSimulation } from '../src/simulation/transient-events.js';
 import { civilizationHistory, historyExportPayload } from '../src/ui/civilization-chronicle.js';
+import { clusterTimelineEvents, timelineDetailWindow } from '../src/ui/timeline-layout.js';
 import { civilizationObservation } from '../src/simulation/observation.js';
 import {
   advanceTechnologyTree,
@@ -44,6 +45,33 @@ import {
 } from '../src/simulation/technology-tree.js';
 
 const seedFor = (index) => index.toString(36).toUpperCase().padStart(16, '0');
+
+test('timeline events cluster by rendered pixel distance using their impact time', () => {
+  const events = [
+    { id: 'a', start: 40, impactAt: 100, duration: 80 },
+    { id: 'b', start: 90, impactAt: 106, duration: 30 },
+    { id: 'c', start: 260, impactAt: 300, duration: 60 }
+  ];
+  const groups = clusterTimelineEvents(events, 1000, 14);
+
+  assert.deepEqual(groups.map((group) => group.entries.map((entry) => entry.event.id)), [
+    ['a', 'b'],
+    ['c']
+  ]);
+  assert.equal(groups[0].position, 103);
+  assert.ok(groups[1].x - groups[0].x >= 14);
+});
+
+test('timeline detail windows include event duration and impact with usable padding', () => {
+  const window = timelineDetailWindow([
+    { start: 100, duration: 20, impactAt: 114 },
+    { start: 108, duration: 40, impactAt: 126 }
+  ]);
+
+  assert.ok(window.start < 100);
+  assert.ok(window.end > 148);
+  assert.equal(window.span, window.end - window.start);
+});
 
 test('finite cosmic outcomes map continuously through the full future timeline', () => {
   const universe = Array.from({ length: 200 }, (_, index) => createUniverse(seedFor(index)))

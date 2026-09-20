@@ -61,6 +61,8 @@ let renderTimelineHeader;
 let renderTimelineScale;
 let resetTimelineScaleFocus;
 let restartTimelineScaleIntro;
+let clusterTimelineEvents;
+let timelineDetailWindow;
 let organizeCivilizationLegend;
 let resetCivilizationLegend;
 
@@ -138,6 +140,7 @@ let lastFrame = performance.now();
 let lastTimelineUpdateAt = 0;
 let lastCoordinateUpdateAt = 0;
 let cosmicEvents = [];
+let timelineMarkerResizeFrame = null;
 let currentEras = null;
 let cachedTimelineVisualContext = null;
 let lastCivilizationSnapshot = null;
@@ -208,6 +211,8 @@ function loadExplorer() {
       renderTimelineScale,
       resetTimelineScaleFocus,
       restartTimelineScaleIntro,
+      clusterTimelineEvents,
+      timelineDetailWindow,
       organizeCivilizationLegend,
       resetCivilizationLegend
     } = explorer);
@@ -1847,54 +1852,169 @@ function buildCosmicEvents(starPositions) {
   cosmicEventGroup.visible = false;
 }
 
+function eventConfidenceClass(event) {
+  if (event.confidence === 'science-fiction') return ' is-speculative';
+  if (event.confidence === 'astrophysical-model' || event.confidence === 'astrobiology-model') {
+    return ' is-hypothesis';
+  }
+  return '';
+}
+
+function eventKindLabel(event) {
+  if (event.confidence === 'science-fiction') return '科幻假设';
+  if (event.confidence === 'astrophysical-model') return '天体演化模型';
+  if (event.confidence === 'astrobiology-model') return '天体生物学模型';
+  return '';
+}
+
+function timelineEventPosition(event) {
+  return Number.isFinite(event.impactAt) ? event.impactAt : event.start;
+}
+
+function jumpToTimelineEvent(event) {
+  pauseTimelineForScrubbing();
+  updateCosmicTime(timelineEventPosition(event), true);
+}
+
+function closeTimelineEventDetail() {
+  const panel = $('#timeline-event-detail');
+  if (panel) panel.hidden = true;
+  document.querySelectorAll('.event-cluster[aria-expanded="true"]').forEach((marker) => {
+    marker.setAttribute('aria-expanded', 'false');
+    marker.classList.remove('is-expanded');
+  });
+}
+
+function renderTimelineEventDetail(entries, sourceMarker) {
+  const panel = $('#timeline-event-detail');
+  const list = $('#timeline-event-detail-list');
+  if (!panel || !list || entries.length === 0) return;
+  const orderedEntries = [...entries].sort((a, b) => a.position - b.position);
+  const events = orderedEntries.map((entry) => entry.event);
+  const detailWindow = timelineDetailWindow(events);
+  const firstImpact = orderedEntries[0].position;
+  const lastImpact = orderedEntries.at(-1).position;
+  const rangeLabel = firstImpact === lastImpact
+    ? cosmicTimeLabel(firstImpact, universe)
+    : `${cosmicTimeLabel(firstImpact, universe)} — ${cosmicTimeLabel(lastImpact, universe)}`;
+
+  document.querySelectorAll('.event-cluster[aria-expanded="true"]').forEach((marker) => {
+    marker.setAttribute('aria-expanded', 'false');
+    marker.classList.remove('is-expanded');
+  });
+  sourceMarker.setAttribute('aria-expanded', 'true');
+  sourceMarker.classList.add('is-expanded');
+  panel.style.setProperty('--timeline-detail-origin', `${sourceMarker.dataset.position / 10}%`);
+  $('#timeline-event-detail-title').textContent = `${events.length} 个事件 · ${rangeLabel}`;
+  $('#timeline-event-detail-start').textContent = cosmicTimeLabel(detailWindow.start, universe);
+  $('#timeline-event-detail-end').textContent = cosmicTimeLabel(detailWindow.end, universe);
+  list.replaceChildren();
+
+  orderedEntries.forEach(({ event, index, position }) => {
+    const eventEnd = event.start + Math.max(0, event.duration || 0);
+    const visibleStart = Math.max(detailWindow.start, event.start);
+    const visibleEnd = Math.min(detailWindow.end, Math.max(eventEnd, position));
+    const startPercent = (visibleStart - detailWindow.start) / detailWindow.span * 100;
+    const widthPercent = Math.max(.8, (visibleEnd - visibleStart) / detailWindow.span * 100);
+    const impactPercent = (position - detailWindow.start) / detailWindow.span * 100;
+    const eventKind = eventKindLabel(event);
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'timeline-detail-event';
+    row.dataset.eventIndex = String(index);
+    row.style.setProperty('--event-color', event.color);
+    row.setAttribute(
+      'aria-label',
+      `${eventKind ? `${eventKind}，` : ''}${event.label}，从${cosmicTimeLabel(event.start, universe)}到${cosmicTimeLabel(eventEnd, universe)}，影响时刻${cosmicTimeLabel(position, universe)}`
+    );
+
+    const label = document.createElement('span');
+    label.className = 'timeline-detail-event-label';
+    const name = document.createElement('b');
+    name.textContent = event.label;
+    const time = document.createElement('small');
+    time.textContent = cosmicTimeLabel(position, universe);
+    label.append(name, time);
+
+    const plot = document.createElement('span');
+    plot.className = 'timeline-detail-event-plot';
+    const duration = document.createElement('i');
+    duration.className = 'timeline-detail-duration';
+    duration.style.left = `${startPercent}%`;
+    duration.style.width = `${widthPercent}%`;
+    const impact = document.createElement('i');
+    impact.className = 'timeline-detail-impact';
+    impact.style.left = `${impactPercent}%`;
+    plot.append(duration, impact);
+    row.append(label, plot);
+    row.addEventListener('click', () => {
+      list.querySelectorAll('.timeline-detail-event').forEach((item) => {
+        if (item === row) item.setAttribute('aria-current', 'true');
+        else item.removeAttribute('aria-current');
+      });
+      jumpToTimelineEvent(event);
+    });
+    list.appendChild(row);
+  });
+
+  panel.hidden = false;
+  updateObserverMarkers();
+}
+
 function renderCosmicEventMarkers() {
   const container = $('#cosmic-event-markers');
-  container.innerHTML = '';
-  cosmicEvents.forEach((event, eventIndex) => {
+  if (!container || !clusterTimelineEvents) return;
+  closeTimelineEventDetail();
+  container.replaceChildren();
+  const trackWidth = container.clientWidth || Math.max(1, innerWidth * .56);
+  const minimumGap = compactCivilizationLayout.matches ? 18 : 14;
+  const groups = clusterTimelineEvents(cosmicEvents, trackWidth, minimumGap);
+
+  groups.forEach((group) => {
     const marker = document.createElement('button');
     marker.type = 'button';
-    marker.dataset.eventIndex = String(eventIndex);
-    const confidenceClass = event.confidence === 'science-fiction'
-      ? ' is-speculative'
-      : event.confidence === 'astrophysical-model' || event.confidence === 'astrobiology-model'
-        ? ' is-hypothesis'
-        : '';
-    marker.className = `event-marker${confidenceClass}`;
-    marker.classList.toggle('is-beyond-lightcone', !observerCanSeeEvent(event));
-    marker.style.left = `${event.start / 10}%`;
-    marker.dataset.position = event.start.toFixed(3);
-    marker.style.setProperty('--event-color', event.color);
-    const eventKind = event.confidence === 'science-fiction'
-      ? '科幻假设，'
-      : event.confidence === 'astrophysical-model'
-        ? '天体演化模型，'
-        : event.confidence === 'astrobiology-model' ? '天体生物学模型，' : '';
-    marker.setAttribute('aria-label', `${eventKind}${event.label}，${cosmicTimeLabel(event.start, universe)}；${event.outcome}`);
-    marker.title = event.confidence === 'science-fiction'
-      ? `科幻假设 · ${event.outcome}`
-      : event.confidence === 'astrophysical-model'
-        ? `天体演化模型 · ${event.outcome}`
-        : event.confidence === 'astrobiology-model'
-          ? `天体生物学模型 · ${event.outcome}`
-          : event.outcome;
-    marker.addEventListener('click', () => {
-      timePlaying = false;
-      $('#toggle-time').textContent = '▶';
-      const previewPhases = {
-        supernova: .14,
-        nova: .2,
-        kilonova: .28,
-        pulsar: .54,
-        'stellar-flare': .44,
-        'tidal-disruption': .62,
-        'stellar-collapse': .7,
-        'black-hole-merger': .76
-      };
-      const previewPhase = previewPhases[event.visual] ?? .5;
-      updateCosmicTime(event.start + event.duration * previewPhase, true);
-    });
+    marker.style.left = `${group.position / 10}%`;
+    marker.dataset.position = group.position.toFixed(3);
+
+    if (group.entries.length === 1) {
+      const [{ event, index, position }] = group.entries;
+      const eventKind = eventKindLabel(event);
+      marker.dataset.eventIndex = String(index);
+      marker.className = `event-marker${eventConfidenceClass(event)}`;
+      marker.style.setProperty('--event-color', event.color);
+      marker.setAttribute('aria-label', `${eventKind ? `${eventKind}，` : ''}${event.label}，${cosmicTimeLabel(position, universe)}；${event.outcome}`);
+      marker.title = `${eventKind ? `${eventKind} · ` : ''}${event.outcome}`;
+      marker.addEventListener('click', () => {
+        closeTimelineEventDetail();
+        jumpToTimelineEvent(event);
+      });
+    } else {
+      const indices = group.entries.map((entry) => entry.index);
+      const firstPosition = group.entries[0].position;
+      const lastPosition = group.entries.at(-1).position;
+      const representative = group.entries[Math.floor(group.entries.length / 2)].event;
+      marker.className = 'event-marker event-cluster';
+      marker.dataset.eventIndices = indices.join(',');
+      marker.style.setProperty('--event-color', representative.color);
+      marker.textContent = String(group.entries.length);
+      marker.setAttribute('aria-expanded', 'false');
+      marker.setAttribute(
+        'aria-label',
+        `${group.entries.length} 个事件，从${cosmicTimeLabel(firstPosition, universe)}到${cosmicTimeLabel(lastPosition, universe)}，点击展开详情`
+      );
+      marker.title = group.entries.map((entry) => entry.event.label).join(' · ');
+      marker.addEventListener('click', () => {
+        if (marker.getAttribute('aria-expanded') === 'true') {
+          closeTimelineEventDetail();
+          return;
+        }
+        pauseTimelineForScrubbing();
+        renderTimelineEventDetail(group.entries, marker);
+      });
+    }
     container.appendChild(marker);
   });
+  updateObserverMarkers();
 }
 
 function buildCivilizations() {
@@ -2214,6 +2334,7 @@ async function enterUniverse() {
 
 function leaveUniverse() {
   if (mode !== 'explorer') return;
+  closeTimelineEventDetail();
   mode = 'generator';
   document.body.classList.remove('is-exploring');
   $('#explorer-view').classList.remove('is-active');
@@ -2418,15 +2539,32 @@ function observerCanSeeEvent(event, position = cosmicPosition) {
   return observerSpeciesIndex === null || position >= event.impactAt + observerDelayForEvent(event);
 }
 
+function timelineMarkerEvents(marker) {
+  const indices = marker.dataset.eventIndices
+    ? marker.dataset.eventIndices.split(',').map(Number)
+    : [Number(marker.dataset.eventIndex)];
+  return indices.map((index) => cosmicEvents[index]).filter(Boolean);
+}
+
 function updateObserverMarkers() {
-  document.querySelectorAll('.event-marker[data-event-index]').forEach((marker) => {
-    const event = cosmicEvents[Number(marker.dataset.eventIndex)];
-    const visible = observerCanSeeEvent(event);
-    const delay = observerDelayForEvent(event);
-    const uncertain = observerSpeciesIndex !== null && visible && delay > 8;
-    marker.classList.toggle('is-beyond-lightcone', !visible);
+  document.querySelectorAll('.event-marker, .timeline-detail-event').forEach((marker) => {
+    const events = timelineMarkerEvents(marker);
+    const observations = events.map((event) => ({
+      delay: observerDelayForEvent(event),
+      visible: observerCanSeeEvent(event)
+    }));
+    const visibleObservations = observations.filter((observation) => observation.visible);
+    const beyondLightcone = visibleObservations.length === 0;
+    const partial = visibleObservations.length > 0 && visibleObservations.length < observations.length;
+    const maximumDelay = Math.max(0, ...visibleObservations.map((observation) => observation.delay));
+    const uncertain = observerSpeciesIndex !== null && !beyondLightcone && maximumDelay > 8;
+    marker.classList.toggle('is-beyond-lightcone', beyondLightcone);
+    marker.classList.toggle('is-partially-observed', partial);
     marker.classList.toggle('is-uncertain-observation', uncertain);
-    marker.style.setProperty('--observation-confidence', String(THREE.MathUtils.clamp(1 - delay / 180, .22, 1)));
+    marker.style.setProperty(
+      '--observation-confidence',
+      String(THREE.MathUtils.clamp(1 - maximumDelay / 180, .22, 1))
+    );
   });
 }
 
@@ -2772,6 +2910,10 @@ window.addEventListener('resize', () => {
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  cancelAnimationFrame(timelineMarkerResizeFrame);
+  timelineMarkerResizeFrame = requestAnimationFrame(() => {
+    if (mode === 'explorer' && cosmicEvents.length > 0) renderCosmicEventMarkers();
+  });
 });
 
 canvas.addEventListener('click', inspectStar);
@@ -2898,6 +3040,7 @@ $('#export-universe-history').addEventListener('click', () => {
   $('#chronicle-status').textContent = '文明历史已导出';
 });
 $('#toggle-civilizations').addEventListener('click', toggleCivilizations);
+$('#close-timeline-event-detail').addEventListener('click', closeTimelineEventDetail);
 $('#toggle-time').addEventListener('click', () => {
   if (cosmicPosition >= 1000) updateCosmicTime(0, true);
   timePlaying = !timePlaying;
@@ -2938,6 +3081,7 @@ function updateTimelineFromPointer(event) {
 function beginTimelineScrub(event) {
   if (event.button !== 0 || event.target.closest('.event-marker')) return;
   event.preventDefault();
+  closeTimelineEventDetail();
   timelinePointerId = event.pointerId;
   timelineWrap.setPointerCapture(event.pointerId);
   timelineInput.focus({ preventScroll: true });
@@ -3007,6 +3151,10 @@ document.addEventListener('keydown', (event) => {
     return;
   }
   if (event.key === 'Escape' && mode === 'explorer') {
+    if (!$('#timeline-event-detail').hidden) {
+      closeTimelineEventDetail();
+      return;
+    }
     if (document.querySelector('.explorer-title').classList.contains('is-tools-open')) {
       setObservationToolsOpen(false);
       return;

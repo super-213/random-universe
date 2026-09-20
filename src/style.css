@@ -601,6 +601,102 @@ h1 strong {
 .speed-controls button:hover { color: var(--ink); border-color: rgba(241,238,231,.28); }
 .speed-controls button:active { transform: scale(.96); }
 .speed-controls button.is-active { color: var(--accent); border-color: rgba(216,255,95,.5); background: rgba(216,255,95,.08); }
+.timeline-event-detail {
+  position: absolute;
+  z-index: 8;
+  right: 0;
+  bottom: calc(100% + 12px);
+  left: 0;
+  max-height: min(32vh, 220px);
+  padding: 10px 12px 11px;
+  border: 1px solid rgba(241,238,231,.14);
+  border-radius: 14px;
+  background: rgba(5,5,8,.84);
+  backdrop-filter: blur(18px) saturate(130%);
+  -webkit-backdrop-filter: blur(18px) saturate(130%);
+  box-shadow: 0 14px 38px rgba(0,0,0,.3);
+  transform-origin: var(--timeline-detail-origin, 50%) bottom;
+  animation: timeline-detail-enter .22s cubic-bezier(.2,.8,.2,1) both;
+  pointer-events: auto;
+}
+.timeline-event-detail[hidden] { display: none; }
+.timeline-event-detail-head { display: flex; align-items: center; min-height: 22px; gap: 10px; }
+.timeline-event-detail-head b { overflow: hidden; color: var(--ink); font: 400 9px "Space Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.timeline-event-detail-head button {
+  display: grid;
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  margin-left: auto;
+  padding: 0;
+  place-items: center;
+  border: 1px solid rgba(241,238,231,.12);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font: 14px/1 sans-serif;
+}
+.timeline-event-detail-head button:hover { border-color: rgba(241,238,231,.3); color: var(--ink); }
+.timeline-event-detail-axis {
+  display: flex;
+  justify-content: space-between;
+  margin: 3px 0 2px 136px;
+  color: rgba(241,238,231,.34);
+  font: 7px "Space Mono", monospace;
+}
+.timeline-event-detail-list { max-height: min(23vh, 150px); overflow-y: auto; scrollbar-width: thin; }
+.timeline-detail-event {
+  display: grid;
+  width: 100%;
+  min-height: 28px;
+  padding: 4px 0;
+  grid-template-columns: 126px 1fr;
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+  transition: background .14s ease, opacity .14s ease;
+}
+.timeline-detail-event:hover,
+.timeline-detail-event:focus-visible,
+.timeline-detail-event[aria-current] { background: color-mix(in srgb, var(--event-color) 10%, transparent); }
+.timeline-detail-event-label { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+.timeline-detail-event-label b { overflow: hidden; font-size: 8px; font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
+.timeline-detail-event-label small { color: var(--muted); font: 6px "Space Mono", monospace; }
+.timeline-detail-event-plot { position: relative; height: 14px; }
+.timeline-detail-event-plot::before {
+  content: '';
+  position: absolute;
+  top: 6px;
+  right: 0;
+  left: 0;
+  height: 1px;
+  background: rgba(241,238,231,.13);
+}
+.timeline-detail-duration {
+  position: absolute;
+  top: 4px;
+  min-width: 3px;
+  height: 5px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--event-color) 54%, transparent);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--event-color) 32%, transparent);
+}
+.timeline-detail-impact {
+  position: absolute;
+  top: 1px;
+  width: 2px;
+  height: 12px;
+  border-radius: 1px;
+  background: var(--event-color);
+  box-shadow: 0 0 7px var(--event-color);
+  transform: translateX(-50%);
+}
 .range-wrap { position: relative; height: 56px; cursor: ew-resize; touch-action: none; }
 #cosmic-timeline { position: absolute; z-index: 3; top: 0; left: 0; width: 100%; height: 44px; margin: 0; opacity: 0; pointer-events: none; }
 .range-wrap::before { content: ''; position: absolute; z-index: 0; top: 18px; left: 0; right: 0; height: 3px; border-radius: 2px; background: rgba(241,238,231,.22); }
@@ -686,6 +782,24 @@ h1 strong {
 }
 .event-marker:hover,
 .event-marker:focus-visible { transform: translateX(calc(-50% + var(--timeline-focus-shift, 0px))) scale(1); opacity: 1; }
+.event-cluster {
+  top: -3px;
+  width: auto;
+  min-width: 19px;
+  height: 16px;
+  padding: 0 4px;
+  border: 1px solid color-mix(in srgb, var(--event-color) 58%, rgba(241,238,231,.4));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--event-color) 20%, rgba(5,5,8,.86));
+  color: var(--ink);
+  box-shadow: 0 0 9px color-mix(in srgb, var(--event-color) 28%, transparent);
+  font: 7px "Space Mono", monospace;
+  opacity: .88;
+  transform: translateX(calc(-50% + var(--timeline-focus-shift, 0px))) scale(calc(1 + var(--timeline-focus-growth, 0)));
+}
+.event-cluster:hover,
+.event-cluster:focus-visible,
+.event-cluster.is-expanded { background: color-mix(in srgb, var(--event-color) 34%, rgba(5,5,8,.82)); transform: translateX(calc(-50% + var(--timeline-focus-shift, 0px))) scale(1.08); opacity: 1; }
 .event-marker.is-speculative {
   border-radius: 1px;
   background: transparent;
@@ -740,6 +854,11 @@ h1 strong {
   0% { opacity: 0; transform: scaleX(1.12); filter: blur(1.5px); }
   45% { opacity: .45; }
   100% { opacity: 1; transform: scaleX(1); filter: blur(0); }
+}
+
+@keyframes timeline-detail-enter {
+  from { opacity: 0; transform: translateY(6px) scale(.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 .is-exploring .site-header { padding: 20px 24px; }
@@ -855,8 +974,11 @@ h1 strong {
 .causal-text-equivalent ol { margin: 9px 0 0; padding-left: 20px; }
 .causal-text-equivalent li + li { margin-top: 6px; }
 .is-chronicle-open .civilization-panel { opacity: .08; pointer-events: none; }
-.event-marker.is-beyond-lightcone { opacity: .1; filter: grayscale(1); pointer-events: none; }
-.event-marker.is-uncertain-observation { opacity: calc(.32 + var(--observation-confidence, .5) * .5); filter: saturate(.55); }
+.event-marker.is-beyond-lightcone,
+.timeline-detail-event.is-beyond-lightcone { opacity: .1; filter: grayscale(1); pointer-events: none; }
+.event-marker.is-partially-observed { border-style: dashed; opacity: .58; }
+.event-marker.is-uncertain-observation,
+.timeline-detail-event.is-uncertain-observation { opacity: calc(.32 + var(--observation-confidence, .5) * .5); filter: saturate(.55); }
 
 .is-high-contrast {
   --ink: #ffffff;
@@ -866,7 +988,8 @@ h1 strong {
   --accent: #e8ff4f;
 }
 .is-high-contrast .grain { display: none; }
-.is-high-contrast .event-marker { outline: 1px solid #fff; }
+.is-high-contrast .event-marker,
+.is-high-contrast .timeline-detail-impact { outline: 1px solid #fff; }
 .is-high-contrast .civilization-item,
 .is-high-contrast .time-console,
 .is-high-contrast .observation-tools { background-color: rgba(0,0,0,.94); }
@@ -1052,6 +1175,11 @@ h1 strong {
   .play-button { width: 38px; height: 38px; flex: 0 0 38px; }
   .speed-controls { display: flex; gap: 4px; margin-left: auto; }
   .speed-controls button { min-width: 38px; min-height: 34px; padding: 6px 7px; border-radius: 18px; font-size: 9px; }
+  .timeline-event-detail { bottom: calc(100% + 8px); max-height: min(35dvh, 250px); padding: 9px 10px 10px; }
+  .timeline-event-detail-axis { margin-left: 98px; }
+  .timeline-event-detail-list { max-height: min(26dvh, 180px); }
+  .timeline-detail-event { min-height: 31px; grid-template-columns: 88px 1fr; gap: 8px; }
+  .timeline-detail-event-label b { font-size: 7px; }
   .range-wrap { height: 54px; }
   #cosmic-timeline { top: 0; height: 48px; }
   .range-wrap::before,
@@ -1060,6 +1188,7 @@ h1 strong {
   .time-progress::before { width: 34px; height: 34px; }
   .time-progress::after { right: 0; top: 50%; width: 18px; height: 18px; }
   .event-marker { width: 12px; height: 12px; top: -1px; }
+  .event-cluster { top: -4px; width: auto; min-width: 21px; height: 18px; }
   .timeline-marks { top: 36px; }
   .timeline-marks span:nth-child(2),
   .timeline-marks span:nth-child(3),
@@ -1114,6 +1243,8 @@ h1 strong {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; }
   .scale-tick,
   .event-marker,
+  .timeline-event-detail,
+  .timeline-detail-event,
   .time-progress::before,
   .timeline-scrub-value { transition: none !important; }
 }
