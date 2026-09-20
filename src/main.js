@@ -2513,6 +2513,7 @@ async function enterUniverse() {
   $('#regenerate-top').style.pointerEvents = 'none';
   $('#civilization-panel').classList.remove('is-expanded');
   $('#toggle-civilizations').setAttribute('aria-expanded', 'false');
+  $('#civilization-legend').setAttribute('aria-hidden', 'true');
   galaxyGroup.visible = true;
   localGroupGroup.visible = true;
   galaxyGroup.scale.setScalar(0.02);
@@ -2555,6 +2556,7 @@ function leaveUniverse() {
   closeCivilizationChronicle();
   $('#civilization-panel').classList.remove('is-expanded');
   $('#toggle-civilizations').setAttribute('aria-expanded', 'false');
+  $('#civilization-legend').setAttribute('aria-hidden', 'true');
   $('#mode-label').textContent = '创世引擎在线';
   $('#regenerate-top').style.opacity = '';
   $('#regenerate-top').style.pointerEvents = '';
@@ -2650,6 +2652,7 @@ function toggleCivilizations() {
   const expanded = !panel.classList.contains('is-expanded');
   panel.classList.toggle('is-expanded', expanded);
   $('#toggle-civilizations').setAttribute('aria-expanded', String(expanded));
+  $('#civilization-legend').setAttribute('aria-hidden', String(!expanded));
   if (expanded && civilizationRuntimeState.length) {
     renderCivilizationRows({
       position: cosmicPosition,
@@ -3297,8 +3300,7 @@ function updateCosmicTime(value, force = false) {
       runtimeState: civilizationRuntimeState,
       civilizationData
     });
-    const civilizationPanelCollapsed = compactCivilizationLayout.matches
-      && !$('#civilization-panel').classList.contains('is-expanded');
+    const civilizationPanelCollapsed = !$('#civilization-panel').classList.contains('is-expanded');
     if (!civilizationPanelCollapsed) organizeCivilizationLegend(simulationState, civilizationData);
     activeSpeciesCount = civilizationRuntimeState.filter((state) => state.alive).length;
     ascendedSpeciesCount = civilizationRuntimeState.filter((state) => state.ascended).length;
@@ -3878,6 +3880,8 @@ document.addEventListener('keydown', (event) => {
     if (civilizationPanel.classList.contains('is-expanded')) {
       civilizationPanel.classList.remove('is-expanded');
       $('#toggle-civilizations').setAttribute('aria-expanded', 'false');
+      $('#civilization-legend').setAttribute('aria-hidden', 'true');
+      $('#toggle-civilizations').focus({ preventScroll: true });
     } else {
       leaveUniverse();
     }

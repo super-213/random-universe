@@ -368,7 +368,7 @@ h1 strong {
   position: absolute;
   z-index: 13;
   left: 3.4vw;
-  top: 12vh;
+  top: clamp(38px, 6vh, 72px);
   display: flex;
   align-items: baseline;
   gap: 10px;
@@ -479,24 +479,93 @@ h1 strong {
   position: absolute;
   top: 13vh;
   right: 3.4vw;
-  width: 232px;
+  display: flex;
+  width: 276px;
+  flex-direction: column;
+  align-items: flex-end;
   opacity: var(--cosmic-opacity, 0);
   transition: opacity .35s ease, transform .35s ease;
   pointer-events: auto;
 }
-.civilization-toggle { display: none; }
+.civilization-toggle {
+  display: grid;
+  grid-template-columns: auto 12px;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 11px 0 13px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, .72);
+  transition: color .2s ease, text-shadow .2s ease;
+}
+.civilization-toggle:hover,
+.civilization-toggle:focus-visible {
+  color: var(--accent);
+  text-shadow: 0 1px 10px rgba(216, 255, 95, .24);
+  outline: none;
+}
+.civilization-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.civilization-summary-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.civilization-summary-stat svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: .72;
+  transition: opacity .2s ease;
+}
+.civilization-toggle:hover .civilization-summary-stat svg,
+.civilization-toggle:focus-visible .civilization-summary-stat svg { opacity: 1; }
+.civilization-toggle b { font: 400 9px "Space Mono", monospace; }
+.civilization-toggle-icon {
+  color: var(--accent);
+  font: 12px/1 "Space Mono", monospace;
+  text-align: right;
+  transition: transform .25s ease;
+}
+.civilization-panel.is-expanded .civilization-toggle-icon { transform: rotate(180deg); }
 .civilization-legend {
-  display: block;
   width: 100%;
-  max-height: 38vh;
-  overflow-y: auto;
+  max-height: 0;
+  margin-top: 7px;
+  overflow: hidden;
   overscroll-behavior: contain;
   touch-action: pan-y;
   -webkit-overflow-scrolling: touch;
-  padding-right: 5px;
-  pointer-events: auto;
+  padding: 0 10px;
+  border: 0;
+  background: transparent;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, .74);
   scrollbar-width: thin;
   scrollbar-color: rgba(216, 255, 95, .28) transparent;
+  transition: max-height .35s cubic-bezier(.2,.8,.2,1), padding .35s ease, opacity .2s ease, visibility 0s .35s;
+}
+.civilization-panel.is-expanded .civilization-legend {
+  max-height: 38vh;
+  padding: 10px;
+  overflow-y: auto;
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition: max-height .35s cubic-bezier(.2,.8,.2,1), padding .35s ease, opacity .2s ease, visibility 0s;
 }
 .civilization-legend::-webkit-scrollbar { width: 3px; }
 .civilization-legend::-webkit-scrollbar-thumb { background: rgba(216, 255, 95, .28); border-radius: 3px; }
@@ -1198,64 +1267,16 @@ h1 strong {
     z-index: 6;
     top: calc(env(safe-area-inset-top) + 12px);
     right: 14px;
-    display: flex;
     width: min(276px, calc(100vw - 28px));
-    flex-direction: column;
-    align-items: flex-end;
-  }
-  .civilization-toggle {
-    display: grid;
-    grid-template-columns: auto auto 12px;
-    align-items: center;
-    min-height: 38px;
-    padding: 0 11px 0 13px;
-    border: 1px solid rgba(241, 238, 231, .14);
-    border-radius: 20px;
-    background: rgba(5, 5, 8, .68);
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
-    color: var(--ink);
-    cursor: pointer;
-  }
-  .civilization-toggle-label {
-    padding-right: 8px;
-    color: var(--muted);
-    font-size: 9px;
-    letter-spacing: .1em;
-  }
-  .civilization-toggle b { font: 400 9px "Space Mono", monospace; }
-  .civilization-toggle-icon {
-    color: var(--accent);
-    font: 12px/1 "Space Mono", monospace;
-    text-align: right;
-    transition: transform .25s ease;
-  }
-  .civilization-panel.is-expanded .civilization-toggle-icon { transform: rotate(180deg); }
-  .civilization-legend {
-    width: 100%;
-    max-height: 0;
-    margin-top: 7px;
-    padding: 0 10px;
-    overflow: hidden;
-    border: 1px solid transparent;
-    border-radius: 14px;
-    background: rgba(5, 5, 8, .82);
-    backdrop-filter: blur(18px);
-    -webkit-backdrop-filter: blur(18px);
-    opacity: 0;
-    visibility: hidden;
-    pointer-events: none;
-    transition: max-height .35s cubic-bezier(.2,.8,.2,1), padding .35s ease, opacity .2s ease, visibility 0s .35s, border-color .2s ease;
   }
   .civilization-panel.is-expanded .civilization-legend {
     max-height: min(46dvh, 390px);
     padding: 10px;
     overflow-y: auto;
-    border-color: rgba(241, 238, 231, .12);
     opacity: 1;
     visibility: visible;
     pointer-events: auto;
-    transition: max-height .35s cubic-bezier(.2,.8,.2,1), padding .35s ease, opacity .2s ease, visibility 0s, border-color .2s ease;
+    transition: max-height .35s cubic-bezier(.2,.8,.2,1), padding .35s ease, opacity .2s ease, visibility 0s;
   }
   .civilization-item { padding: 4px 0 4px 7px; font-size: 10px; }
   .civilization-item b { font-size: 9px; }

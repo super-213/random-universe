@@ -5,7 +5,6 @@ const $ = (selector) => document.querySelector(selector);
 let lastEventKey = '';
 let eventFadeTimer = null;
 let civilizationRows = [];
-const compactLayout = window.matchMedia('(max-width: 800px)');
 const energyTierLabels = ['', '行星能源', '恒星能源', '黑洞能源', '熵管理'];
 
 const ui = {};
@@ -164,14 +163,18 @@ export function renderCivilizationRows({ position, simulationState, runtimeState
   if (panel?.style.getPropertyValue('--cosmic-opacity') !== opacity) {
     panel.style.setProperty('--cosmic-opacity', opacity);
   }
-  setText(
-    cachedElement('civilizationSummary', '#civilization-summary'),
-    activeSpecies > 0 ? `${activeSpecies} 种 · ${occupiedDomains} 域 · ${totalPopulation.toFixed(1)} 万亿` : '尚未出现'
+  setText(cachedElement('civilizationSpeciesCount', '#civilization-species-count'), `${activeSpecies} 种`);
+  setText(cachedElement('civilizationDomainCount', '#civilization-domain-count'), `${occupiedDomains} 域`);
+  setText(cachedElement('civilizationPopulationCount', '#civilization-population-count'), `${totalPopulation.toFixed(1)} 万亿`);
+  const toggle = cachedElement('civilizationToggle', '#toggle-civilizations');
+  toggle?.setAttribute(
+    'aria-label',
+    activeSpecies > 0
+      ? `主要文明样本，${activeSpecies} 个种群，${occupiedDomains} 个星域，人口 ${totalPopulation.toFixed(1)} 万亿`
+      : '主要文明样本，尚未出现'
   );
 
-  const compactPanelCollapsed = compactLayout.matches
-    && !panel?.classList.contains('is-expanded');
-  if (compactPanelCollapsed) return;
+  if (!panel?.classList.contains('is-expanded')) return;
   if (civilizationRows.length !== civilizationData.length || !civilizationRows[0]?.isConnected) {
     civilizationRows = civilizationData.map((_, index) => document.querySelector(`[data-species="${index}"]`));
   }
