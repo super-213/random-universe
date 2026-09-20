@@ -163,8 +163,10 @@ export function selectTimelineNarrative({
   if (ascendedSpecies > 0) return { key: `ascended-${ascendedSpecies}`, time: label, text: `${ascendedSpecies} 个种群已转化为高维生命，脱离恒星与黑洞的普通物质演化` };
   if (position < 55) return { key: 'bang', time: 'T+0', text: '整个可观测区域处于超高温、高密度状态，空间本身在膨胀' };
   if (position < 145) return { key: 'plasma', time: label, text: '光子在等离子体中不断散射，宇宙随膨胀持续冷却' };
-  if (position < 245) return { key: 'dark', time: label, text: '复合后宇宙变得透明，但尚没有恒星光' };
-  if (position < 340) return { key: 'stars', time: label, text: '第一代恒星与星系点亮，再电离逐渐开始' };
+  if (position < 245) return { key: 'dark', time: label, text: '复合后宇宙变得透明；微弱云团表示中性气体密度，此时尚没有恒星光' };
+  if (position < 270) return { key: 'stars-first-light', time: label, text: '最早的高密度气体云发生坍缩，第一代大质量恒星在少数区域点燃' };
+  if (position < 312) return { key: 'stars-ionization', time: label, text: '年轻恒星的紫外辐射正在吹出电离泡，原星系仍处于成团与坍缩中' };
+  if (position < 340) return { key: 'stars-overlap', time: label, text: '不断扩张的电离区开始交叠，星系结构逐渐稳定，星系际中性氢比例快速下降' };
   if (activeSpecies > 0) return { key: `life-${activeSpecies}`, time: label, text: `${activeSpecies} 个主要文明种群正在跨越恒星系扩张` };
   if (position < 430) return { key: 'chemistry', time: label, text: '重元素丰度上升，宜居行星开始形成' };
   if (position < Math.min(...civilizationData.map((species) => species.birth), 620)) return { key: 'waiting-life', time: label, text: '宜居世界正在积累复杂化学反应，智慧生命尚未出现' };

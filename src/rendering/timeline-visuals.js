@@ -7,6 +7,7 @@ import {
   cosmicYearsToTimelinePosition,
   referenceFutureYearsAtTimelinePosition
 } from '../domain/cosmic-time.js';
+import { STELLAR_DAWN_END, STELLAR_DAWN_START } from '../domain/stellar-dawn.js';
 import { orbitalAngleAt } from '../domain/orbital-motion.js';
 import { applyMergerGravity, applyStellarGravity, mergerPersistenceAt } from '../simulation/black-hole-gravity.js';
 import { applyTransientGravity, transientPersistenceAt } from '../simulation/transient-events.js';
@@ -17,7 +18,8 @@ export function updateEpochVisuals(position, context) {
     mode, epochEffectsGroup, primordialParticles, primordialFactors, primordialDirections,
     expansionStreaks, expansionDirections, bangCore, shockwaves, renderer, scene,
     clickableStars, originalGalaxyPositions, stellarGravityState, universe, transition, galaxyGroup,
-    starDeathThresholds, originalGalaxyColors, cosmicEvents, remnantGroup,
+    starDeathThresholds, originalGalaxyColors, stellarDawnModel, dawnGas, dawnSites,
+    cosmicEvents, remnantGroup,
     stellarRemnants, originalRemnantPositions, remnantDynamics, blackHoleRemnants,
     heatDeathGroup, coldPhotons, originalPhotonPositions, originalPhotonColors,
     cosmicFateGroup, fateBubble, fateGlow
@@ -118,11 +120,64 @@ export function updateEpochVisuals(position, context) {
   const remnantMotionEnd = remapReferencePosition(900);
   const hawkingStart = remapReferencePosition(790);
   const hawkingEstablished = remapReferencePosition(850);
-  const formation = THREE.MathUtils.smoothstep(position, 245, 340);
+  const formation = THREE.MathUtils.smoothstep(position, STELLAR_DAWN_START, STELLAR_DAWN_END);
+  const assembledCore = THREE.MathUtils.smoothstep(position, 282, STELLAR_DAWN_END);
   const stellarPopulation = 1 - THREE.MathUtils.smoothstep(position, stellarEnd - 75, stellarEnd + 10);
-  clickableStars.material.opacity = formation * .9;
+  clickableStars.material.opacity = .9;
   clickableStars.material.size = .09;
   if (!transition) galaxyGroup.scale.setScalar(1);
+
+  const dawnVisible = mode === 'explorer' && position >= 205 && position < 348;
+  if (dawnGas && stellarDawnModel) {
+    dawnGas.visible = dawnVisible;
+    const gasReveal = THREE.MathUtils.smoothstep(position, 205, 228);
+    const gasIonized = THREE.MathUtils.smoothstep(position, 265, 342);
+    dawnGas.material.opacity = gasReveal * (1 - gasIonized) * .2;
+    dawnGas.material.size = .19 - formation * .07;
+    const gasPositions = dawnGas.geometry.attributes.position.array;
+    stellarDawnModel.gasSourceIndices.forEach((sourceIndex, gasIndex) => {
+      const sourceOffset = sourceIndex * 3;
+      const gasOffset = gasIndex * 3;
+      const collapse = THREE.MathUtils.smoothstep(
+        position,
+        stellarDawnModel.birthAt[sourceIndex] - 32,
+        Math.min(STELLAR_DAWN_END, stellarDawnModel.birthAt[sourceIndex] + 32)
+      ) * .72;
+      gasPositions[gasOffset] = THREE.MathUtils.lerp(
+        stellarDawnModel.formationOrigins[sourceOffset],
+        originalGalaxyPositions[sourceOffset],
+        collapse
+      );
+      gasPositions[gasOffset + 1] = THREE.MathUtils.lerp(
+        stellarDawnModel.formationOrigins[sourceOffset + 1],
+        originalGalaxyPositions[sourceOffset + 1],
+        collapse
+      );
+      gasPositions[gasOffset + 2] = THREE.MathUtils.lerp(
+        stellarDawnModel.formationOrigins[sourceOffset + 2],
+        originalGalaxyPositions[sourceOffset + 2],
+        collapse
+      );
+    });
+    dawnGas.geometry.attributes.position.needsUpdate = true;
+  }
+  dawnSites?.forEach((site) => {
+    const { birthAt, maxRadius, phase: phaseOffset, front, sourceGlow } = site.userData;
+    const phase = THREE.MathUtils.clamp(
+      (position - birthAt) / Math.max(1, STELLAR_DAWN_END - birthAt),
+      0,
+      1
+    );
+    const fade = 1 - THREE.MathUtils.smoothstep(position, 330, 348);
+    site.visible = dawnVisible && phase > 0;
+    const frontScale = .25 + Math.pow(phase, .68) * maxRadius;
+    front.scale.set(frontScale, frontScale, 1);
+    front.material.opacity = Math.sin(Math.min(.995, phase) * Math.PI) * .075 * fade;
+    front.material.rotation = phaseOffset + phase * .18;
+    const ignition = 1 - THREE.MathUtils.smoothstep(phase, .03, .24);
+    sourceGlow.scale.setScalar(.35 + phase * .95);
+    sourceGlow.material.opacity = ignition * .72 * fade;
+  });
 
   const positionArray = clickableStars.geometry.attributes.position.array;
   const colorArray = clickableStars.geometry.attributes.color.array;
@@ -137,9 +192,22 @@ export function updateEpochVisuals(position, context) {
       positionArray[i + 1] = originalGalaxyPositions[i + 1];
       positionArray[i + 2] = originalGalaxyPositions[i + 2];
     }
-    colorArray[i] = originalGalaxyColors[i] * alive;
-    colorArray[i + 1] = originalGalaxyColors[i + 1] * alive;
-    colorArray[i + 2] = originalGalaxyColors[i + 2] * alive;
+    const birthAt = stellarDawnModel?.birthAt[starIndex] ?? STELLAR_DAWN_START;
+    const born = THREE.MathUtils.smoothstep(position, birthAt, birthAt + 5.5);
+    const young = 1 - THREE.MathUtils.smoothstep(position, birthAt + 3, birthAt + 18);
+    if (stellarDawnModel && position < STELLAR_DAWN_END) {
+      const assembly = THREE.MathUtils.smoothstep(
+        position,
+        birthAt - 7,
+        Math.min(STELLAR_DAWN_END, birthAt + 38)
+      );
+      positionArray[i] = THREE.MathUtils.lerp(stellarDawnModel.formationOrigins[i], positionArray[i], assembly);
+      positionArray[i + 1] = THREE.MathUtils.lerp(stellarDawnModel.formationOrigins[i + 1], positionArray[i + 1], assembly);
+      positionArray[i + 2] = THREE.MathUtils.lerp(stellarDawnModel.formationOrigins[i + 2], positionArray[i + 2], assembly);
+    }
+    colorArray[i] = originalGalaxyColors[i] * alive * born * (1 + young * .28);
+    colorArray[i + 1] = originalGalaxyColors[i + 1] * alive * born * (1 + young * .52);
+    colorArray[i + 2] = originalGalaxyColors[i + 2] * alive * born * (1 + young * .95);
   }
   cosmicEvents.forEach((event) => {
     const sourceOffset = event.sourceIndex * 3;
@@ -250,7 +318,7 @@ export function updateEpochVisuals(position, context) {
   const coreGlow = galaxyGroup.children.find((item) => item.userData.isCoreGlow);
   if (coreGlow) {
     const { scale, opacity } = coreGlow.userData.profile;
-    coreGlow.material.opacity = formation * stellarPopulation * opacity * (1 - fatePhase);
+    coreGlow.material.opacity = assembledCore * stellarPopulation * opacity * (1 - fatePhase);
     coreGlow.scale.set(scale, scale, 1);
   }
   const agnGlow = galaxyGroup.children.find((item) => item.userData.isAgnGlow);
@@ -260,7 +328,7 @@ export function updateEpochVisuals(position, context) {
       stellarFormationEnd - 1,
       cosmicYearsToTimelinePosition(4e10, universe)
     );
-    const activePhase = formation * (1 - THREE.MathUtils.smoothstep(
+    const activePhase = assembledCore * (1 - THREE.MathUtils.smoothstep(
       position,
       agnFadeStart,
       stellarFormationEnd
@@ -404,9 +472,15 @@ export function updateEpochVisuals(position, context) {
       && mode === 'explorer'
       && position >= data.birthAt
       && position <= data.evaporationAt + pulseWindow;
-    const massScale = data.baseScale * (.18 + .82 * Math.cbrt(Math.max(0, remaining)));
+    const dawnMaturity = data.isCentral
+      ? THREE.MathUtils.smoothstep(position, data.birthAt, STELLAR_DAWN_END + 18)
+      : 1;
+    const massScale = data.baseScale
+      * THREE.MathUtils.lerp(.28, 1, dawnMaturity)
+      * (.18 + .82 * Math.cbrt(Math.max(0, remaining)));
     hole.scale.setScalar(Math.max(.035, massScale));
     const accretionIntensity = born
+      * dawnMaturity
       * THREE.MathUtils.lerp(data.accretionStrength, .24, isolated)
       * Math.sqrt(Math.max(0, remaining));
     setBlackHoleIntensity(hole, accretionIntensity, outcomeVisibility);

@@ -13,6 +13,11 @@ import {
   stellarFormationEndTimelinePosition
 } from '../src/domain/universe.js';
 import { createSeededRandom } from '../src/domain/random.js';
+import {
+  createStellarDawnModel,
+  STELLAR_DAWN_END,
+  STELLAR_DAWN_START
+} from '../src/domain/stellar-dawn.js';
 import { createStellarGravityState } from '../src/simulation/black-hole-gravity.js';
 import { civilizationDeclineWindow } from '../src/simulation/civilization.js';
 import {
@@ -71,6 +76,27 @@ test('physical milestones and their timeline positions round-trip across the ear
     ) - 340) < 1e-8);
     assert.ok(Math.abs(cosmicYearsToTimelinePosition(universe.presentAgeYears, universe) - 470) < 1e-8);
   }
+});
+
+test('stellar dawn ignites deterministically from staggered local sites', () => {
+  const positions = new Float32Array(600 * 3);
+  for (let index = 0; index < 600; index++) {
+    const radius = 1 + index / 600 * 12;
+    const angle = index * .73;
+    positions[index * 3] = Math.cos(angle) * radius;
+    positions[index * 3 + 1] = Math.sin(index * .19) * .8;
+    positions[index * 3 + 2] = Math.sin(angle) * radius;
+  }
+
+  const first = createStellarDawnModel('TESTDAWN00000000', positions);
+  const second = createStellarDawnModel('TESTDAWN00000000', positions);
+  assert.deepEqual(first.birthAt, second.birthAt);
+  assert.deepEqual(first.formationOrigins, second.formationOrigins);
+  assert.deepEqual(first.sites, second.sites);
+  assert.ok(Math.min(...first.birthAt) > STELLAR_DAWN_START);
+  assert.ok(Math.max(...first.birthAt) < STELLAR_DAWN_END);
+  assert.ok(Math.max(...first.birthAt) - Math.min(...first.birthAt) > 30);
+  assert.ok(first.sites.length > 1);
 });
 
 test('generated stellar and fate eras stay ordered without fixed-era gaps', () => {

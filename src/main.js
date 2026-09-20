@@ -3,6 +3,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import './style.css';
 import { erasForUniverse, galaxyTypes, speciesColors, speciesNames } from './domain/catalog.js';
 import { createSeededRandom, randomBetween, gaussianRandom } from './domain/random.js';
+import { createStellarDawnModel } from './domain/stellar-dawn.js';
 import { createUniverse, stellarEndTimelinePosition } from './domain/universe.js';
 import {
   cosmicTimeLabel,
@@ -107,6 +108,9 @@ let originalPhotonColors = null;
 let stellarRemnants = null;
 let originalGalaxyPositions = null;
 let originalGalaxyColors = null;
+let stellarDawnModel = null;
+let dawnGas = null;
+let dawnSites = [];
 let stellarGravityState = null;
 let starDeathThresholds = null;
 let originalRemnantPositions = null;
@@ -364,7 +368,38 @@ function buildGalaxy() {
 
   originalGalaxyPositions = positions.slice();
   originalGalaxyColors = colors.slice();
+  stellarDawnModel = createStellarDawnModel(universe.seed, originalGalaxyPositions);
   stellarGravityState = createStellarGravityState(originalGalaxyPositions, universe);
+
+  const gasPositions = new Float32Array(stellarDawnModel.gasSourceIndices.length * 3);
+  const gasColors = new Float32Array(stellarDawnModel.gasSourceIndices.length * 3);
+  stellarDawnModel.gasSourceIndices.forEach((sourceIndex, gasIndex) => {
+    const sourceOffset = sourceIndex * 3;
+    const gasOffset = gasIndex * 3;
+    gasPositions[gasOffset] = stellarDawnModel.formationOrigins[sourceOffset];
+    gasPositions[gasOffset + 1] = stellarDawnModel.formationOrigins[sourceOffset + 1];
+    gasPositions[gasOffset + 2] = stellarDawnModel.formationOrigins[sourceOffset + 2];
+    const temperature = .48 + random() * .32;
+    gasColors[gasOffset] = .2 * temperature;
+    gasColors[gasOffset + 1] = .52 * temperature;
+    gasColors[gasOffset + 2] = .72 * temperature;
+  });
+  const gasGeometry = new THREE.BufferGeometry();
+  gasGeometry.setAttribute('position', new THREE.BufferAttribute(gasPositions, 3));
+  gasGeometry.setAttribute('color', new THREE.BufferAttribute(gasColors, 3));
+  dawnGas = new THREE.Points(gasGeometry, new THREE.PointsMaterial({
+    size: .18,
+    map: getPointTexture(),
+    alphaTest: .008,
+    vertexColors: true,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+  }));
+  dawnGas.visible = false;
+  dawnGas.renderOrder = -1;
+  galaxyGroup.add(dawnGas);
 
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
@@ -372,6 +407,37 @@ function buildGalaxy() {
   const points = new THREE.Points(geometry, new THREE.PointsMaterial({ size: 0.09, map: getPointTexture(), alphaTest: .015, vertexColors: true, transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending }));
   galaxyGroup.add(points);
   clickableStars = points;
+
+  dawnSites = stellarDawnModel.sites.map((site) => {
+    const group = new THREE.Group();
+    group.position.fromArray(site.position);
+    group.userData.birthAt = site.birthAt;
+    group.userData.maxRadius = site.maxRadius;
+    group.userData.phase = site.phase;
+    const front = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: makeRingTexture(),
+      color: 0x8ddbea,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending
+    }));
+    const sourceGlow = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: makeGlowTexture(),
+      color: 0xe9f8ff,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending
+    }));
+    front.scale.setScalar(.1);
+    sourceGlow.scale.setScalar(.25);
+    group.userData.front = front;
+    group.userData.sourceGlow = sourceGlow;
+    group.add(front, sourceGlow);
+    galaxyGroup.add(group);
+    return group;
+  });
 
   const coreProfiles = [
     { scale: 4.3, opacity: .32 },
@@ -586,7 +652,7 @@ function buildEpochEffects(starPositions) {
     addBlackHoleRemnant({
       random,
       massSolar: longestLivedMass,
-      birthAt: cosmicYearsToTimelinePosition(firstStarsYears * 1.35, universe),
+      birthAt: cosmicYearsToTimelinePosition(firstStarsYears * 2.2, universe),
       isCentral: true
     });
   }
@@ -1781,7 +1847,8 @@ function timelineVisualContext() {
     mode, epochEffectsGroup, primordialParticles, primordialFactors, primordialDirections,
     expansionStreaks, expansionDirections, bangCore, shockwaves, renderer, scene,
     clickableStars, originalGalaxyPositions, stellarGravityState, universe, transition, galaxyGroup,
-    starDeathThresholds, originalGalaxyColors, cosmicEvents, remnantGroup,
+    starDeathThresholds, originalGalaxyColors, stellarDawnModel, dawnGas, dawnSites,
+    cosmicEvents, remnantGroup,
     stellarRemnants, originalRemnantPositions, remnantDynamics, blackHoleRemnants,
     heatDeathGroup, coldPhotons, originalPhotonPositions, originalPhotonColors,
     cosmicFateGroup, fateBubble, fateGlow, cosmicEventGroup
