@@ -618,13 +618,19 @@ function buildCosmicEvents(starPositions) {
     },
     {
       type: 'stellar-black-hole-merger', visual: 'black-hole-merger', label: '双黑洞合并',
-      message: '两颗恒星级黑洞完成旋近，引力波向外传播', preferCenter: true,
-      start: 616 + random() * 18, duration: 31, color: '#c897ff'
+      message: '时空啁啾达到峰值，引力波波前穿过局部星域（形变已视觉放大）', preferCenter: true,
+      start: 616 + random() * 18, duration: 38, persistUntil: Math.min(845, universe.cosmicFate.onsetAt || 845), color: '#c897ff',
+      gasRich: random() < .38,
+      radiatedMassFraction: randomBetween(random, .035, .058),
+      recoilKms: Math.round(randomBetween(random, 180, 1180))
     },
     {
       type: 'late-black-hole-merger', visual: 'black-hole-merger', label: '孤立黑洞捕获合并',
-      message: '漫长引力散射后，两颗孤立黑洞形成并合系统', preferCenter: true,
-      start: 872 + random() * 18, duration: 34, color: '#9bb8ff'
+      message: '漫长引力散射后完成并合，残余黑洞在阻尼振铃中反冲', preferCenter: true,
+      start: 872 + random() * 18, duration: 42, persistUntil: 950, color: '#9bb8ff',
+      gasRich: false,
+      radiatedMassFraction: randomBetween(random, .028, .052),
+      recoilKms: Math.round(randomBetween(random, 420, 1640))
     }
   ].filter((event) => event.type !== 'late-black-hole-merger'
     || universe.cosmicFate.type === 'heat-death'
@@ -640,8 +646,8 @@ function buildCosmicEvents(starPositions) {
     'core-collapse-supernova': { radius: .5, maxStars: 4, sourceDim: .025, neighborDim: .97, kick: .014, civilization: .06, range: 2.2 },
     'pulsar-glitch': { radius: .01, maxStars: 1, sourceDim: .985, neighborDim: 1, kick: 0, civilization: 0, range: 0, maxSpecies: 0 },
     'superluminous-supernova': { radius: .62, maxStars: 6, sourceDim: .02, neighborDim: .95, kick: .02, civilization: .09, range: 2.8, maxSpecies: 1 },
-    'stellar-black-hole-merger': { radius: .08, maxStars: 1, sourceDim: .08, neighborDim: 1, kick: .65, civilization: 0, range: 0, maxSpecies: 0 },
-    'late-black-hole-merger': { radius: .08, maxStars: 1, sourceDim: .06, neighborDim: 1, kick: .82, civilization: 0, range: 0, maxSpecies: 0 }
+    'stellar-black-hole-merger': { radius: .08, maxStars: 1, sourceDim: .06, neighborDim: 1, kick: 0, civilization: 0, range: 0, maxSpecies: 0 },
+    'late-black-hole-merger': { radius: .08, maxStars: 1, sourceDim: .04, neighborDim: 1, kick: 0, civilization: 0, range: 0, maxSpecies: 0 }
   };
 
   const pickPosition = (preferCenter = false) => {
@@ -734,7 +740,7 @@ function buildCosmicEvents(starPositions) {
       'superluminous-supernova': '恒星外层被大规模抛射，中心结局仍不确定'
     };
     const systemSummary = data.visual === 'black-hole-merger'
-      ? '合并黑洞质量转化为引力波，残留黑洞获得反冲速度'
+      ? `约 ${(data.radiatedMassFraction * 100).toFixed(1)}% 总质量以引力波带走，残余黑洞以约 ${data.recoilKms} km/s 反冲${data.gasRich ? '，周围气体受热形成短暂余辉' : '；真空环境中没有超新星式爆炸'}`
       : data.type === 'pulsar-glitch'
         ? '自转频率发生微小跃变，没有可见的大规模破坏'
         : data.visual === 'pulsar'
@@ -748,6 +754,50 @@ function buildCosmicEvents(starPositions) {
       : '未波及已知文明';
 
     return { impactAt, impactPhase, starImpacts, civilizationImpacts, outcome: `${systemSummary}；${civilizationSummary}` };
+  };
+
+  const buildWaveSamples = (data, location, eventIndex) => {
+    if (data.visual !== 'black-hole-merger') return null;
+    const waveRadius = data.type === 'late-black-hole-merger' ? 7.2 : 8.8;
+    const candidates = [];
+    for (let index = 0; index < starPositions.length / 3; index++) {
+      const offset = index * 3;
+      const dx = starPositions[offset] - location.position.x;
+      const dy = starPositions[offset + 1] - location.position.y;
+      const dz = starPositions[offset + 2] - location.position.z;
+      const distance = Math.hypot(dx, dy, dz);
+      if (distance > .12 && distance <= waveRadius) candidates.push({ index, dx, dy, dz, distance });
+    }
+
+    const sampleRandom = mulberry32(universe.seed + 9107 + eventIndex * 97);
+    const sampleCount = Math.min(1800, candidates.length);
+    const stride = candidates.length / Math.max(1, sampleCount);
+    const indices = new Uint16Array(sampleCount);
+    const distances = new Float32Array(sampleCount);
+    const transverse = new Float32Array(sampleCount * 3);
+    const polarities = new Float32Array(sampleCount);
+    for (let sample = 0; sample < sampleCount; sample++) {
+      const start = sample * stride;
+      const candidate = candidates[Math.min(candidates.length - 1, Math.floor(start + sampleRandom() * stride))];
+      const inverseDistance = 1 / candidate.distance;
+      const nx = candidate.dx * inverseDistance;
+      const ny = candidate.dy * inverseDistance;
+      const nz = candidate.dz * inverseDistance;
+      let tx = -nz;
+      let ty = 0;
+      let tz = nx;
+      const tangentLength = Math.hypot(tx, ty, tz);
+      if (tangentLength < .04) {
+        tx = 1; ty = 0; tz = 0;
+      } else {
+        tx /= tangentLength; ty /= tangentLength; tz /= tangentLength;
+      }
+      indices[sample] = candidate.index;
+      distances[sample] = candidate.distance;
+      transverse.set([tx, ty, tz], sample * 3);
+      polarities[sample] = Math.cos(Math.atan2(nz, nx) * 2) * (.72 + sampleRandom() * .28);
+    }
+    return { waveRadius, indices, distances, transverse, polarities };
   };
 
   schedule.forEach((data, index) => {
@@ -897,27 +947,65 @@ function buildCosmicEvents(starPositions) {
       const trailB = makeTrail(0x79bfff);
       orbitalPlane.add(trailA, trailB, holeA, holeB, remnantHole);
 
-      const mergerGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeGlowTexture(), color: 0xdceaff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
+      const mergerGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeGlowTexture(), color: data.gasRich ? 0xffe2b5 : 0xdceaff, transparent: true, opacity: 0, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending }));
+      const gasEcho = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeRingTexture(), color: 0xffb46f, transparent: true, opacity: 0, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending }));
+      gasEcho.visible = data.gasRich;
+      const waveHalos = [0x9bc8ff, 0xd2b9ff, 0x79b7ff].map((color) => new THREE.Sprite(new THREE.SpriteMaterial({
+        map: makeRingTexture(),
+        color,
+        transparent: true,
+        opacity: 0,
+        depthTest: false,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending
+      })));
       const wavefronts = [];
-      for (let waveIndex = 0; waveIndex < 3; waveIndex++) {
+      for (let waveIndex = 0; waveIndex < 6; waveIndex++) {
         const points = [];
-        for (let i = 0; i < 128; i++) {
-          const angle = i / 128 * Math.PI * 2;
-          points.push(new THREE.Vector3(Math.cos(angle), Math.sin(angle), Math.sin(angle * 2 + waveIndex) * .04));
+        for (let i = 0; i < 160; i++) {
+          const angle = i / 160 * Math.PI * 2;
+          const quadrupole = 1 + Math.cos(angle * 2 + waveIndex * .7) * .065;
+          points.push(new THREE.Vector3(Math.cos(angle) * quadrupole, Math.sin(angle) * quadrupole, Math.sin(angle * 2 + waveIndex) * .055));
         }
-        const wave = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(points), new THREE.LineBasicMaterial({ color: waveIndex === 1 ? 0xd8c3ff : 0x8fc6ff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
-        wave.rotation.set(.34 + waveIndex * .62, .2 + waveIndex * .41, waveIndex * .9);
+        const wave = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(points), new THREE.LineBasicMaterial({ color: waveIndex % 3 === 1 ? 0xd8c3ff : 0x8fc6ff, transparent: true, opacity: 0, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending }));
+        wave.rotation.set(.34 + waveIndex * .47, .2 + waveIndex * .39, waveIndex * .76);
         wavefronts.push(wave);
         group.add(wave);
       }
-      group.add(orbitalPlane, mergerGlow);
-      group.userData.effect = { orbitalPlane, holeA, holeB, remnantHole, trailA, trailB, mergerGlow, wavefronts };
+
+      const waveParticleCount = 520;
+      const waveParticles = new Float32Array(waveParticleCount * 3);
+      const waveDirections = new Float32Array(waveParticleCount * 3);
+      const waveColors = new Float32Array(waveParticleCount * 3);
+      const coolWave = new THREE.Color(0x79bfff);
+      const warmWave = new THREE.Color(0xe0cbff);
+      for (let particle = 0; particle < waveParticleCount; particle++) {
+        const azimuth = random() * Math.PI * 2;
+        const vertical = randomBetween(random, -1, 1);
+        const horizontal = Math.sqrt(1 - vertical * vertical);
+        waveDirections.set([Math.cos(azimuth) * horizontal, vertical, Math.sin(azimuth) * horizontal], particle * 3);
+        const particleColor = coolWave.clone().lerp(warmWave, random());
+        waveColors.set([particleColor.r, particleColor.g, particleColor.b], particle * 3);
+      }
+      const waveParticleGeometry = new THREE.BufferGeometry();
+      waveParticleGeometry.setAttribute('position', new THREE.BufferAttribute(waveParticles, 3));
+      waveParticleGeometry.setAttribute('color', new THREE.BufferAttribute(waveColors, 3));
+      const waveDust = new THREE.Points(waveParticleGeometry, new THREE.PointsMaterial({ size: .075, map: getPointTexture(), alphaTest: .008, vertexColors: true, transparent: true, opacity: 0, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending }));
+
+      const recoilGeometry = new THREE.BufferGeometry();
+      recoilGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
+      const recoilTrail = new THREE.Line(recoilGeometry, new THREE.LineBasicMaterial({ color: 0xffd4aa, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
+      const recoilVector = new THREE.Vector3(gaussianRandom(random), gaussianRandom(random) * .45, gaussianRandom(random)).normalize();
+      group.add(waveDust, ...waveHalos, gasEcho, orbitalPlane, mergerGlow, recoilTrail);
+      group.userData.effect = { orbitalPlane, holeA, holeB, remnantHole, trailA, trailB, mergerGlow, gasEcho, waveHalos, wavefronts, waveDust, waveDirections, recoilTrail, recoilVector, gasRich: data.gasRich };
     }
 
     const consequences = deriveConsequences(data, location);
+    const waveSamples = buildWaveSamples(data, location, index);
     cosmicEvents.push({
       ...data,
       ...consequences,
+      waveSamples,
       group,
       sourceIndex: location.index,
       id: `${data.type}-${index}-${universe.seed}`,

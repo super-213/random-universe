@@ -128,6 +128,32 @@ export function updateEpochVisuals(position, context) {
       colorArray[offset + 1] *= impact.dimFactor;
       colorArray[offset + 2] *= impact.dimFactor;
     });
+
+    if (event.visual !== 'black-hole-merger' || !event.waveSamples) return;
+    const waveDuration = event.duration * (1 - event.impactPhase);
+    const waveProgress = THREE.MathUtils.clamp((position - event.impactAt) / waveDuration, 0, 1);
+    if (waveProgress <= 0 || waveProgress >= 1) return;
+    const { waveRadius, indices, distances, transverse, polarities } = event.waveSamples;
+    const crestRadius = .18 + Math.pow(waveProgress, .72) * waveRadius;
+    const thickness = .18 + waveProgress * .34;
+    const attenuation = .13 * (1 - waveProgress * .58);
+    for (let sample = 0; sample < indices.length; sample++) {
+      const delta = distances[sample] - crestRadius;
+      if (Math.abs(delta) > thickness * 2.8) continue;
+      const pulse = Math.cos(delta / thickness * Math.PI) * Math.exp(-Math.pow(delta / thickness, 2) * 1.7);
+      const displacement = pulse * attenuation * polarities[sample];
+      const offset = indices[sample] * 3;
+      const vectorOffset = sample * 3;
+      // Gravitational-wave strain is transverse and far too small to see at
+      // this scale. The displacement is an explicitly amplified teaching cue.
+      positionArray[offset] += transverse[vectorOffset] * displacement;
+      positionArray[offset + 1] += transverse[vectorOffset + 1] * displacement;
+      positionArray[offset + 2] += transverse[vectorOffset + 2] * displacement;
+      const crestHighlight = 1 + Math.abs(pulse) * .18;
+      colorArray[offset] *= crestHighlight;
+      colorArray[offset + 1] *= crestHighlight;
+      colorArray[offset + 2] *= crestHighlight;
+    }
   });
 
   if (finiteOutcome && fatePhase > 0) {
@@ -329,15 +355,21 @@ export function updateCosmicEvents(position, context) {
   let anyVisible = false;
   cosmicEvents.forEach((event) => {
     const phase = (position - event.start) / event.duration;
-    const visible = phase >= 0 && phase <= 1 && mode === 'explorer';
+    const active = phase >= 0 && phase <= 1;
+    const persistentRemnant = event.visual === 'black-hole-merger'
+      && position >= event.impactAt
+      && position <= event.persistUntil;
+    const visible = (active || persistentRemnant) && mode === 'explorer';
     event.group.visible = visible;
     if (!visible) return;
     anyVisible = true;
-    activeCosmicEvent = event;
-    event.group.userData.phase = phase;
+    if (active) activeCosmicEvent = event;
+    const visualPhase = Math.min(1, phase);
+    event.group.userData.phase = visualPhase;
     const effect = event.group.userData.effect;
 
     if (event.visual === 'supernova') {
+      const phase = visualPhase;
       const ignition = THREE.MathUtils.smoothstep(phase, 0, .028);
       const flash = ignition * (1 - THREE.MathUtils.smoothstep(phase, .045, .19));
       const afterglow = (1 - THREE.MathUtils.smoothstep(phase, .12, 1)) * ignition;
@@ -374,6 +406,7 @@ export function updateCosmicEvents(position, context) {
       effect.shell.geometry.attributes.position.needsUpdate = true;
       effect.shell.material.opacity = THREE.MathUtils.smoothstep(phase, .04, .14) * (1 - THREE.MathUtils.smoothstep(phase, .5, 1)) * .34;
     } else if (event.visual === 'pulsar') {
+      const phase = visualPhase;
       const envelope = Math.pow(Math.sin(phase * Math.PI), .45);
       const glitchScale = event.type === 'pulsar-glitch' ? .22 : 1;
       effect.core.material.opacity = envelope * .92;
@@ -386,6 +419,7 @@ export function updateCosmicEvents(position, context) {
       });
       event.group.userData.intensity = envelope;
     } else {
+      const phase = visualPhase;
       const mergePoint = .68;
       const merged = phase >= mergePoint;
       effect.holeA.visible = !merged;
@@ -418,19 +452,61 @@ export function updateCosmicEvents(position, context) {
       const postMerge = THREE.MathUtils.clamp((phase - mergePoint) / (1 - mergePoint), 0, 1);
       const ringdown = Math.exp(-postMerge * 7) * Math.sin(postMerge * 38);
       effect.remnantHole.scale.set(1.24 + ringdown * .07, 1.24 - ringdown * .045, 1.24);
+      setBlackHoleIntensity(effect.holeA, .62 + inspiral * .38);
+      setBlackHoleIntensity(effect.holeB, .62 + inspiral * .38);
+      setBlackHoleIntensity(effect.remnantHole, .74 + Math.exp(-postMerge * 4) * .34);
       const mergerFlash = merged ? Math.exp(-postMerge * 18) : 0;
-      // Vacuum black-hole mergers are not expected to produce a bright
-      // electromagnetic flash; retain only a faint locator for legibility.
-      effect.mergerGlow.material.opacity = mergerFlash * .045;
-      const glowScale = .3 + postMerge * 2.4;
+      // Vacuum mergers have no supernova-like flash. Gas-rich systems can have
+      // a short electromagnetic afterglow, shown separately in warm light.
+      effect.mergerGlow.material.opacity = mergerFlash * (effect.gasRich ? .48 : .13);
+      const glowScale = .3 + postMerge * (effect.gasRich ? 3.6 : 2.4);
       effect.mergerGlow.scale.set(glowScale, glowScale, 1);
+      effect.gasEcho.material.opacity = effect.gasRich
+        ? THREE.MathUtils.smoothstep(postMerge, .02, .12) * (1 - THREE.MathUtils.smoothstep(postMerge, .3, .92)) * .34
+        : 0;
+      const gasScale = .35 + Math.pow(postMerge, .62) * 4.2;
+      effect.gasEcho.scale.set(gasScale, gasScale, 1);
+      effect.waveHalos.forEach((halo, haloIndex) => {
+        const delay = haloIndex * .12;
+        const local = THREE.MathUtils.clamp((postMerge - delay) / (1 - delay), 0, 1);
+        halo.visible = merged && local > 0;
+        const scale = .38 + Math.pow(local, .7) * (8.8 + haloIndex * .6);
+        halo.scale.set(scale, scale, 1);
+        halo.material.opacity = Math.pow(Math.sin(local * Math.PI), .78) * (.29 - haloIndex * .045);
+      });
       effect.wavefronts.forEach((wave, waveIndex) => {
-        const delay = waveIndex * .11;
+        const delay = waveIndex * .075;
         const local = THREE.MathUtils.clamp((postMerge - delay) / (1 - delay), 0, 1);
         wave.visible = merged && local > 0;
-        wave.scale.setScalar(.3 + Math.pow(local, .62) * (3.2 + waveIndex * .7));
-        wave.material.opacity = Math.sin(local * Math.PI) * .075 * (1 - waveIndex * .16);
+        wave.scale.setScalar(.28 + Math.pow(local, .72) * (7.4 + waveIndex * .34));
+        wave.material.opacity = Math.pow(Math.sin(local * Math.PI), .72) * .19 * (1 - waveIndex * .08);
       });
+
+      const waveArray = effect.waveDust.geometry.attributes.position.array;
+      const waveRadius = .22 + Math.pow(postMerge, .72) * 8.6;
+      for (let particle = 0; particle < effect.waveDirections.length / 3; particle++) {
+        const offset = particle * 3;
+        const dx = effect.waveDirections[offset];
+        const dy = effect.waveDirections[offset + 1];
+        const dz = effect.waveDirections[offset + 2];
+        const quadrupole = 1 + (dx * dx - dz * dz) * .085 * Math.sin(postMerge * Math.PI * 5);
+        waveArray[offset] = dx * waveRadius * quadrupole;
+        waveArray[offset + 1] = dy * waveRadius * quadrupole;
+        waveArray[offset + 2] = dz * waveRadius * quadrupole;
+      }
+      effect.waveDust.geometry.attributes.position.needsUpdate = true;
+      effect.waveDust.material.opacity = merged ? Math.pow(Math.sin(postMerge * Math.PI), .62) * .5 : 0;
+
+      const recoilProgress = THREE.MathUtils.smoothstep(postMerge, .08, 1);
+      const recoilDistance = recoilProgress * .68;
+      effect.remnantHole.position.copy(effect.recoilVector).multiplyScalar(recoilDistance);
+      const recoilArray = effect.recoilTrail.geometry.attributes.position.array;
+      recoilArray[0] = 0; recoilArray[1] = 0; recoilArray[2] = 0;
+      recoilArray[3] = effect.remnantHole.position.x;
+      recoilArray[4] = effect.remnantHole.position.y;
+      recoilArray[5] = effect.remnantHole.position.z;
+      effect.recoilTrail.geometry.attributes.position.needsUpdate = true;
+      effect.recoilTrail.material.opacity = merged ? (1 - postMerge * .72) * .28 : 0;
     }
   });
   cosmicEventGroup.visible = anyVisible;
