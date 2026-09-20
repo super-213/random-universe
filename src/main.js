@@ -159,6 +159,7 @@ let observerSpeciesIndex = null;
 let localGalaxyGroup = null;
 let localGroupRoutes = [];
 let intergalacticMarkers = [];
+let localGroupGalaxies = [];
 let localGroupView = false;
 let localGroupFrameRadius = 36;
 let simulationBackend = '主线程';
@@ -337,20 +338,42 @@ function buildLocalGroupMap() {
   localGroupGroup.rotation.set(0, 0, 0);
   localGroupRoutes = [];
   intergalacticMarkers = [];
+  localGroupGalaxies = [];
   localGalaxyGroup = createLocalGalaxyGroup(universe.seed, $('#galaxy-name').textContent);
   const random = createSeededRandom(universe.seed, 7317);
   localGalaxyGroup.companions.forEach((companion) => {
+    const galaxy = new THREE.Group();
+    galaxy.position.fromArray(companion.position);
+    galaxy.rotation.set(
+      randomBetween(random, -.18, .18),
+      randomBetween(random, -.4, .4),
+      randomBetween(random, -.12, .12)
+    );
     const count = Math.round(820 + companion.radius * 260);
     const positions = new Float32Array(count * 3);
     const colors = new Float32Array(count * 3);
+    const radii = new Float32Array(count);
+    const angles = new Float32Array(count);
+    const verticals = new Float32Array(count);
+    const phases = new Float32Array(count);
     const tint = new THREE.Color().setHSL(companion.hue, .58, .68);
+    const isSpiral = companion.type === '小型螺旋星系';
+    const isIrregular = companion.type === '不规则星系';
+    const flattening = isIrregular ? .82 : isSpiral ? .68 : .76;
     for (let index = 0; index < count; index++) {
       const offset = index * 3;
       const radius = Math.pow(random(), .78) * companion.radius;
-      const angle = random() * Math.PI * 2 + radius * 1.35;
-      positions[offset] = companion.position[0] + Math.cos(angle) * radius;
-      positions[offset + 1] = companion.position[1] + gaussianRandom(random) * companion.radius * .18;
-      positions[offset + 2] = companion.position[2] + Math.sin(angle) * radius * .72;
+      const angle = isSpiral
+        ? (index % 2) * Math.PI + radius * 1.55 + gaussianRandom(random) * .3
+        : random() * Math.PI * 2;
+      const vertical = gaussianRandom(random) * companion.radius * (isIrregular ? .3 : .16);
+      radii[index] = radius;
+      angles[index] = angle;
+      verticals[index] = vertical;
+      phases[index] = random() * Math.PI * 2;
+      positions[offset] = Math.cos(angle) * radius;
+      positions[offset + 1] = vertical;
+      positions[offset + 2] = Math.sin(angle) * radius * flattening;
       const brightness = .68 + random() * .52;
       colors[offset] = tint.r * brightness;
       colors[offset + 1] = tint.g * brightness;
@@ -360,50 +383,49 @@ function buildLocalGroupMap() {
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     const material = new THREE.PointsMaterial({
-      size: 1.7,
+      size: 1.45,
       sizeAttenuation: false,
       map: getPointTexture(),
       alphaTest: .01,
       vertexColors: true,
       transparent: true,
-      opacity: .72,
+      opacity: .76,
       depthWrite: false,
       blending: THREE.AdditiveBlending
     });
-    material.userData.baseOpacity = .72;
+    material.userData.baseOpacity = .76;
     const points = new THREE.Points(geometry, material);
     points.userData.companionIndex = companion.index;
-    localGroupGroup.add(points);
+    galaxy.add(points);
 
     const core = new THREE.Sprite(new THREE.SpriteMaterial({
       map: makeGlowTexture(),
       color: tint,
       transparent: true,
-      opacity: .42,
+      opacity: .4,
       depthTest: false,
       depthWrite: false,
       blending: THREE.AdditiveBlending
     }));
-    core.position.fromArray(companion.position);
-    core.scale.setScalar(companion.radius * 1.9);
-    core.material.userData.baseOpacity = .42;
+    core.scale.setScalar(companion.radius * 1.68);
+    core.material.userData.baseOpacity = .4;
     core.renderOrder = 3;
-    localGroupGroup.add(core);
-
-    const locator = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: makeRingTexture(),
-      color: tint,
-      transparent: true,
-      opacity: .3,
-      depthTest: false,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending
-    }));
-    locator.position.fromArray(companion.position);
-    locator.scale.setScalar(companion.radius * 2.7);
-    locator.material.userData.baseOpacity = .3;
-    locator.renderOrder = 4;
-    localGroupGroup.add(locator);
+    galaxy.add(core);
+    localGroupGroup.add(galaxy);
+    localGroupGalaxies.push({
+      galaxy,
+      points,
+      core,
+      radii,
+      angles,
+      verticals,
+      phases,
+      flattening,
+      radius: companion.radius,
+      rotationSpeed: (isSpiral ? .082 : isIrregular ? .036 : .052) * (random() < .5 ? -1 : 1),
+      radialWobble: isIrregular ? .026 : .008,
+      pulsePhase: random() * Math.PI * 2
+    });
   });
 
   localGroupFrameRadius = localGalaxyGroup.companions.reduce((radius, companion) => (
@@ -2793,6 +2815,37 @@ function updateLocalGroupVisuals(simulationState) {
     : '尚无跨星系航线';
 }
 
+function animateLocalGroupGalaxies(now) {
+  if (!localGroupView || !localGroupGroup.visible || prefersReducedMotion) return;
+  const elapsed = now * .001;
+  const viewBoost = localGroupView ? 1 : .34;
+  localGroupGalaxies.forEach((companion) => {
+    const positions = companion.points.geometry.attributes.position.array;
+    for (let index = 0; index < companion.radii.length; index++) {
+      const offset = index * 3;
+      const normalizedRadius = companion.radii[index] / companion.radius;
+      const angularSpeed = companion.rotationSpeed * (
+        .48 + 1.05 / (.32 + Math.max(.14, normalizedRadius))
+      );
+      const phase = companion.phases[index];
+      const radius = companion.radii[index] * (
+        1 + Math.sin(elapsed * .24 + phase) * companion.radialWobble
+      );
+      const angle = companion.angles[index] + elapsed * angularSpeed;
+      positions[offset] = Math.cos(angle) * radius;
+      positions[offset + 1] = companion.verticals[index]
+        + Math.sin(elapsed * .34 + phase) * companion.radius * .012;
+      positions[offset + 2] = Math.sin(angle) * radius * companion.flattening;
+    }
+    companion.points.geometry.attributes.position.needsUpdate = true;
+    const pulse = 1 + Math.sin(elapsed * .72 + companion.pulsePhase) * .035;
+    companion.core.scale.setScalar(companion.radius * 1.68 * pulse);
+    companion.core.material.opacity = companion.core.material.userData.baseOpacity
+      * viewBoost
+      * (.92 + Math.sin(elapsed * .72 + companion.pulsePhase) * .08);
+  });
+}
+
 function updateCosmicTime(value, force = false) {
   currentEras ||= erasForUniverse(universe);
   const timelineState = createCosmicTimelineState(value, universe, currentEras);
@@ -2964,7 +3017,7 @@ function animate(now) {
       camera
     });
     if (!controls.enabled) galaxyGroup.rotation.y += 0.0003;
-    if (localGroupView && !prefersReducedMotion) localGroupGroup.rotation.y += .000035;
+    animateLocalGroupGalaxies(now);
     if (now - lastCoordinateUpdateAt >= coordinateUpdateIntervalMs) {
       lastCoordinateUpdateAt = now;
       const time = now * 0.00012;
