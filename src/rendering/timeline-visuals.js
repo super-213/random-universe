@@ -13,6 +13,20 @@ import { applyMergerGravity, applyStellarGravity, mergerPersistenceAt } from '..
 import { applyTransientGravity, transientPersistenceAt } from '../simulation/transient-events.js';
 import { animateBlackHoleVisual, setBlackHoleIntensity } from './black-hole.js';
 
+const normalBackground = new THREE.Color(0x050508);
+const hotBackground = new THREE.Color(0x2a1108);
+const heatDeathBackground = new THREE.Color(0x03050a);
+const currentBackground = new THREE.Color();
+const fateColors = {
+  'big-rip': new THREE.Color(0x071324),
+  'big-crunch': new THREE.Color(0x260806),
+  'vacuum-decay': new THREE.Color(0x160a25)
+};
+const pulsarWorldQuaternion = new THREE.Quaternion();
+const pulsarWorldPosition = new THREE.Vector3();
+const pulsarBeamAxis = new THREE.Vector3();
+const pulsarViewDirection = new THREE.Vector3();
+
 export function updateEpochVisuals(position, context) {
   const {
     mode, epochEffectsGroup, primordialParticles, primordialFactors, primordialDirections,
@@ -81,18 +95,12 @@ export function updateEpochVisuals(position, context) {
     });
   }
 
-  const normalBackground = new THREE.Color(0x050508);
-  const currentBackground = normalBackground.clone();
+  currentBackground.copy(normalBackground);
   if (position < 70) {
     const cooling = THREE.MathUtils.smoothstep(position, 0, 70);
-    currentBackground.lerpColors(new THREE.Color(0x2a1108), normalBackground, cooling);
+    currentBackground.lerpColors(hotBackground, normalBackground, cooling);
     renderer.toneMappingExposure = 1.15 + (1 - cooling) * 2.2;
   } else if (finiteOutcome && fatePhase > 0) {
-    const fateColors = {
-      'big-rip': new THREE.Color(0x071324),
-      'big-crunch': new THREE.Color(0x260806),
-      'vacuum-decay': new THREE.Color(0x160a25)
-    };
     currentBackground.lerpColors(normalBackground, fateColors[fate.type], fatePhase * .72);
     renderer.toneMappingExposure = fate.type === 'big-crunch'
       ? 1.15 + fatePhase * 1.45
@@ -100,7 +108,7 @@ export function updateEpochVisuals(position, context) {
   } else if (position > 950) {
     // Heat death is the disappearance of usable gradients, not a global dimmer.
     const cooling = THREE.MathUtils.smoothstep(position, 950, 1000);
-    currentBackground.lerpColors(normalBackground, new THREE.Color(0x03050a), cooling * .32);
+    currentBackground.lerpColors(normalBackground, heatDeathBackground, cooling * .32);
     renderer.toneMappingExposure = 1.15;
   } else {
     renderer.toneMappingExposure = 1.15;
@@ -109,6 +117,21 @@ export function updateEpochVisuals(position, context) {
   scene.fog.color.copy(currentBackground);
 
   if (!clickableStars || !originalGalaxyPositions) return;
+  const stellarVisualsVisible = position >= 205;
+  clickableStars.visible = stellarVisualsVisible;
+  if (!stellarVisualsVisible) {
+    if (dawnGas) dawnGas.visible = false;
+    dawnSites?.forEach((site) => { site.visible = false; });
+    remnantGroup.visible = false;
+    heatDeathGroup.visible = false;
+    cosmicFateGroup.visible = false;
+    galaxyGroup.children.forEach((item) => {
+      if (item.userData.isCoreGlow || item.userData.isAgnGlow || item.userData.isAgnJet) {
+        item.material.opacity = 0;
+      }
+    });
+    return;
+  }
   const stellarEnd = stellarEndTimelinePosition(universe);
   const stellarFormationEnd = stellarFormationEndTimelinePosition(universe);
   const remapReferencePosition = (referencePosition) => cosmicYearsToTimelinePosition(
@@ -920,14 +943,11 @@ export function animateCosmicEvents(now, context) {
         ? 1 + Math.min(.12, event.simulation.fractionalFrequencyJump * 15000)
         : 1;
       effect.rotor.rotation.y = now * .0024 * spinRate * glitchCue;
-      const worldQuaternion = new THREE.Quaternion();
-      const worldPosition = new THREE.Vector3();
-      const beamAxis = new THREE.Vector3(0, 1, 0);
-      effect.rotor.getWorldQuaternion(worldQuaternion);
-      event.group.getWorldPosition(worldPosition);
-      beamAxis.applyQuaternion(worldQuaternion).normalize();
-      const viewDirection = camera.position.clone().sub(worldPosition).normalize();
-      const alignment = Math.pow(Math.abs(beamAxis.dot(viewDirection)), 14);
+      effect.rotor.getWorldQuaternion(pulsarWorldQuaternion);
+      event.group.getWorldPosition(pulsarWorldPosition);
+      pulsarBeamAxis.set(0, 1, 0).applyQuaternion(pulsarWorldQuaternion).normalize();
+      pulsarViewDirection.copy(camera.position).sub(pulsarWorldPosition).normalize();
+      const alignment = Math.pow(Math.abs(pulsarBeamAxis.dot(pulsarViewDirection)), 14);
       const pulseFrequency = THREE.MathUtils.clamp(spinRate, .55, 3.2);
       const pulse = .52 + Math.pow(Math.max(0, Math.sin(now * .012 * pulseFrequency)), 10) * .48;
       const glitchScale = event.type === 'pulsar-glitch' ? .16 : 1;

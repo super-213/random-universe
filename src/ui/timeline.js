@@ -2,6 +2,20 @@ const $ = (selector) => document.querySelector(selector);
 
 let lastEventKey = '';
 let eventFadeTimer = null;
+let civilizationRows = [];
+const compactLayout = window.matchMedia('(max-width: 800px)');
+
+const ui = {};
+const cachedElement = (key, selector) => {
+  if (!ui[key]?.isConnected) ui[key] = $(selector);
+  return ui[key];
+};
+const setText = (element, value) => {
+  if (element && element.textContent !== value) element.textContent = value;
+};
+const setStyle = (element, property, value) => {
+  if (element && element.style[property] !== value) element.style[property] = value;
+};
 
 const timelineSegments = [
   [0, 18],
@@ -86,21 +100,48 @@ export function resetTimelineScaleFocus() {
 }
 
 export function renderTimelineHeader(state) {
-  $('#cosmic-timeline').value = state.position;
-  $('#time-progress').style.width = `${state.position / 10}%`;
-  $('#timeline-value').textContent = state.label;
-  $('#era-name').textContent = state.era.name;
-  $('#cosmic-time').textContent = state.label.replace('T+', '');
-  $('#era-description').textContent = state.era.description;
-  $('.explorer-title').style.setProperty('--cosmic-opacity', state.galaxyIdentityOpacity.toFixed(3));
+  const timeline = cachedElement('timeline', '#cosmic-timeline');
+  const timelineValue = String(state.position);
+  if (timeline?.value !== timelineValue) timeline.value = timelineValue;
+  setStyle(cachedElement('progress', '#time-progress'), 'width', `${state.position / 10}%`);
+  setText(cachedElement('timelineValue', '#timeline-value'), state.label);
+  setText(cachedElement('eraName', '#era-name'), state.era.name);
+  setText(cachedElement('cosmicTime', '#cosmic-time'), state.label.replace('T+', ''));
+  setText(cachedElement('eraDescription', '#era-description'), state.era.description);
+  const opacity = state.galaxyIdentityOpacity.toFixed(3);
+  const title = cachedElement('explorerTitle', '.explorer-title');
+  if (title?.style.getPropertyValue('--cosmic-opacity') !== opacity) {
+    title.style.setProperty('--cosmic-opacity', opacity);
+  }
 }
 
 export function renderCivilizationRows({ position, simulationState, runtimeState, civilizationData }) {
+  const activeSpecies = runtimeState.filter((state) => state.alive).length;
+  const occupiedDomains = runtimeState.reduce(
+    (total, state) => total + (state.alive && !state.ascended ? state.count : 0),
+    0
+  );
+  const panel = cachedElement('civilizationPanel', '#civilization-panel');
+  const opacity = activeSpecies > 0 ? '1' : '0';
+  if (panel?.style.getPropertyValue('--cosmic-opacity') !== opacity) {
+    panel.style.setProperty('--cosmic-opacity', opacity);
+  }
+  setText(
+    cachedElement('civilizationSummary', '#civilization-summary'),
+    activeSpecies > 0 ? `${activeSpecies} 种 · ${occupiedDomains} 域` : '尚未出现'
+  );
+
+  const compactPanelCollapsed = compactLayout.matches
+    && !panel?.classList.contains('is-expanded');
+  if (compactPanelCollapsed) return;
+  if (civilizationRows.length !== civilizationData.length || !civilizationRows[0]?.isConnected) {
+    civilizationRows = civilizationData.map((_, index) => document.querySelector(`[data-species="${index}"]`));
+  }
   runtimeState.forEach((state, index) => {
     const species = civilizationData[index];
-    const row = document.querySelector(`[data-species="${index}"]`);
+    const row = civilizationRows[index];
     if (!row) return;
-    row.style.opacity = state.alive ? '1' : '.18';
+    setStyle(row, 'opacity', state.alive ? '1' : '.18');
     row.classList.toggle('is-impacted', state.alive && state.eventState.causes.length > 0);
     row.classList.toggle('is-ascended', state.ascended);
     const details = [];
@@ -108,20 +149,12 @@ export function renderCivilizationRows({ position, simulationState, runtimeState
     if (state.friendlyNames.length) details.push(`与 ${state.friendlyNames.join('、')} 友好交流`);
     if (state.conflictNames.length) details.push(`与 ${state.conflictNames.join('、')} 冲突`);
     if (state.eventState.causes.length) details.push(`受 ${state.eventState.causes.join('、')} 影响`);
-    row.title = state.ascended ? '1% 概率的高维转化：已脱离普通物质宿主' : details.join('；');
-    row.querySelector('b').textContent = state.alive
+    const title = state.ascended ? '1% 概率的高维转化：已脱离普通物质宿主' : details.join('；');
+    if (row.title !== title) row.title = title;
+    setText(row.querySelector('b'), state.alive
       ? (state.ascended ? '超维存续' : `${state.count} 域${state.trend > 0 ? ' ↑' : state.trend < 0 ? ' ↓' : ''}`)
-      : position < species.birth ? '未诞生' : '衰亡';
+      : position < species.birth ? '未诞生' : '衰亡');
   });
-  const activeSpecies = runtimeState.filter((state) => state.alive).length;
-  const occupiedDomains = runtimeState.reduce(
-    (total, state) => total + (state.alive && !state.ascended ? state.count : 0),
-    0
-  );
-  $('#civilization-panel').style.setProperty('--cosmic-opacity', activeSpecies > 0 ? '1' : '0');
-  $('#civilization-summary').textContent = activeSpecies > 0
-    ? `${activeSpecies} 种 · ${occupiedDomains} 域`
-    : '尚未出现';
 }
 
 export function renderTimelineEvent(event, force = false) {

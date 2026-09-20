@@ -1,8 +1,11 @@
 import * as THREE from 'three';
 
 let sharedPointTexture = null;
+let sharedRingTexture = null;
+let sharedGlowTexture = null;
 
 export function makeRingTexture() {
+  if (sharedRingTexture) return sharedRingTexture;
   const c = document.createElement('canvas');
   c.width = c.height = 256;
   const context = c.getContext('2d');
@@ -14,12 +17,13 @@ export function makeRingTexture() {
   gradient.addColorStop(1, 'rgba(255,255,255,0)');
   context.fillStyle = gradient;
   context.fillRect(0, 0, 256, 256);
-  const texture = new THREE.CanvasTexture(c);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  return texture;
+  sharedRingTexture = new THREE.CanvasTexture(c);
+  sharedRingTexture.colorSpace = THREE.SRGBColorSpace;
+  return sharedRingTexture;
 }
 
 export function makeGlowTexture() {
+  if (sharedGlowTexture) return sharedGlowTexture;
   const c = document.createElement('canvas');
   c.width = c.height = 128;
   const context = c.getContext('2d');
@@ -30,9 +34,9 @@ export function makeGlowTexture() {
   gradient.addColorStop(1, 'rgba(0,0,0,0)');
   context.fillStyle = gradient;
   context.fillRect(0, 0, 128, 128);
-  const texture = new THREE.CanvasTexture(c);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  return texture;
+  sharedGlowTexture = new THREE.CanvasTexture(c);
+  sharedGlowTexture.colorSpace = THREE.SRGBColorSpace;
+  return sharedGlowTexture;
 }
 
 export function getPointTexture() {

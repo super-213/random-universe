@@ -55,6 +55,10 @@ let resetCivilizationLegend;
 const $ = (selector) => document.querySelector(selector);
 const canvas = $('#universe');
 const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const compactCivilizationLayout = window.matchMedia('(max-width: 800px)');
+const timelineUpdateIntervalMs = 1000 / 30;
+const coordinateUpdateIntervalMs = 100;
+const coordinateElements = [$('#coord-x'), $('#coord-y'), $('#coord-z')];
 
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -121,7 +125,15 @@ let cosmicPosition = 0;
 let timePlaying = false;
 let timeSpeed = 10;
 let lastFrame = performance.now();
+let lastTimelineUpdateAt = 0;
+let lastCoordinateUpdateAt = 0;
 let cosmicEvents = [];
+let currentEras = null;
+let cachedTimelineVisualContext = null;
+let lastCivilizationSnapshot = null;
+let activeSpeciesCount = 0;
+let ascendedSpeciesCount = 0;
+let activeCivilizationRelationship = null;
 
 function loadExplorer() {
   if (explorerLoadPromise) return explorerLoadPromise;
@@ -287,7 +299,6 @@ function buildUniverseObject() {
   const count = Math.min(10500, Math.floor(5200 + universe.stars * 900));
   const positions = new Float32Array(count * 3);
   const colors = new Float32Array(count * 3);
-  const sizes = new Float32Array(count);
   const base = new THREE.Color().setHSL(universe.hue, 0.55, 0.66);
   const warm = new THREE.Color(0xffd9aa);
 
@@ -304,13 +315,14 @@ function buildUniverseObject() {
     colors[i * 3] = color.r * brightness;
     colors[i * 3 + 1] = color.g * brightness;
     colors[i * 3 + 2] = color.b * brightness;
-    sizes[i] = random();
+    // Preserve the established seeded stream without uploading an unused
+    // custom attribute to PointsMaterial.
+    random();
   }
 
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-  geometry.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
   const material = new THREE.PointsMaterial({ size: 0.065, map: getPointTexture(), alphaTest: .015, vertexColors: true, transparent: true, opacity: 0.86, depthWrite: false, blending: THREE.AdditiveBlending });
   const points = new THREE.Points(geometry, material);
   universeGroup.add(points);
@@ -342,6 +354,12 @@ function buildGalaxy() {
   civilizationData = [];
   civilizationRuntimeState = [];
   civilizationSimulation = null;
+  currentEras = erasForUniverse(universe);
+  cachedTimelineVisualContext = null;
+  lastCivilizationSnapshot = null;
+  activeSpeciesCount = 0;
+  ascendedSpeciesCount = 0;
+  activeCivilizationRelationship = null;
   const random = createSeededRandom(universe.seed, 91);
   const count = 17000;
   const positions = new Float32Array(count * 3);
@@ -1774,6 +1792,8 @@ function regenerate() {
   updateUniverseData(universe);
   buildUniverseObject();
   galaxyBuiltForSeed = null;
+  currentEras = null;
+  cachedTimelineVisualContext = null;
   $('.universe-data').scrollTop = 0;
   const flash = $('#creation-flash');
   flash.classList.remove('is-flashing');
@@ -1830,6 +1850,7 @@ async function enterUniverse() {
   updateCosmicTime(cosmicPosition, true);
   restartTimelineScaleIntro();
   timePlaying = true;
+  lastTimelineUpdateAt = 0;
   $('#toggle-time').textContent = 'Ⅱ';
   $('#toggle-time').setAttribute('aria-label', '暂停时间');
   transition = { type: 'enter', start: performance.now(), duration: prefersReducedMotion ? 1 : 2100 };
@@ -1931,6 +1952,15 @@ function toggleCivilizations() {
   const expanded = !panel.classList.contains('is-expanded');
   panel.classList.toggle('is-expanded', expanded);
   $('#toggle-civilizations').setAttribute('aria-expanded', String(expanded));
+  if (expanded && civilizationRuntimeState.length) {
+    renderCivilizationRows({
+      position: cosmicPosition,
+      simulationState: lastCivilizationSnapshot,
+      runtimeState: civilizationRuntimeState,
+      civilizationData
+    });
+    organizeCivilizationLegend(lastCivilizationSnapshot, civilizationData);
+  }
 }
 
 
@@ -1940,16 +1970,21 @@ function toggleCivilizations() {
 
 
 function timelineVisualContext() {
-  return {
-    mode, epochEffectsGroup, primordialParticles, primordialFactors, primordialDirections,
-    expansionStreaks, expansionDirections, bangCore, shockwaves, renderer, scene,
-    clickableStars, originalGalaxyPositions, stellarGravityState, universe, transition, galaxyGroup,
-    starDeathThresholds, originalGalaxyColors, stellarDawnModel, dawnGas, dawnSites,
-    cosmicEvents, remnantGroup,
-    stellarRemnants, originalRemnantPositions, remnantDynamics, blackHoleRemnants,
-    heatDeathGroup, coldPhotons, originalPhotonPositions, originalPhotonColors,
-    cosmicFateGroup, fateBubble, fateGlow, cosmicEventGroup
-  };
+  if (!cachedTimelineVisualContext) {
+    cachedTimelineVisualContext = {
+      mode, epochEffectsGroup, primordialParticles, primordialFactors, primordialDirections,
+      expansionStreaks, expansionDirections, bangCore, shockwaves, renderer, scene,
+      clickableStars, originalGalaxyPositions, stellarGravityState, universe, transition, galaxyGroup,
+      starDeathThresholds, originalGalaxyColors, stellarDawnModel, dawnGas, dawnSites,
+      cosmicEvents, remnantGroup,
+      stellarRemnants, originalRemnantPositions, remnantDynamics, blackHoleRemnants,
+      heatDeathGroup, coldPhotons, originalPhotonPositions, originalPhotonColors,
+      cosmicFateGroup, fateBubble, fateGlow, cosmicEventGroup
+    };
+  }
+  cachedTimelineVisualContext.mode = mode;
+  cachedTimelineVisualContext.transition = transition;
+  return cachedTimelineVisualContext;
 }
 
 function applyCivilizationVisuals(runtimeState) {
@@ -1967,7 +2002,8 @@ function applyCivilizationVisuals(runtimeState) {
 }
 
 function updateCosmicTime(value, force = false) {
-  const timelineState = createCosmicTimelineState(value, universe, erasForUniverse(universe));
+  currentEras ||= erasForUniverse(universe);
+  const timelineState = createCosmicTimelineState(value, universe, currentEras);
   cosmicPosition = timelineState.position;
   renderTimelineHeader(timelineState);
 
@@ -1975,11 +2011,37 @@ function updateCosmicTime(value, force = false) {
 
   updateEpochVisuals(cosmicPosition, timelineVisualContext());
   const simulationState = civilizationSnapshotAt(civilizationSimulation, cosmicPosition);
-  applyCivilizationSnapshot(simulationState, {
-    civilizationSimulation,
-    civilizationData,
-    civilizationGroups
-  });
+  const civilizationSnapshotChanged = force || simulationState !== lastCivilizationSnapshot;
+  if (civilizationSnapshotChanged) {
+    lastCivilizationSnapshot = simulationState;
+    applyCivilizationSnapshot(simulationState, {
+      civilizationSimulation,
+      civilizationData,
+      civilizationGroups
+    });
+    civilizationRuntimeState = deriveCivilizationRuntime(
+      cosmicPosition,
+      simulationState,
+      civilizationData,
+      cosmicEvents
+    );
+    renderCivilizationRows({
+      position: cosmicPosition,
+      simulationState,
+      runtimeState: civilizationRuntimeState,
+      civilizationData
+    });
+    const civilizationPanelCollapsed = compactCivilizationLayout.matches
+      && !$('#civilization-panel').classList.contains('is-expanded');
+    if (!civilizationPanelCollapsed) organizeCivilizationLegend(simulationState, civilizationData);
+    activeSpeciesCount = civilizationRuntimeState.filter((state) => state.alive).length;
+    ascendedSpeciesCount = civilizationRuntimeState.filter((state) => state.ascended).length;
+    activeCivilizationRelationship = findDominantRelationship(
+      simulationState,
+      civilizationRuntimeState,
+      civilizationData.length
+    );
+  }
   syncCivilizationHosts({
     clickableStars,
     stellarRemnants,
@@ -1989,37 +2051,16 @@ function updateCosmicTime(value, force = false) {
     civilizationGroups
   });
 
-  civilizationRuntimeState = deriveCivilizationRuntime(
-    cosmicPosition,
-    simulationState,
-    civilizationData,
-    cosmicEvents
-  );
   applyCivilizationVisuals(civilizationRuntimeState);
-  renderCivilizationRows({
-    position: cosmicPosition,
-    simulationState,
-    runtimeState: civilizationRuntimeState,
-    civilizationData
-  });
-  organizeCivilizationLegend(simulationState, civilizationData);
-
-  const activeSpecies = civilizationRuntimeState.filter((state) => state.alive).length;
-  const ascendedSpecies = civilizationRuntimeState.filter((state) => state.ascended).length;
-  const activeRelationship = findDominantRelationship(
-    simulationState,
-    civilizationRuntimeState,
-    civilizationData.length
-  );
   const activeEvent = updateCosmicEvents(cosmicPosition, timelineVisualContext());
   const narrative = selectTimelineNarrative({
     position: cosmicPosition,
     label: timelineState.label,
     universe,
     activeEvent,
-    activeRelationship,
-    ascendedSpecies,
-    activeSpecies,
+    activeRelationship: activeCivilizationRelationship,
+    ascendedSpecies: ascendedSpeciesCount,
+    activeSpecies: activeSpeciesCount,
     civilizationData
   });
   renderTimelineEvent(narrative, force);
@@ -2041,13 +2082,18 @@ function animate(now) {
   if (mode === 'explorer') {
     if (timePlaying && !transition) {
       advanceCosmicTime(delta);
+      let reachedTimelineEnd = false;
       if (cosmicPosition >= 1000) {
         cosmicPosition = 1000;
         timePlaying = false;
+        reachedTimelineEnd = true;
         $('#toggle-time').textContent = '▶';
         $('#toggle-time').setAttribute('aria-label', '播放时间');
       }
-      updateCosmicTime(cosmicPosition);
+      if (reachedTimelineEnd || now - lastTimelineUpdateAt >= timelineUpdateIntervalMs) {
+        lastTimelineUpdateAt = now;
+        updateCosmicTime(cosmicPosition);
+      }
     }
     controls.update();
     epochEffectsGroup.position.set(0, 0, 0);
@@ -2074,10 +2120,18 @@ function animate(now) {
       camera
     });
     if (!controls.enabled) galaxyGroup.rotation.y += 0.0003;
-    const time = now * 0.00012;
-    $('#coord-x').textContent = `${Math.sin(time) < 0 ? '−' : '+'}${Math.abs(Math.sin(time) * 9).toFixed(2)}`;
-    $('#coord-y').textContent = `${Math.cos(time * .7) < 0 ? '−' : '+'}${Math.abs(Math.cos(time * .7) * 9).toFixed(2)}`;
-    $('#coord-z').textContent = `${Math.sin(time * .3) < 0 ? '−' : '+'}${Math.abs(Math.sin(time * .3) * 3).toFixed(2)}`;
+    if (now - lastCoordinateUpdateAt >= coordinateUpdateIntervalMs) {
+      lastCoordinateUpdateAt = now;
+      const time = now * 0.00012;
+      const coordinateValues = [
+        `${Math.sin(time) < 0 ? '−' : '+'}${Math.abs(Math.sin(time) * 9).toFixed(2)}`,
+        `${Math.cos(time * .7) < 0 ? '−' : '+'}${Math.abs(Math.cos(time * .7) * 9).toFixed(2)}`,
+        `${Math.sin(time * .3) < 0 ? '−' : '+'}${Math.abs(Math.sin(time * .3) * 3).toFixed(2)}`
+      ];
+      coordinateElements.forEach((element, index) => {
+        if (element.textContent !== coordinateValues[index]) element.textContent = coordinateValues[index];
+      });
+    }
   }
   renderer.render(scene, camera);
 }
@@ -2102,6 +2156,7 @@ $('#toggle-civilizations').addEventListener('click', toggleCivilizations);
 $('#toggle-time').addEventListener('click', () => {
   if (cosmicPosition >= 1000) updateCosmicTime(0, true);
   timePlaying = !timePlaying;
+  if (timePlaying) lastTimelineUpdateAt = 0;
   $('#toggle-time').textContent = timePlaying ? 'Ⅱ' : '▶';
   $('#toggle-time').setAttribute('aria-label', timePlaying ? '暂停时间' : '播放时间');
 });
