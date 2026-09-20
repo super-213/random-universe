@@ -331,7 +331,39 @@ h1 strong {
 .enter-button:hover { background: var(--accent); color: #111307; transform: translateY(-2px); }
 .enter-button:hover .enter-arrow { transform: rotate(45deg); background: #111307; color: var(--accent); }
 .primary-actions p { margin: 0; color: rgba(241,238,231,.35); font-size: 9px; letter-spacing: .08em; }
-.compare-button { color: rgba(241,238,231,.58); }
+.compare-button {
+  padding: 10px 2px;
+  color: rgba(241,238,231,.58);
+  transition: color .2s ease, transform .25s cubic-bezier(.2,.8,.2,1);
+}
+.compare-button span:first-child { transition: border-color .2s ease; }
+.compare-arrow {
+  color: var(--accent);
+  font: 13px/1 "Space Mono", monospace;
+  opacity: .62;
+  transform: translateX(-3px);
+  transition: opacity .2s ease, transform .25s cubic-bezier(.2,.8,.2,1);
+}
+.compare-button:hover,
+.compare-button:focus-visible,
+.compare-button[aria-expanded="true"] {
+  color: var(--ink);
+  transform: translateX(3px);
+}
+.compare-button:hover span:first-child,
+.compare-button:focus-visible span:first-child,
+.compare-button[aria-expanded="true"] span:first-child { border-color: var(--accent); }
+.compare-button:hover .compare-arrow,
+.compare-button:focus-visible .compare-arrow,
+.compare-button[aria-expanded="true"] .compare-arrow {
+  opacity: 1;
+  transform: translateX(2px);
+}
+.compare-button:focus-visible {
+  border-radius: 2px;
+  outline: 1px solid rgba(216,255,95,.7);
+  outline-offset: 4px;
+}
 .multiverse-lab {
   position: absolute;
   z-index: 8;

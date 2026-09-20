@@ -2443,6 +2443,7 @@ function toggleMultiverseLab(open = !$('#multiverse-lab').classList.contains('is
   const lab = $('#multiverse-lab');
   lab.classList.toggle('is-open', open);
   lab.setAttribute('aria-hidden', String(!open));
+  $('#compare-universes').setAttribute('aria-expanded', String(open));
   if (!open) return;
   const candidates = [universe, ...[1, 2, 3].map((offset) => createUniverse(neighboringSeed(universe.seed, offset)))]
     .map((candidate) => ({
