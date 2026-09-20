@@ -142,7 +142,9 @@ export function selectTimelineNarrative({
   if (activeEvent) {
     const impacted = position >= activeEvent.impactAt;
     const aftermath = impacted ? `；${activeEvent.outcome}` : '';
-    const confidence = activeEvent.confidence === 'science-fiction' ? '科幻假设 · ' : '';
+    const confidence = activeEvent.confidence === 'science-fiction'
+      ? '科幻假设 · '
+      : activeEvent.confidence === 'astrophysical-model' ? '天体演化模型 · ' : '';
     return {
       key: `${activeEvent.id}-${impacted ? 'aftermath' : 'forming'}`,
       time: label,

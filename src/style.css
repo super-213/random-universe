@@ -366,6 +366,11 @@ h1 strong {
 .civilization-item.is-ascended b { color: #ead9ff; }
 .civilization-item[data-origin="fragment"] i { border-radius: 1px; transform: rotate(45deg); }
 .civilization-item[data-origin="uplift"] i { background: transparent; border: 1px solid var(--species); }
+.civilization-item[data-origin="relativistic"] i {
+  width: 7px;
+  border-radius: 0;
+  clip-path: polygon(0 50%, 100% 0, 72% 50%, 100% 100%);
+}
 .faction-block { --faction: var(--accent); }
 .faction-block + .faction-block { margin-top: 14px; }
 .faction-header {
@@ -547,6 +552,14 @@ h1 strong {
 }
 .event-marker.is-speculative:hover,
 .event-marker.is-speculative:focus-visible { transform: translateX(-50%) rotate(45deg) scale(1); }
+.event-marker.is-hypothesis {
+  background: color-mix(in srgb, var(--event-color) 16%, transparent);
+  border: 1px dashed var(--event-color);
+  box-shadow: 0 0 9px color-mix(in srgb, var(--event-color) 58%, transparent);
+  transform: translateX(-50%) scale(.72);
+}
+.event-marker.is-hypothesis:hover,
+.event-marker.is-hypothesis:focus-visible { transform: translateX(-50%) scale(1.08); }
 .timeline-marks { position: absolute; left: 0; right: 0; top: 15px; }
 .timeline-marks span { position: absolute; transform: translateX(-50%); color: rgba(241,238,231,.28); font: 7px "Space Mono", monospace; white-space: nowrap; }
 .timeline-marks span:first-child { transform: none; }

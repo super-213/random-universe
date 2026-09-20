@@ -57,6 +57,70 @@ const eventCatalog = [
     color: '#67f0c4',
     visual: 'uplift',
     label: '提升物种实验'
+  },
+  {
+    type: 'satellite-disruption',
+    probability: .54,
+    duration: 30,
+    offset: [42, 104],
+    color: '#ff9f76',
+    visual: 'orbital-debris',
+    label: '卫星解体与轨道撤离'
+  },
+  {
+    type: 'terraforming-project',
+    probability: .58,
+    duration: 38,
+    offset: [72, 148],
+    color: '#75e8a8',
+    visual: 'terraforming',
+    label: '行星地球化工程'
+  },
+  {
+    type: 'digital-migration',
+    probability: .5,
+    duration: 34,
+    offset: [88, 164],
+    color: '#72c7ff',
+    visual: 'digital-migration',
+    label: '数字意识迁移'
+  },
+  {
+    type: 'precursor-ruins',
+    probability: .56,
+    duration: 32,
+    offset: [52, 132],
+    color: '#e7c1ff',
+    visual: 'precursor-ruins',
+    label: '先驱遗迹唤醒'
+  },
+  {
+    type: 'information-plague',
+    probability: .46,
+    duration: 28,
+    offset: [82, 156],
+    color: '#ff668c',
+    visual: 'information-plague',
+    label: '信息瘟疫爆发'
+  },
+  {
+    type: 'relativistic-divergence',
+    probability: .48,
+    duration: 36,
+    offset: [94, 168],
+    color: '#a7b9ff',
+    visual: 'relativistic-divergence',
+    label: '相对论殖民分化'
+  },
+  {
+    type: 'galactic-encounter',
+    probability: .42,
+    duration: 50,
+    offset: [108, 188],
+    color: '#ffc46b',
+    visual: 'galactic-encounter',
+    label: '伴星系近掠',
+    confidence: 'astrophysical-model'
   }
 ];
 
@@ -90,14 +154,17 @@ function chooseLineageHome(random, parent, civilizationData, habitatPositions, p
 
 function lineageTraits(random, parent, originType) {
   const cooperative = originType === 'uplift';
+  const relativistic = originType === 'relativistic';
   return {
-    aggression: clamp(parent.aggression + randomBetween(random, cooperative ? -.22 : -.06, cooperative ? .08 : .3), 0, 1),
-    cooperation: clamp(parent.cooperation + randomBetween(random, cooperative ? .08 : -.3, cooperative ? .3 : .05), 0, 1),
-    expansionRate: clamp(parent.expansionRate * randomBetween(random, .84, 1.12), .62, 1.48),
-    resilience: clamp(parent.resilience * randomBetween(random, .88, 1.12), .62, 1.42),
-    technology: clamp(parent.technology * randomBetween(random, .76, .96), .12, .9),
+    aggression: clamp(parent.aggression + randomBetween(random, cooperative ? -.22 : relativistic ? -.12 : -.06, cooperative ? .08 : relativistic ? .16 : .3), 0, 1),
+    cooperation: clamp(parent.cooperation + randomBetween(random, cooperative ? .08 : relativistic ? -.14 : -.3, cooperative ? .3 : relativistic ? .14 : .05), 0, 1),
+    expansionRate: clamp(parent.expansionRate * randomBetween(random, relativistic ? .72 : .84, 1.12), .62, 1.48),
+    resilience: clamp(parent.resilience * randomBetween(random, .88, relativistic ? 1.2 : 1.12), .62, 1.42),
+    technology: clamp(parent.technology * randomBetween(random, relativistic ? .88 : .76, relativistic ? 1.08 : .96), .12, .96),
     visibility: clamp(parent.visibility + randomBetween(random, -.04, .1), 0, 1),
-    cohesion: originType === 'uplift' ? randomBetween(random, .58, .78) : randomBetween(random, .34, .56),
+    cohesion: cooperative
+      ? randomBetween(random, .58, .78)
+      : randomBetween(random, relativistic ? .46 : .34, relativistic ? .68 : .56),
     machineAutonomy: clamp(parent.machineAutonomy + randomBetween(random, -.08, .08), 0, 1)
   };
 }
@@ -127,7 +194,30 @@ function eventMessage(event, target, secondary, child) {
   if (event.type === 'knowledge-ark') {
     return `${target.name} 将生物谱系、工程知识与历史档案写入分散式长期存储`;
   }
-  return `${target.name} 对本土智慧前生命实施定向演化，${child.name} 开始形成独立文化`;
+  if (event.type === 'uplift-experiment') {
+    return `${target.name} 对本土智慧前生命实施定向演化，${child.name} 开始形成独立文化`;
+  }
+  if (event.type === 'satellite-disruption') {
+    return `${target.name} 的人口密集卫星进入潮汐解体区，轨道聚居带启动紧急撤离`;
+  }
+  if (event.type === 'terraforming-project') {
+    return `${target.name} 尝试跨世代重塑一颗边境行星的大气、海洋与生物圈`;
+  }
+  if (event.type === 'digital-migration') {
+    return `${target.name} 将部分人口迁移到分布式计算基质，重新定义个体与疆域`;
+  }
+  if (event.type === 'precursor-ruins') {
+    return `${target.name} 在无主恒星域发现早于本纪元的休眠结构并尝试解码`;
+  }
+  if (event.type === 'information-plague') {
+    return `${target.name} 的通信网络出现能改写认知与自治系统的自传播信息结构`;
+  }
+  if (event.type === 'relativistic-divergence') {
+    return `${target.name} 的高速远征队在巨大时间差后归来，${child.name} 已形成独立历史`;
+  }
+  return event.encounterMode === 'agn-feedback'
+    ? '伴星系近掠扰动核区气体，活动星系核反馈开始压制恒星形成'
+    : '伴星系近掠压缩气体云，星系尺度的恒星形成潮被触发';
 }
 
 export function createCivilizationEventPlan({ universe, civilizationData, habitatPositions }) {
@@ -159,7 +249,7 @@ export function createCivilizationEventPlan({ universe, civilizationData, habita
       ...definition,
       id: `civilization-${definition.type}-${catalogIndex}-${universe.seed}`,
       category: 'civilization',
-      confidence: 'science-fiction',
+      confidence: definition.confidence || 'science-fiction',
       start,
       impactAt,
       targetSpeciesIndex: targetEntry.index,
@@ -183,12 +273,30 @@ export function createCivilizationEventPlan({ universe, civilizationData, habita
       event.unstable = random() > .54 + target.resilience * .22 + target.technology * .14;
     } else if (definition.type === 'knowledge-ark') {
       event.archiveReliability = randomBetween(random, .58, .94);
-    } else if (definition.type === 'civilization-fracture' || definition.type === 'uplift-experiment') {
-      const originType = definition.type === 'civilization-fracture' ? 'fragment' : 'uplift';
+    } else if (definition.type === 'satellite-disruption') {
+      event.evacuationSuccess = random() < .38 + target.resilience * .28 + target.technology * .24;
+    } else if (definition.type === 'terraforming-project') {
+      event.terraformingSuccess = random() < .34 + target.technology * .38 + target.resilience * .18;
+    } else if (definition.type === 'digital-migration') {
+      event.migrationStable = random() > .16 + target.machineAutonomy * .18 - target.cohesion * .12;
+    } else if (definition.type === 'precursor-ruins') {
+      event.precursorHazard = random() < .34 - target.technology * .14 + target.aggression * .12;
+    } else if (definition.type === 'information-plague') {
+      event.contained = random() < .28 + target.cohesion * .34 + target.technology * .24;
+    } else if (definition.type === 'galactic-encounter') {
+      event.encounterMode = universe.hasCentralBlackHole && random() < .46
+        ? 'agn-feedback'
+        : 'starburst';
+    } else if (definition.type === 'civilization-fracture'
+      || definition.type === 'uplift-experiment'
+      || definition.type === 'relativistic-divergence') {
+      const originType = definition.type === 'civilization-fracture'
+        ? 'fragment'
+        : definition.type === 'uplift-experiment' ? 'uplift' : 'relativistic';
       const childIndex = baseSpeciesCount + childSpecies.length;
       const childName = originType === 'fragment'
         ? `${target.name}·远枝`
-        : `${target.name}·新生群`;
+        : originType === 'uplift' ? `${target.name}·新生群` : `${target.name}·迟归者`;
       const child = {
         name: childName,
         originType,
@@ -198,10 +306,10 @@ export function createCivilizationEventPlan({ universe, civilizationData, habita
           target,
           [...civilizationData, ...childSpecies],
           habitatPositions,
-          originType === 'fragment'
+          originType !== 'uplift'
         ),
         birth: Math.ceil(impactAt),
-        colorShift: originType === 'fragment' ? .08 : -.1,
+        colorShift: originType === 'fragment' ? .08 : originType === 'uplift' ? -.1 : .18,
         ...lineageTraits(random, target, originType)
       };
       childSpecies.push(child);

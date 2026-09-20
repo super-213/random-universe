@@ -307,6 +307,69 @@ test('civilization events change snapshots and create active successor cultures'
   assert.ok(events.every((event) => event.outcome !== '事件仍在演化'));
 });
 
+test('second-wave civilization events persist outcomes and relativistic lineages', () => {
+  const universe = Array.from({ length: 200 }, (_, index) => createUniverse(seedFor(index)))
+    .find((candidate) => candidate.cosmicFate.type === 'heat-death');
+  const civilizationData = [
+    { name: '甲', birth: 400, homeNodeIndex: 0, aggression: .2, cooperation: .8, expansionRate: 1.2, resilience: 1, technology: .5, visibility: .1, cohesion: .75, machineAutonomy: .2 },
+    { name: '乙', birth: 402, homeNodeIndex: 3, aggression: .3, cooperation: .7, expansionRate: 1.1, resilience: 1, technology: .5, visibility: .1, cohesion: .7, machineAutonomy: .2 },
+    { name: '丙', birth: 404, homeNodeIndex: 6, aggression: .25, cooperation: .75, expansionRate: 1.1, resilience: 1, technology: .5, visibility: .1, cohesion: .7, machineAutonomy: .2 },
+    { name: '丁', birth: 406, homeNodeIndex: 9, aggression: .35, cooperation: .65, expansionRate: 1.1, resilience: 1, technology: .5, visibility: .1, cohesion: .7, machineAutonomy: .2 },
+    { name: '甲·迟归者', birth: 462, homeNodeIndex: 12, aggression: .25, cooperation: .65, expansionRate: 1, resilience: 1.1, technology: .48, visibility: .1, cohesion: .58, machineAutonomy: .2, originType: 'relativistic', parentSpeciesIndex: 0 }
+  ];
+  const habitatPositions = new Float32Array(18 * 3);
+  for (let index = 0; index < 18; index++) {
+    habitatPositions[index * 3] = Math.cos(index / 18 * Math.PI * 2) * (4 + index * .08);
+    habitatPositions[index * 3 + 1] = Math.sin(index * .4) * .3;
+    habitatPositions[index * 3 + 2] = Math.sin(index / 18 * Math.PI * 2) * (4 + index * .08);
+  }
+  const simulation = {
+    start: 390,
+    end: 1000,
+    step: 1,
+    habitatRemnantIndices: Uint16Array.from({ length: 18 }, (_, index) => index),
+    habitatPositions,
+    adjacency: [],
+    snapshots: []
+  };
+  const makeEvent = (type, impactAt, targetSpeciesIndex, extra = {}) => ({
+    id: type,
+    type,
+    label: type,
+    category: 'civilization',
+    impactAt,
+    targetSpeciesIndex,
+    civilizationImpacts: [],
+    outcome: '事件仍在演化',
+    ...extra
+  });
+  const events = [
+    makeEvent('satellite-disruption', 422, 0, { evacuationSuccess: true }),
+    makeEvent('terraforming-project', 432, 1, { terraformingSuccess: true }),
+    makeEvent('digital-migration', 442, 2, { migrationStable: true }),
+    makeEvent('precursor-ruins', 452, 3, { precursorHazard: false }),
+    makeEvent('information-plague', 458, 0, { contained: true }),
+    makeEvent('relativistic-divergence', 462, 0, { childSpeciesIndex: 4 }),
+    makeEvent('galactic-encounter', 470, 1, { encounterMode: 'starburst' })
+  ];
+  buildCivilizationSimulation({
+    universe,
+    civilizationData,
+    civilizationSimulation: simulation,
+    cosmicEvents: events
+  });
+  const snapshot = simulation.snapshots.find((item) => item.time === 480);
+  assert.equal(snapshot.evacuations[0], 1);
+  assert.equal(snapshot.terraforming[1], 1);
+  assert.equal(snapshot.substrateModes[2], 1);
+  assert.equal(snapshot.precursorKnowledge[3], 1);
+  assert.equal(snapshot.contamination[0], -1);
+  assert.equal(snapshot.temporalDrift[0], 1);
+  assert.equal(snapshot.temporalDrift[4], 1);
+  assert.equal(simulation.snapshots.some((item) => item.time >= 462 && item.active[4]), true);
+  assert.ok(events.every((event) => event.outcome !== '事件仍在演化'));
+});
+
 test('event repeats respect a universe-specific latest start boundary', () => {
   const universe = createUniverse('EVNTBOUND0000001');
   const schedule = expandEventSchedule([

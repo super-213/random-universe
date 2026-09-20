@@ -1643,9 +1643,21 @@ function buildCosmicEvents(starPositions) {
       label: data.label
     });
   });
+  let galacticCenterSourceIndex = 0;
+  let galacticCenterDistance = Infinity;
+  for (let starIndex = 0; starIndex < starPositions.length / 3; starIndex++) {
+    const offset = starIndex * 3;
+    const distance = starPositions[offset] ** 2 + starPositions[offset + 1] ** 2 + starPositions[offset + 2] ** 2;
+    if (distance < galacticCenterDistance) {
+      galacticCenterDistance = distance;
+      galacticCenterSourceIndex = starIndex;
+    }
+  }
   civilizationEvents.forEach((data) => {
     const remnantIndex = civilizationSimulation.habitatRemnantIndices[data.targetNodeIndex];
-    const sourceIndex = remnantDynamics.sourceIndices[remnantIndex];
+    const sourceIndex = data.visual === 'galactic-encounter'
+      ? galacticCenterSourceIndex
+      : remnantDynamics.sourceIndices[remnantIndex];
     const sourceOffset = sourceIndex * 3;
     const group = createCivilizationEventVisual(data);
     group.position.set(
@@ -1679,14 +1691,21 @@ function renderCosmicEventMarkers() {
   cosmicEvents.forEach((event) => {
     const marker = document.createElement('button');
     marker.type = 'button';
-    marker.className = `event-marker${event.category === 'civilization' ? ' is-speculative' : ''}`;
+    const confidenceClass = event.confidence === 'science-fiction'
+      ? ' is-speculative'
+      : event.confidence === 'astrophysical-model' ? ' is-hypothesis' : '';
+    marker.className = `event-marker${confidenceClass}`;
     marker.style.left = `${event.start / 10}%`;
     marker.style.setProperty('--event-color', event.color);
-    const eventKind = event.category === 'civilization' ? '科幻假设，' : '';
+    const eventKind = event.confidence === 'science-fiction'
+      ? '科幻假设，'
+      : event.confidence === 'astrophysical-model' ? '天体演化模型，' : '';
     marker.setAttribute('aria-label', `${eventKind}${event.label}，${cosmicTimeLabel(event.start, universe)}；${event.outcome}`);
-    marker.title = event.category === 'civilization'
+    marker.title = event.confidence === 'science-fiction'
       ? `科幻假设 · ${event.outcome}`
-      : event.outcome;
+      : event.confidence === 'astrophysical-model'
+        ? `天体演化模型 · ${event.outcome}`
+        : event.outcome;
     marker.addEventListener('click', () => {
       timePlaying = false;
       $('#toggle-time').textContent = '▶';

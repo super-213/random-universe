@@ -81,6 +81,12 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
   const megastructures = new Uint8Array(speciesCount);
   const uplifts = new Uint8Array(speciesCount);
   const probeModes = new Int8Array(speciesCount);
+  const terraforming = new Int8Array(speciesCount);
+  const substrateModes = new Uint8Array(speciesCount);
+  const precursorKnowledge = new Int8Array(speciesCount);
+  const contamination = new Int8Array(speciesCount);
+  const temporalDrift = new Uint8Array(speciesCount);
+  const evacuations = new Uint8Array(speciesCount);
   const archiveReadyAt = new Float32Array(speciesCount);
   archiveReadyAt.fill(Infinity);
   civilizationData.forEach((species, index) => {
@@ -98,7 +104,7 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
         + randomBetween(random, -.16, .16);
       if (speciesA.parentSpeciesIndex === b || speciesB.parentSpeciesIndex === a) {
         const child = speciesA.parentSpeciesIndex === b ? speciesA : speciesB;
-        affinity += child.originType === 'uplift' ? .44 : -.38;
+        affinity += child.originType === 'uplift' ? .44 : child.originType === 'relativistic' ? .08 : -.38;
       }
       relationScores[relationIndex(a, b)] = affinity;
       relationScores[relationIndex(b, a)] = affinity;
@@ -150,8 +156,9 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
     }
     stats.affectedNodes.add(nodeIndex);
 
+    const substrateResilience = substrateModes[speciesIndex] ? 1.3 : 1;
     const destructionChance = THREE.MathUtils.clamp(
-      severity * .62 / Math.max(.65, species.resilience),
+      severity * .62 / Math.max(.65, species.resilience * substrateResilience),
       0,
       .9
     );
@@ -204,6 +211,30 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
   const applyCivilizationEvent = (event, time) => {
     const targetIndex = event.targetSpeciesIndex;
     const target = civilizationData[targetIndex];
+    if (event.type === 'galactic-encounter') {
+      let affected = 0;
+      civilizationData.forEach((species, speciesIndex) => {
+        if (!seeded[speciesIndex] || territoryCountFor(speciesIndex) === 0) return;
+        affected++;
+        if (event.encounterMode === 'starburst') {
+          technology[speciesIndex] = Math.min(1, technology[speciesIndex] + .035);
+          for (let node = 0; node < nodeCount; node++) {
+            if (owners[node] === speciesIndex) strength[node] = Math.min(1.35, strength[node] + .14);
+          }
+          lastCauses[speciesIndex] = '近掠触发恒星形成潮';
+        } else {
+          for (let node = 0; node < nodeCount; node++) {
+            if (owners[node] === speciesIndex && (node + speciesIndex) % 4 === 0) strength[node] *= .64;
+          }
+          cohesion[speciesIndex] = Math.max(0, cohesion[speciesIndex] - .045);
+          lastCauses[speciesIndex] = '活动星系核反馈';
+        }
+      });
+      event.outcome = event.encounterMode === 'starburst'
+        ? `近掠压缩星际介质，${affected} 个文明获得短期能源与殖民窗口`
+        : `核区反馈加热气体，${affected} 个文明的部分疆域供能下降`;
+      return;
+    }
     if (!target || !seeded[targetIndex] || territoryCountFor(targetIndex) === 0) {
       event.outcome = `${target?.name || '目标文明'} 已在事件生效前衰亡`;
       return;
@@ -291,6 +322,113 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       lastCauses[targetIndex] = '提升物种计划';
       lastCauses[childIndex] = '被定向演化为智慧物种';
       event.outcome = `${civilizationData[childIndex].name} 在 ${transferred} 个恒星域形成独立文明`;
+      return;
+    }
+
+    if (event.type === 'satellite-disruption') {
+      const targetNodes = [];
+      for (let node = 0; node < nodeCount; node++) {
+        if (owners[node] === targetIndex) targetNodes.push(node);
+      }
+      if (event.evacuationSuccess) {
+        evacuations[targetIndex] = 1;
+        targetNodes.filter((_, index) => index % 7 === 0).forEach((node) => { strength[node] *= .82; });
+        cohesion[targetIndex] = Math.min(1, cohesion[targetIndex] + .04);
+        lastCauses[targetIndex] = '完成轨道聚居带撤离';
+        event.outcome = `${target.name} 保存大部分人口与档案，碎片带成为永久航行禁区`;
+      } else {
+        targetNodes.filter((_, index) => index % 4 === 0).forEach((node) => {
+          owners[node] = -1;
+          strength[node] = 0;
+        });
+        cohesion[targetIndex] = Math.max(0, cohesion[targetIndex] - .18);
+        lastCauses[targetIndex] = '轨道撤离失败';
+        event.outcome = `${target.name} 未能完成撤离，${Math.ceil(targetNodes.length / 4)} 个聚居域失联`;
+      }
+      return;
+    }
+
+    if (event.type === 'terraforming-project') {
+      terraforming[targetIndex] = event.terraformingSuccess ? 1 : -1;
+      if (event.terraformingSuccess) {
+        technology[targetIndex] = Math.min(1, technology[targetIndex] + .08);
+        cohesion[targetIndex] = Math.min(1, cohesion[targetIndex] + .06);
+        lastCauses[targetIndex] = '地球化生物圈稳定';
+        event.outcome = `${target.name} 建立自维持生物圈，宜居前沿与人口承载力上升`;
+      } else {
+        for (let node = 0; node < nodeCount; node++) {
+          if (owners[node] === targetIndex && node % 6 === targetIndex % 6) strength[node] *= .68;
+        }
+        cohesion[targetIndex] = Math.max(0, cohesion[targetIndex] - .1);
+        lastCauses[targetIndex] = '地球化生态崩溃';
+        event.outcome = `${target.name} 的人工生物圈进入不可逆失衡，边境殖民地被迫撤出`;
+      }
+      return;
+    }
+
+    if (event.type === 'digital-migration') {
+      if (event.migrationStable) {
+        substrateModes[targetIndex] = 1;
+        technology[targetIndex] = Math.min(1, technology[targetIndex] + .12);
+        machineAutonomy[targetIndex] = Math.min(1, machineAutonomy[targetIndex] + .18);
+        lastCauses[targetIndex] = '数字基质迁移';
+        event.outcome = `${target.name} 形成可迁移的分布式心智，辐射韧性与能源效率上升`;
+      } else {
+        contamination[targetIndex] = 1;
+        cohesion[targetIndex] = Math.max(0, cohesion[targetIndex] - .24);
+        lastCauses[targetIndex] = '人格分叉失控';
+        event.outcome = `${target.name} 无法解决副本权利与身份一致性，网络陷入持续分裂`;
+      }
+      return;
+    }
+
+    if (event.type === 'precursor-ruins') {
+      precursorKnowledge[targetIndex] = event.precursorHazard ? -1 : 1;
+      if (event.precursorHazard) {
+        for (let node = 0; node < nodeCount; node++) {
+          if (owners[node] === targetIndex && node % 5 === 0) strength[node] *= .52;
+        }
+        visibility[targetIndex] = Math.min(1, visibility[targetIndex] + .16);
+        lastCauses[targetIndex] = '先驱遗迹防御苏醒';
+        event.outcome = `${target.name} 触发遗迹防御协议，解码站与邻近航路受损`;
+      } else {
+        technology[targetIndex] = Math.min(1, technology[targetIndex] + .16);
+        lastCauses[targetIndex] = '获得先驱工程知识';
+        event.outcome = `${target.name} 解码部分先驱工程学，获得跨代技术跃迁`;
+      }
+      return;
+    }
+
+    if (event.type === 'information-plague') {
+      contamination[targetIndex] = event.contained ? -1 : 1;
+      if (event.contained) {
+        technology[targetIndex] = Math.min(1, technology[targetIndex] + .04);
+        lastCauses[targetIndex] = '信息瘟疫隔离';
+        event.outcome = `${target.name} 切断感染网络并建立可验证通信协议`;
+      } else {
+        cohesion[targetIndex] = Math.max(0, cohesion[targetIndex] - .3);
+        machineAutonomy[targetIndex] = Math.min(1, machineAutonomy[targetIndex] + .12);
+        for (let node = 0; node < nodeCount; node++) {
+          if (owners[node] === targetIndex) strength[node] *= .84;
+        }
+        for (let otherIndex = 0; otherIndex < speciesCount; otherIndex++) {
+          if (relationStates[relationIndex(targetIndex, otherIndex)] > 0) contamination[otherIndex] = 1;
+        }
+        lastCauses[targetIndex] = '信息瘟疫扩散';
+        event.outcome = `${target.name} 的认知网络失去一致性，感染沿友好通信链路传播`;
+      }
+      return;
+    }
+
+    if (event.type === 'relativistic-divergence') {
+      const childIndex = event.childSpeciesIndex;
+      const transferred = transferTerritory(targetIndex, childIndex, .14);
+      temporalDrift[targetIndex] = 1;
+      temporalDrift[childIndex] = 1;
+      setRelation(targetIndex, childIndex, .08, 0);
+      lastCauses[targetIndex] = '相对论远征队归来';
+      lastCauses[childIndex] = '经历独立的相对论历史';
+      event.outcome = `${civilizationData[childIndex].name} 接管 ${transferred} 个恒星域，与母文明保持疏远中立`;
     }
   };
 
@@ -342,10 +480,11 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       const owner = owners[node];
       if (owner < 0) continue;
       const species = civilizationData[owner];
-      const infrastructure = 1 + megastructures[owner] * .34 + technology[owner] * .16;
+      const infrastructure = 1 + megastructures[owner] * .34 + technology[owner] * .16
+        + terraforming[owner] * .1 + substrateModes[owner] * .12 + precursorKnowledge[owner] * .08;
       const socialStability = .82 + cohesion[owner] * .3;
       const support = (1 + friendlyCounts[owner] * .045 - conflictCounts[owner] * .028)
-        * infrastructure * socialStability;
+        * infrastructure * socialStability * (contamination[owner] > 0 ? .72 : 1);
       strength[node] += (.032 + species.resilience * .018) * support * (1 - strength[node]);
       strength[node] = THREE.MathUtils.clamp(strength[node], 0, 1.35);
     }
@@ -393,8 +532,12 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       const territory = ownedBySpecies[speciesIndex];
       if (!seeded[speciesIndex] || territory.length === 0 || time >= expansionEnd) return;
       const probeBonus = probeModes[speciesIndex] > 0 ? .8 : 0;
+      const frontierBonus = terraforming[speciesIndex] > 0 ? .48 : 0;
+      const substrateBonus = substrateModes[speciesIndex] ? .28 : 0;
+      const precursorBonus = precursorKnowledge[speciesIndex] > 0 ? .32 : 0;
       const attempts = 1 + Math.floor(
-        species.expansionRate + friendlyCounts[speciesIndex] * .34 + probeBonus + technology[speciesIndex] * .28
+        species.expansionRate + friendlyCounts[speciesIndex] * .34 + probeBonus + frontierBonus
+          + substrateBonus + precursorBonus + technology[speciesIndex] * .28
       );
       for (let attempt = 0; attempt < attempts; attempt++) {
         const frontier = [];
@@ -493,8 +636,12 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       for (let node = 0; node < nodeCount; node++) {
         const owner = owners[node];
         if (owner < 0 || civilizationData[owner].highDimensional && time >= civilizationData[owner].ascensionAt) continue;
-        strength[node] -= .004 + decline * .052;
-        if (strength[node] <= .035 || declineFinished) {
+        const digitalEnergyRefuge = substrateModes[owner] && fateDecline === 0;
+        const declineLoss = (.004 + decline * .052) * (digitalEnergyRefuge ? .38 : 1);
+        const ownerDeclineFinished = declineFinished && (!digitalEnergyRefuge
+          || time >= Math.min(1000, declineWindow.energyEnd + 70));
+        strength[node] -= declineLoss;
+        if (strength[node] <= .035 || ownerDeclineFinished) {
           owners[node] = -1;
           strength[node] = 0;
           lastCauses[owner] = declineCause;
@@ -535,6 +682,12 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       megastructures: megastructures.slice(),
       uplifts: uplifts.slice(),
       probeModes: probeModes.slice(),
+      terraforming: terraforming.slice(),
+      substrateModes: substrateModes.slice(),
+      precursorKnowledge: precursorKnowledge.slice(),
+      contamination: contamination.slice(),
+      temporalDrift: temporalDrift.slice(),
+      evacuations: evacuations.slice(),
       relations: relationStates.slice(),
       relationScores: relationScores.slice(),
       causes: lastCauses.slice()
@@ -615,6 +768,15 @@ export function deriveCivilizationRuntime(position, simulationState, civilizatio
     if (simulationState?.probeModes[index] < 0) statuses.push('探针失控');
     if (simulationState?.archives[index]) statuses.push('方舟就绪');
     if (simulationState?.uplifts[index]) statuses.push(species.originType === 'uplift' ? '提升文明' : '提升计划');
+    if (simulationState?.terraforming[index] > 0) statuses.push('地球化成功');
+    if (simulationState?.terraforming[index] < 0) statuses.push('地球化失败');
+    if (simulationState?.substrateModes[index]) statuses.push('数字载体');
+    if (simulationState?.precursorKnowledge[index] > 0) statuses.push('先驱技术');
+    if (simulationState?.precursorKnowledge[index] < 0) statuses.push('遗迹损伤');
+    if (simulationState?.contamination[index] > 0) statuses.push('信息瘟疫');
+    if (simulationState?.contamination[index] < 0) statuses.push('验证网络');
+    if (simulationState?.temporalDrift[index]) statuses.push('相对论分支');
+    if (simulationState?.evacuations[index]) statuses.push('轨道避难');
     return {
       alive,
       ascended,

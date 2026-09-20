@@ -121,6 +121,118 @@ export function createCivilizationEventVisual(event) {
       return strand;
     });
     effect.strands = strands;
+  } else if (event.visual === 'orbital-debris') {
+    const count = 120;
+    const positions = new Float32Array(count * 3);
+    const debrisDirections = new Float32Array(count * 3);
+    for (let index = 0; index < count; index++) {
+      const angle = index / count * Math.PI * 2 + (index % 9) * .026;
+      const radius = .48 + (index % 13) / 13 * .3;
+      debrisDirections.set([
+        Math.cos(angle) * radius,
+        ((index * 17) % 23) / 23 * .22 - .11,
+        Math.sin(angle) * radius
+      ], index * 3);
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const debris = new THREE.Points(geometry, new THREE.PointsMaterial({
+      color,
+      size: .045,
+      map: getPointTexture(),
+      alphaTest: .01,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending
+    }));
+    debris.rotation.x = .42;
+    group.add(debris);
+    effect.debris = debris;
+    effect.debrisDirections = debrisDirections;
+  } else if (event.visual === 'terraforming') {
+    const planet = new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.SphereGeometry(.34, 14, 9)),
+      new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0, depthWrite: false })
+    );
+    const atmosphere = new THREE.Sprite(additiveMaterial({ map: makeGlowTexture(), color }));
+    atmosphere.scale.setScalar(.9);
+    group.add(atmosphere, planet);
+    effect.planet = planet;
+    effect.atmosphere = atmosphere;
+  } else if (event.visual === 'digital-migration') {
+    const lattice = new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.BoxGeometry(.72, .72, .72, 2, 2, 2)),
+      new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending })
+    );
+    const innerLattice = new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.OctahedronGeometry(.28, 0)),
+      lattice.material.clone()
+    );
+    group.add(lattice, innerLattice);
+    effect.lattice = lattice;
+    effect.innerLattice = innerLattice;
+  } else if (event.visual === 'precursor-ruins') {
+    const ruin = new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.TetrahedronGeometry(.52, 1)),
+      new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending })
+    );
+    ruin.scale.set(1, 1.6, 1);
+    group.add(ruin);
+    effect.ruin = ruin;
+  } else if (event.visual === 'information-plague') {
+    const positions = [];
+    for (let index = 0; index < 20; index++) {
+      const angle = index / 20 * Math.PI * 2;
+      const nextAngle = ((index * 7 + 3) % 20) / 20 * Math.PI * 2;
+      positions.push(
+        Math.cos(angle) * .62,
+        Math.sin(angle * 3) * .24,
+        Math.sin(angle) * .62,
+        Math.cos(nextAngle) * .62,
+        Math.sin(nextAngle * 3) * .24,
+        Math.sin(nextAngle) * .62
+      );
+    }
+    const networkGeometry = new THREE.BufferGeometry();
+    networkGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    const infectedNetwork = new THREE.LineSegments(networkGeometry, new THREE.LineBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending
+    }));
+    group.add(infectedNetwork);
+    effect.infectedNetwork = infectedNetwork;
+  } else if (event.visual === 'relativistic-divergence') {
+    const trails = [-1, 1].map((side) => {
+      const points = [];
+      for (let index = 0; index <= 40; index++) {
+        const progress = index / 40;
+        points.push(new THREE.Vector3(
+          side * progress * 1.25,
+          Math.sin(progress * Math.PI * 3) * .1,
+          (progress - .5) * .28
+        ));
+      }
+      const trail = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints(points),
+        new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending })
+      );
+      group.add(trail);
+      return trail;
+    });
+    effect.relativisticTrails = trails;
+  } else if (event.visual === 'galactic-encounter') {
+    const companion = new THREE.Sprite(additiveMaterial({ map: makeGlowTexture(), color }));
+    const tidalRing = new THREE.Sprite(additiveMaterial({ map: makeRingTexture(), color }));
+    companion.position.set(4.2, .5, -1.6);
+    companion.scale.setScalar(2.4);
+    tidalRing.scale.setScalar(9);
+    group.add(companion, tidalRing);
+    effect.companion = companion;
+    effect.tidalRing = tidalRing;
   }
 
   group.userData.effect = effect;
@@ -176,6 +288,53 @@ export function updateCivilizationEventVisual(event, phase, persistence = 0) {
     effect.strands[0].scale.setScalar(.7 + reveal * .3);
     effect.strands[1].scale.setScalar(.7 + reveal * .3);
   }
+  if (effect.debris) {
+    const positions = effect.debris.geometry.attributes.position.array;
+    const disruption = .25 + reveal * 1.25;
+    for (let index = 0; index < effect.debrisDirections.length / 3; index++) {
+      const offset = index * 3;
+      positions[offset] = effect.debrisDirections[offset] * disruption;
+      positions[offset + 1] = effect.debrisDirections[offset + 1] * disruption;
+      positions[offset + 2] = effect.debrisDirections[offset + 2] * disruption;
+    }
+    effect.debris.geometry.attributes.position.needsUpdate = true;
+    effect.debris.material.opacity = intensity * .82;
+  }
+  if (effect.planet) {
+    effect.planet.material.opacity = intensity * .7;
+    effect.planet.scale.setScalar(.72 + reveal * .28);
+    effect.atmosphere.material.opacity = intensity * .34;
+  }
+  if (effect.lattice) {
+    effect.lattice.material.opacity = intensity * .58;
+    effect.innerLattice.material.opacity = intensity * .85;
+    effect.lattice.scale.setScalar(.5 + reveal * .5);
+  }
+  if (effect.ruin) {
+    effect.ruin.material.opacity = intensity * .72;
+    effect.ruin.scale.setScalar(.52 + reveal * .48);
+    effect.ruin.scale.y *= 1.6;
+  }
+  if (effect.infectedNetwork) {
+    effect.infectedNetwork.material.opacity = intensity * (.32 + Math.sin(phase * Math.PI * 7) * .2);
+    effect.infectedNetwork.scale.setScalar(.35 + reveal * .85);
+  }
+  if (effect.relativisticTrails) {
+    effect.relativisticTrails.forEach((trail) => {
+      trail.material.opacity = intensity * .72;
+      trail.scale.setScalar(.32 + reveal * .68);
+    });
+  }
+  if (effect.companion) {
+    effect.glow.scale.setScalar(6 + phase * 5);
+    effect.glow.material.opacity = intensity * .16;
+    effect.ring.scale.setScalar(4 + phase * 8);
+    effect.ring.material.opacity = intensity * .16;
+    effect.companion.material.opacity = intensity * .42;
+    effect.tidalRing.material.opacity = intensity * .2;
+    effect.tidalRing.scale.setScalar(5 + reveal * 7);
+    effect.companion.position.x = 5.2 - phase * 3.8;
+  }
 }
 
 export function animateCivilizationEventVisual(event, now) {
@@ -192,4 +351,17 @@ export function animateCivilizationEventVisual(event, now) {
   effect.strands?.forEach((strand, index) => {
     strand.rotation.y = now * (index ? -.00034 : .00034);
   });
+  if (effect.debris) effect.debris.rotation.y = now * .00022;
+  if (effect.planet) effect.planet.rotation.y = now * .00018;
+  if (effect.lattice) {
+    effect.lattice.rotation.x = now * .00016;
+    effect.lattice.rotation.y = now * .00024;
+    effect.innerLattice.rotation.y = now * -.00032;
+  }
+  if (effect.ruin) effect.ruin.rotation.y = now * .0002;
+  if (effect.infectedNetwork) effect.infectedNetwork.rotation.y = now * -.00026;
+  effect.relativisticTrails?.forEach((trail, index) => {
+    trail.rotation.z = Math.sin(now * .0008 + index * Math.PI) * .08;
+  });
+  if (effect.tidalRing) effect.tidalRing.material.rotation = now * .00004;
 }
