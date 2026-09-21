@@ -705,6 +705,23 @@ h1 strong {
 .timeline-tool-button:hover { color: var(--ink); border-color: rgba(241,238,231,.28); }
 .timeline-tool-button:active { transform: scale(.96); }
 .timeline-tool-button.is-active { color: var(--accent); border-color: rgba(216,255,95,.4); background: rgba(216,255,95,.07); }
+.timeline-snap-toggle { display: inline-grid; place-items: center; width: 30px; padding: 6px; }
+.timeline-snap-icon {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.6;
+  opacity: .76;
+  transition: filter .2s ease, opacity .2s ease, transform .2s ease;
+}
+.timeline-snap-toggle:hover .timeline-snap-icon { opacity: 1; transform: translateY(-1px); }
+.timeline-snap-toggle.is-active .timeline-snap-icon {
+  filter: drop-shadow(0 0 4px rgba(216,255,95,.9));
+  opacity: 1;
+}
 .ship-highlight-toggle { display: inline-grid; place-items: center; width: 30px; padding: 6px; }
 .ship-highlight-icon {
   width: 16px;
@@ -1378,7 +1395,7 @@ h1 strong {
     left: 16px;
     right: 16px;
     top: auto;
-    bottom: calc(env(safe-area-inset-bottom) + 154px);
+    bottom: calc(env(safe-area-inset-bottom) + 214px);
   }
   .civilization-panel {
     z-index: 6;
@@ -1411,40 +1428,87 @@ h1 strong {
     right: 16px;
     bottom: calc(env(safe-area-inset-bottom) + 14px);
   }
-  .timeline-head { flex-wrap: nowrap; gap: 6px; margin-bottom: 24px; }
+  .timeline-head {
+    display: grid;
+    grid-template-areas:
+      "play . speed"
+      "tools tools tools";
+    grid-template-columns: 44px minmax(0, 1fr) 86px;
+    gap: 10px;
+    margin-bottom: 18px;
+  }
   .timeline-head > span { display: none; }
-  .timeline-head > b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .play-button { width: 38px; height: 38px; flex: 0 0 38px; }
-  .timeline-tools { gap: 4px; margin-left: auto; }
-  .timeline-tool-button { min-height: 32px; padding: 6px 8px; font-size: 7px; }
-  #toggle-timeline-snap { width: 34px; padding: 0; overflow: hidden; }
-  #toggle-ship-highlight { width: 34px; padding: 0; justify-content: center; }
-  #toggle-ship-highlight .ship-highlight-icon { width: 17px; height: 17px; }
-  .timeline-filter-menu { right: 0; left: auto; }
-  .speed-control { margin-left: 0; }
-  .speed-toggle { min-width: 70px; min-height: 34px; padding: 6px 8px 6px 10px; }
+  .timeline-head > b {
+    display: none;
+  }
+  .play-button {
+    grid-area: play;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    font-size: 11px;
+  }
+  .timeline-tools {
+    display: grid;
+    grid-area: tools;
+    grid-template-columns: 100px 48px 48px;
+    gap: 8px;
+    width: 100%;
+    margin-left: 0;
+  }
+  .timeline-filter { width: 100px; }
+  .timeline-tool-button {
+    min-height: 44px;
+    padding: 10px 14px;
+    border-radius: 22px;
+    font-size: 9px;
+  }
+  #timeline-filter-toggle { width: 100px; }
+  #toggle-timeline-snap { width: 48px; padding: 0; overflow: hidden; }
+  #toggle-timeline-snap .timeline-snap-icon { width: 20px; height: 20px; }
+  #toggle-ship-highlight { width: 48px; padding: 0; justify-content: center; }
+  #toggle-ship-highlight .ship-highlight-icon { width: 20px; height: 20px; }
+  .timeline-filter-menu {
+    position: fixed;
+    right: auto;
+    bottom: calc(env(safe-area-inset-bottom) + 210px);
+    left: 16px;
+    width: min(260px, calc(100vw - 32px));
+  }
+  .timeline-filter-menu button { min-height: 44px; padding: 10px; font-size: 9px; }
+  .speed-control { grid-area: speed; margin-left: 0; }
+  .speed-toggle {
+    min-width: 86px;
+    min-height: 44px;
+    padding: 8px 9px 8px 11px;
+    border-radius: 22px;
+  }
+  .speed-toggle output { font-size: 11px; }
   .speed-slider-panel { right: 0; width: min(286px, calc(100vw - 32px)); }
   .timeline-event-detail { bottom: calc(100% + 8px); max-height: min(35dvh, 250px); padding: 9px 10px 10px; }
   .timeline-event-detail-axis { margin-left: 98px; }
   .timeline-event-detail-list { max-height: min(26dvh, 180px); }
   .timeline-detail-event { min-height: 31px; grid-template-columns: 88px 1fr; gap: 8px; }
   .timeline-detail-event-label b { font-size: 7px; }
-  .range-wrap { height: 54px; }
-  #cosmic-timeline { top: 0; height: 48px; }
+  .range-wrap { height: 72px; }
+  #cosmic-timeline { top: 0; height: 60px; }
   .range-wrap::before,
-  .time-progress { top: 18px; height: 4px; }
+  .time-progress { top: 22px; height: 5px; }
+  .timeline-scale { top: 16px; height: 17px; }
   .scale-tick--minor { display: none; }
-  .time-progress::before { width: 34px; height: 34px; }
-  .time-progress::after { right: 0; top: 50%; width: 18px; height: 18px; }
-  .event-marker { width: 12px; height: 12px; top: -1px; }
-  .event-cluster { top: -4px; width: auto; min-width: 21px; height: 18px; }
-  .timeline-marks { top: 36px; }
+  .time-progress::before { width: 44px; height: 44px; }
+  .time-progress::after { right: 0; top: 50%; width: 22px; height: 22px; }
+  .event-marker { width: 14px; height: 14px; top: -2px; }
+  .event-cluster { top: -5px; width: auto; min-width: 25px; height: 22px; border-radius: 11px; }
+  .timeline-scrub-value { top: -31px; padding: 6px 9px; font-size: 9px; }
+  .timeline-marks { top: 44px; }
+  .timeline-marks span { font-size: 8px; }
   .timeline-marks span:nth-child(2),
   .timeline-marks span:nth-child(3),
   .timeline-marks span:nth-child(5),
   .timeline-marks span:nth-child(6) { display: none; }
   .timeline-marks span:nth-child(4) { display: block; }
-  .timeline-zoom-reset { top: 33px; }
+  .timeline-zoom-reset { top: 42px; min-height: 32px; padding: 6px 9px; font-size: 8px; }
   .star-inspector {
     z-index: 7;
     top: auto;
@@ -1484,7 +1548,7 @@ h1 strong {
 @media (max-width: 800px) and (max-height: 700px) {
   .civilization-panel.is-expanded .civilization-legend { max-height: 34dvh; }
   .event-feed { display: none; }
-  .era-readout { bottom: calc(env(safe-area-inset-bottom) + 140px); }
+  .era-readout { bottom: calc(env(safe-area-inset-bottom) + 208px); }
   .time-console { bottom: calc(env(safe-area-inset-bottom) + 10px); }
   .star-inspector { bottom: calc(env(safe-area-inset-bottom) + 132px); }
 }
@@ -1499,5 +1563,6 @@ h1 strong {
   .timeline-scrub-value,
   .speed-slider-panel,
   .speed-toggle i,
+  .timeline-snap-icon,
   .ship-highlight-icon { transition: none !important; }
 }

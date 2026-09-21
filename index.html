@@ -370,7 +370,19 @@
                   <button type="button" role="menuitemradio" aria-checked="false" data-event-filter="speculative"><span>科幻假设</span><small>0</small></button>
                 </div>
               </div>
-              <button class="timeline-tool-button is-active" id="toggle-timeline-snap" type="button" aria-pressed="true">吸附</button>
+              <button
+                class="timeline-tool-button timeline-snap-toggle is-active"
+                id="toggle-timeline-snap"
+                type="button"
+                aria-pressed="true"
+                aria-label="时间轴吸附"
+                title="开启或关闭时间轴事件吸附"
+              >
+                <svg class="timeline-snap-icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M5 4v8a7 7 0 0 0 14 0V4h-5v8a2 2 0 0 1-4 0V4H5Z" />
+                  <path d="M5 8h5m4 0h5" />
+                </svg>
+              </button>
               <button
                 class="timeline-tool-button ship-highlight-toggle"
                 id="toggle-ship-highlight"
