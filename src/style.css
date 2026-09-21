@@ -40,6 +40,18 @@ html, body {
 
 button, a { -webkit-tap-highlight-color: transparent; }
 button { font: inherit; }
+button:disabled { cursor: progress; }
+
+.is-hydrating-explorer #toggle-time,
+.is-hydrating-explorer #toggle-civilizations,
+.is-hydrating-explorer #toggle-local-group {
+  opacity: 0.38;
+  pointer-events: none;
+}
+
+.is-hydrating-explorer .pulse {
+  animation-duration: 0.7s;
+}
 
 #universe {
   position: fixed;

@@ -110,7 +110,12 @@ camera.position.set(0, 0.5, 32);
 
 let controls = null;
 let explorerLoadPromise = null;
-let galaxyBuiltForSeed = null;
+let galaxyPreparedForSeed = null;
+let galaxyHydratedForSeed = null;
+let galaxyPreparationPromise = null;
+let galaxyHydrationPromise = null;
+let preparedGalaxyPositions = null;
+let galaxyBuildVersion = 0;
 
 let universeGroup = new THREE.Group();
 let galaxyGroup = new THREE.Group();
@@ -534,6 +539,48 @@ function loadExplorer() {
   return explorerLoadPromise;
 }
 
+function runWhenIdle(callback) {
+  if ('requestIdleCallback' in window) {
+    window.requestIdleCallback(callback, { timeout: 1400 });
+    return;
+  }
+  window.setTimeout(callback, 80);
+}
+
+function prepareGalaxyPreview() {
+  const seed = universe.seed;
+  const version = galaxyBuildVersion;
+  if (galaxyPreparedForSeed === seed && preparedGalaxyPositions) {
+    return Promise.resolve(preparedGalaxyPositions);
+  }
+  if (galaxyPreparationPromise) return galaxyPreparationPromise;
+
+  const preparationPromise = loadExplorer()
+    .then(() => {
+      if (!galaxyBuildIsCurrent(seed, version) || mode !== 'generator') return null;
+      const positions = buildGalaxyPreview();
+      if (!galaxyBuildIsCurrent(seed, version)) return null;
+      preparedGalaxyPositions = positions;
+      galaxyPreparedForSeed = seed;
+      return positions;
+    });
+  const trackedPromise = preparationPromise.finally(() => {
+    if (galaxyPreparationPromise === trackedPromise) galaxyPreparationPromise = null;
+  });
+  galaxyPreparationPromise = trackedPromise;
+  return galaxyPreparationPromise;
+}
+
+function scheduleGalaxyPreparation() {
+  const version = galaxyBuildVersion;
+  runWhenIdle(() => {
+    if (!galaxyBuildIsCurrent(universe.seed, version) || mode !== 'generator') return;
+    prepareGalaxyPreview().catch((error) => {
+      console.warn('宇宙探索器预加载失败，将在进入时重试', error);
+    });
+  });
+}
+
 function addBlackHoleRemnant({
   random,
   massSolar,
@@ -869,7 +916,7 @@ function buildUniverseObject() {
   transition = { type: 'birth', start: performance.now(), duration: prefersReducedMotion ? 1 : 1300 };
 }
 
-async function buildGalaxy() {
+function buildGalaxyPreview() {
   disposeGroup(galaxyGroup);
   disposeGroup(localGroupGroup);
   disposeGroup(epochEffectsGroup);
@@ -885,6 +932,28 @@ async function buildGalaxy() {
   civilizationEvents = [];
   civilizationRuntimeState = [];
   civilizationSimulation = null;
+  cosmicEvents = [];
+  blackHoleRemnants = [];
+  primordialParticles = null;
+  primordialDirections = null;
+  primordialFactors = null;
+  expansionStreaks = null;
+  expansionDirections = null;
+  bangCore = null;
+  shockwaves = [];
+  coldPhotons = null;
+  fateBubble = null;
+  fateGlow = null;
+  originalPhotonPositions = null;
+  originalPhotonColors = null;
+  stellarRemnants = null;
+  originalRemnantPositions = null;
+  remnantDynamics = null;
+  localGalaxyGroup = null;
+  localGroupRoutes = [];
+  intergalacticMarkers = [];
+  intergalacticRouteAssignments = [];
+  localGroupGalaxies = [];
   currentEras = erasForUniverse(universe);
   cachedTimelineVisualContext = null;
   lastCivilizationSnapshot = null;
@@ -1102,18 +1171,54 @@ async function buildGalaxy() {
   const tilts = [0.72, 0.92, 0.62, 0.35, 0.78];
   galaxyGroup.rotation.set(tilts[universe.galaxyType], -0.25 + universe.galaxyType * .06, 0.06);
   galaxyGroup.visible = false;
-  buildEpochEffects(positions);
+  localGroupGroup.visible = false;
+  epochEffectsGroup.visible = false;
+  remnantGroup.visible = false;
+  heatDeathGroup.visible = false;
+  cosmicFateGroup.visible = false;
+  cosmicEventGroup.visible = false;
+  return positions;
+}
+
+function yieldToMainThread() {
+  if (globalThis.scheduler?.yield) return globalThis.scheduler.yield();
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => window.setTimeout(resolve, 0));
+  });
+}
+
+function galaxyBuildIsCurrent(seed, version) {
+  return universe.seed === seed && galaxyBuildVersion === version && !pageDisposed;
+}
+
+async function hydrateGalaxy(starPositions, seed, version) {
+  await yieldToMainThread();
+  if (!galaxyBuildIsCurrent(seed, version)) return false;
+  buildEpochEffects(starPositions);
+
+  await yieldToMainThread();
+  if (!galaxyBuildIsCurrent(seed, version)) return false;
   // Keep the full stellar population for dense civilization territories; each
   // marker is mapped to a nearby remnant below so it still follows late orbits.
-  buildCivilizations(positions);
+  buildCivilizations(starPositions);
+
+  await yieldToMainThread();
+  if (!galaxyBuildIsCurrent(seed, version)) return false;
   buildLocalGroupMap();
-  buildCosmicEvents(positions);
+
+  await yieldToMainThread();
+  if (!galaxyBuildIsCurrent(seed, version)) return false;
+  buildCosmicEvents(starPositions);
+
+  await yieldToMainThread();
+  if (!galaxyBuildIsCurrent(seed, version)) return false;
   const simulationResult = await buildCivilizationSimulationAsync({
     universe,
     civilizationData,
     civilizationSimulation,
     cosmicEvents
   });
+  if (!galaxyBuildIsCurrent(seed, version)) return false;
   civilizationSimulation = simulationResult.simulation;
   simulationResult.eventUpdates.forEach((update) => {
     const event = cosmicEvents.find((candidate) => candidate.id === update.id);
@@ -1122,6 +1227,9 @@ async function buildGalaxy() {
   renderCosmicEventMarkers();
   renderTimelineScale(universe, timelineViewport);
   updateTimelineZoomControl();
+  galaxyHydratedForSeed = seed;
+  cachedTimelineVisualContext = null;
+  return true;
 }
 
 function buildEpochEffects(starPositions) {
@@ -2691,6 +2799,12 @@ function neighboringSeed(seed, offset) {
 }
 
 function installUniverse(nextUniverse, flash = true) {
+  galaxyBuildVersion += 1;
+  galaxyPreparedForSeed = null;
+  galaxyHydratedForSeed = null;
+  galaxyPreparationPromise = null;
+  galaxyHydrationPromise = null;
+  preparedGalaxyPositions = null;
   observerSpeciesIndex = null;
   selectedChronicleIndex = null;
   closeCivilizationChronicle();
@@ -2698,7 +2812,6 @@ function installUniverse(nextUniverse, flash = true) {
   syncUniverseUrl();
   updateUniverseData(universe);
   buildUniverseObject();
-  galaxyBuiltForSeed = null;
   currentEras = null;
   cachedTimelineVisualContext = null;
   $('.universe-data').scrollTop = 0;
@@ -2713,6 +2826,7 @@ function installUniverse(nextUniverse, flash = true) {
     void metric.offsetWidth;
     metric.style.animation = '';
   });
+  scheduleGalaxyPreparation();
 }
 
 function toggleMultiverseLab(open = !$('#multiverse-lab').classList.contains('is-open')) {
@@ -2738,6 +2852,30 @@ function regenerate() {
   installUniverse(createUniverse());
 }
 
+function setExplorerHydrationState(loading, failed = false) {
+  document.body.classList.toggle('is-hydrating-explorer', loading);
+  $('#toggle-time').disabled = loading;
+  $('#toggle-civilizations').disabled = loading;
+  $('#toggle-local-group').disabled = loading;
+  $('#mode-label').textContent = failed
+    ? '深空航行中 · 扩展数据不可用'
+    : loading ? '深空航行中 · 星图同步中' : '深空航行中';
+}
+
+function finishGalaxyHydration(seed, hydrated) {
+  if (!hydrated || universe.seed !== seed) return;
+  galaxyHydrationPromise = null;
+  if (mode !== 'explorer') return;
+  localGroupGroup.visible = true;
+  setExplorerHydrationState(false);
+  updateCosmicTime(cosmicPosition, true);
+  restartTimelineScaleIntro();
+  timePlaying = cosmicPosition === 0;
+  lastTimelineUpdateAt = 0;
+  $('#toggle-time').textContent = timePlaying ? 'Ⅱ' : '▶';
+  $('#toggle-time').setAttribute('aria-label', timePlaying ? '暂停时间' : '播放时间');
+}
+
 async function enterUniverse() {
   if (mode !== 'generator') return;
   const enterButton = $('#enter-universe');
@@ -2750,10 +2888,9 @@ async function enterUniverse() {
 
   try {
     await requestAppFullscreen();
-    await loadExplorer();
-    if (galaxyBuiltForSeed !== universe.seed) {
-      await buildGalaxy();
-      galaxyBuiltForSeed = universe.seed;
+    await prepareGalaxyPreview();
+    if (galaxyPreparedForSeed !== universe.seed || !preparedGalaxyPositions) {
+      throw new Error('星系预览未能完成');
     }
   } catch (error) {
     console.error('无法加载宇宙探索器', error);
@@ -2769,14 +2906,15 @@ async function enterUniverse() {
   document.body.classList.add('is-exploring');
   $('#generator-view').classList.remove('is-active');
   $('#explorer-view').classList.add('is-active');
-  $('#mode-label').textContent = '深空航行中';
+  const alreadyHydrated = galaxyHydratedForSeed === universe.seed;
+  setExplorerHydrationState(!alreadyHydrated);
   $('#regenerate-top').style.opacity = '0';
   $('#regenerate-top').style.pointerEvents = 'none';
   $('#civilization-panel').classList.remove('is-expanded');
   $('#toggle-civilizations').setAttribute('aria-expanded', 'false');
   $('#civilization-legend').setAttribute('aria-hidden', 'true');
   galaxyGroup.visible = true;
-  localGroupGroup.visible = true;
+  localGroupGroup.visible = alreadyHydrated;
   galaxyGroup.scale.setScalar(0.02);
   localGroupGroup.scale.setScalar(0.02);
   localGroupView = false;
@@ -2793,12 +2931,28 @@ async function enterUniverse() {
     : 0;
   $('#cosmic-timeline').value = cosmicPosition;
   updateCosmicTime(cosmicPosition, true);
-  restartTimelineScaleIntro();
-  timePlaying = cosmicPosition === 0;
+  timePlaying = alreadyHydrated && cosmicPosition === 0;
   lastTimelineUpdateAt = 0;
   $('#toggle-time').textContent = timePlaying ? 'Ⅱ' : '▶';
   $('#toggle-time').setAttribute('aria-label', timePlaying ? '暂停时间' : '播放时间');
   transition = { type: 'enter', start: performance.now(), duration: prefersReducedMotion ? 1 : 2100 };
+
+  if (alreadyHydrated) {
+    restartTimelineScaleIntro();
+    return;
+  }
+  if (!galaxyHydrationPromise) {
+    const seed = universe.seed;
+    const version = galaxyBuildVersion;
+    galaxyHydrationPromise = hydrateGalaxy(preparedGalaxyPositions, seed, version)
+      .then((hydrated) => finishGalaxyHydration(seed, hydrated))
+      .catch((error) => {
+        galaxyHydrationPromise = null;
+        if (!galaxyBuildIsCurrent(seed, version)) return;
+        console.error('无法完成宇宙扩展数据加载', error);
+        if (mode === 'explorer') setExplorerHydrationState(true, true);
+      });
+  }
 }
 
 function leaveUniverse() {
@@ -3699,7 +3853,7 @@ function updateCosmicTime(value, force = false) {
   cosmicPosition = timelineState.position;
   renderTimelineHeader(timelineState, timelineViewport);
 
-  if (!clickableStars) return;
+  if (!clickableStars || galaxyHydratedForSeed !== universe.seed) return;
 
   updateEpochVisuals(cosmicPosition, timelineVisualContext());
   const simulationState = civilizationSnapshotAt(civilizationSimulation, cosmicPosition);
@@ -4365,3 +4519,4 @@ syncUniverseUrl();
 updateUniverseData(universe);
 buildUniverseObject();
 startAnimation();
+scheduleGalaxyPreparation();
