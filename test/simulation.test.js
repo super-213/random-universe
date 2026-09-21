@@ -46,6 +46,8 @@ import {
 } from '../src/ui/timeline-layout.js';
 import { civilizationObservation } from '../src/simulation/observation.js';
 import {
+  fleetStates,
+  intergalacticRouteOperational,
   routeTrafficProfile,
   routeTrafficSpeedForIdentity,
   shuttleTrafficAt,
@@ -146,6 +148,33 @@ test('ship traffic keeps stable route assignments as routes change', () => {
   assert.deepEqual(replacementAssignments.slice(0, 2), ['route-0', 'route-10']);
   assert.equal(replacementAssignments.length, 3);
   assert.ok(removedAssignedRoute.includes(replacementAssignments[2]));
+});
+
+test('intergalactic ships disappear when their civilization is extinct', () => {
+  const activeRoute = {
+    hasDestination: true,
+    civilizationActive: true,
+    fleetState: fleetStates.arrived,
+    externalPopulation: 2.4,
+    routesFormed: true,
+    fatePhase: 0
+  };
+
+  assert.equal(intergalacticRouteOperational(activeRoute), true);
+  assert.equal(intergalacticRouteOperational({
+    ...activeRoute,
+    civilizationActive: false
+  }), false);
+  assert.equal(intergalacticRouteOperational({
+    ...activeRoute,
+    civilizationActive: false,
+    fleetState: fleetStates.outbound
+  }), false);
+  assert.equal(intergalacticRouteOperational({
+    ...activeRoute,
+    fleetState: fleetStates.lost,
+    externalPopulation: 0
+  }), false);
 });
 
 test('civilization rendering preserves permanent node identities for ship routes', () => {

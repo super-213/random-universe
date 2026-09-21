@@ -64,6 +64,23 @@ export function routeTrafficSpeedForIdentity(primaryId, secondaryId = 0) {
   return .006 + variation * .008;
 }
 
+export function intergalacticRouteOperational({
+  hasDestination = false,
+  civilizationActive = false,
+  fleetState = fleetStates.none,
+  externalPopulation = 0,
+  routesFormed = false,
+  fatePhase = 0
+} = {}) {
+  return Boolean(
+    hasDestination
+      && civilizationActive
+      && (fleetState === fleetStates.outbound || externalPopulation > .01)
+      && routesFormed
+      && fatePhase < .08
+  );
+}
+
 export function visibleShipCountForRoutes(routeCount, routesPerShip = 5) {
   if (!Number.isFinite(routeCount) || routeCount <= 0) return 0;
   return Math.ceil(routeCount / Math.max(1, routesPerShip));

@@ -9,6 +9,8 @@ import { createUniverseRenderer } from './rendering/renderer.js';
 import { civilizationObservation } from './simulation/observation.js';
 import {
   fleetProgress,
+  fleetStates,
+  intergalacticRouteOperational,
   routeTrafficSpeedForIdentity,
   shuttleTrafficAt,
   stableRouteAssignments
@@ -241,17 +243,55 @@ function createTravelShip(random, color, size = 1) {
   engine.scale.set(.42, .24, 1);
   ship.add(engine);
 
+  const explosionMaterial = new THREE.SpriteMaterial({
+    map: makeGlowTexture(),
+    color: 0xff8a42,
+    transparent: true,
+    opacity: 0,
+    depthTest: false,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+  });
+  const explosion = new THREE.Sprite(explosionMaterial);
+  explosion.scale.setScalar(.1);
+  explosion.renderOrder = 8;
+  ship.add(explosion);
+
+  const explosionRingMaterial = new THREE.SpriteMaterial({
+    map: makeRingTexture(),
+    color: 0xffd27a,
+    transparent: true,
+    opacity: 0,
+    depthTest: false,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+  });
+  const explosionRing = new THREE.Sprite(explosionRingMaterial);
+  explosionRing.scale.setScalar(.1);
+  explosionRing.renderOrder = 9;
+  ship.add(explosionRing);
+
   ship.visible = false;
   ship.renderOrder = 5;
   ship.userData.hullMaterial = hullMaterial;
   ship.userData.engineMaterial = engineMaterial;
   ship.userData.highlightMaterial = highlightMaterial;
   ship.userData.highlightSprite = highlight;
+  ship.userData.explosionMaterial = explosionMaterial;
+  ship.userData.explosionSprite = explosion;
+  ship.userData.explosionRingMaterial = explosionRingMaterial;
+  ship.userData.explosionRing = explosionRing;
   ship.userData.highlightMix = shipHighlightEnabled ? 1 : 0;
   ship.userData.trafficPhase = random() * 2;
   ship.userData.trafficSpeed = randomBetween(random, .008, .028);
   ship.userData.pulsePhase = random() * Math.PI * 2;
   ship.userData.baseScale = size;
+  ship.userData.defaultDisappearance = ship.userData.pulsePhase < Math.PI * .58
+    ? 'explosion'
+    : 'arrival';
+  ship.userData.trafficActive = false;
+  ship.userData.disappearance = null;
+  ship.userData.disappearanceComplete = false;
   return ship;
 }
 
@@ -302,9 +342,89 @@ function positionShipOnNavigationPath(ship, progress, direction) {
   const routeCurve = ship.userData.routeCurve;
   if (!routeCurve) return;
   const normalizedProgress = THREE.MathUtils.clamp(progress, 0, 1);
+  ship.userData.routeProgress = normalizedProgress;
+  ship.userData.routeDirection = direction;
   routeCurve.getPoint(normalizedProgress, ship.position);
   routeCurve.getTangent(normalizedProgress, shipRouteDirection).multiplyScalar(direction);
   ship.quaternion.setFromUnitVectors(shipForward, shipRouteDirection.normalize());
+}
+
+function resetShipDisappearance(ship) {
+  ship.userData.disappearance = null;
+  ship.userData.disappearanceComplete = false;
+  ship.userData.explosionMaterial.opacity = 0;
+  ship.userData.explosionRingMaterial.opacity = 0;
+  ship.userData.explosionSprite.scale.setScalar(.1);
+  ship.userData.explosionRing.scale.setScalar(.1);
+}
+
+function beginShipDisappearance(ship, mode, targetProgress = null) {
+  if (!ship.visible || ship.userData.disappearance || ship.userData.disappearanceComplete) return;
+  const routeProgress = ship.userData.routeProgress ?? 0;
+  const routeDirection = ship.userData.routeDirection || 1;
+  ship.userData.disappearance = {
+    mode,
+    startedAt: performance.now(),
+    duration: prefersReducedMotion ? 280 : mode === 'explosion' ? 920 : 1250,
+    startProgress: routeProgress,
+    targetProgress: targetProgress ?? (routeDirection >= 0 ? 1 : 0),
+    startScale: ship.scale.x,
+    hullOpacity: ship.userData.hullMaterial.opacity,
+    engineOpacity: ship.userData.engineMaterial.opacity,
+    highlightOpacity: ship.userData.highlightMaterial.opacity
+  };
+}
+
+function updateShipDisappearance(ship, now) {
+  const disappearance = ship.userData.disappearance;
+  if (!disappearance) return false;
+  const phase = THREE.MathUtils.clamp(
+    (now - disappearance.startedAt) / disappearance.duration,
+    0,
+    1
+  );
+  const correctView = ship.userData.shipContext === 'local-group'
+    ? localGroupView
+    : !localGroupView;
+  ship.visible = shipHighlightEnabled && mode === 'explorer' && correctView;
+
+  if (disappearance.mode === 'explosion') {
+    const flash = Math.sin(phase * Math.PI);
+    const hullFade = 1 - THREE.MathUtils.smoothstep(phase, .08, .42);
+    ship.userData.hullMaterial.opacity = disappearance.hullOpacity * hullFade;
+    ship.userData.engineMaterial.opacity = disappearance.engineOpacity * hullFade;
+    ship.userData.highlightMaterial.opacity = disappearance.highlightOpacity * hullFade;
+    ship.userData.explosionMaterial.opacity = flash * .95;
+    ship.userData.explosionRingMaterial.opacity = (1 - phase) * .72;
+    ship.userData.explosionSprite.scale.setScalar(.25 + phase * 3.8);
+    ship.userData.explosionRing.scale.setScalar(.2 + phase * 5.2);
+    ship.scale.setScalar(disappearance.startScale);
+  } else {
+    const arrival = 1 - Math.pow(1 - phase, 3);
+    const landingProgress = THREE.MathUtils.lerp(
+      disappearance.startProgress,
+      disappearance.targetProgress,
+      arrival
+    );
+    positionShipOnNavigationPath(
+      ship,
+      prefersReducedMotion ? disappearance.targetProgress : landingProgress,
+      disappearance.targetProgress >= disappearance.startProgress ? 1 : -1
+    );
+    const fade = THREE.MathUtils.smoothstep(phase, .64, 1);
+    ship.userData.hullMaterial.opacity = disappearance.hullOpacity * (1 - fade);
+    ship.userData.engineMaterial.opacity = disappearance.engineOpacity * (1 - fade);
+    ship.userData.highlightMaterial.opacity = disappearance.highlightOpacity * (1 - fade);
+    ship.scale.setScalar(disappearance.startScale * (1 - fade * .76));
+  }
+
+  if (phase < 1) return true;
+  ship.visible = false;
+  ship.userData.disappearance = null;
+  ship.userData.disappearanceComplete = true;
+  ship.userData.explosionMaterial.opacity = 0;
+  ship.userData.explosionRingMaterial.opacity = 0;
+  return true;
 }
 
 function activeBlackHoleNavigationObstacles() {
@@ -674,6 +794,7 @@ function buildLocalGroupMap() {
     const ships = Array.from({ length: 1 }, (_, shipIndex) => {
       const ship = createTravelShip(random, species.color);
       ship.userData.trafficPhase = (ship.userData.trafficPhase + shipIndex) % 2;
+      ship.userData.shipContext = 'local-group';
       localGroupGroup.add(ship);
       return ship;
     });
@@ -2436,6 +2557,7 @@ function buildCivilizations() {
       (_, shipIndex) => {
         const ship = createTravelShip(shipRandom, speciesColor, .24);
         ship.userData.trafficPhase = (ship.userData.trafficPhase + shipIndex * .73) % 2;
+        ship.userData.shipContext = 'galaxy';
         galaxyGroup.add(ship);
         return ship;
       }
@@ -3061,11 +3183,20 @@ function updateLogisticsVisuals(simulationState) {
     const colonyPositions = civilization.geometry.attributes.position.array;
     const routesExist = Boolean(simulationState?.active?.[speciesIndex] && count > 0);
     network.visible = showCivilizationLogistics && routesExist;
-    ships.forEach((ship) => { ship.visible = false; });
     if (!routesExist) {
+      ships.forEach((ship) => {
+        if (ship.userData.trafficActive) {
+          beginShipDisappearance(ship, ship.userData.defaultDisappearance);
+        }
+        ship.userData.trafficActive = false;
+        if (!ship.userData.disappearance) ship.visible = false;
+      });
       network.geometry.setDrawRange(0, 0);
       return;
     }
+    ships.forEach((ship) => {
+      if (!ship.userData.disappearance) ship.visible = false;
+    });
 
     for (let lineIndex = 0; lineIndex < count; lineIndex++) {
       const { colonyIndex } = routeColonies[lineIndex];
@@ -3122,6 +3253,10 @@ function updateLogisticsVisuals(simulationState) {
     ship.userData.trafficPhase = traffic.trafficPhase;
     ship.userData.trafficSpeed = traffic.trafficSpeed;
     ship.userData.isLost = false;
+    if (!ship.userData.trafficActive || ship.userData.disappearanceComplete) {
+      resetShipDisappearance(ship);
+    }
+    ship.userData.trafficActive = true;
     ship.visible = shipHighlightEnabled && mode === 'explorer' && !localGroupView;
     ship.userData.navigationObstacles = navigationObstacles;
     updateLogisticsShipNavigationPath(ship);
@@ -3292,15 +3427,32 @@ function updateLocalGroupVisuals(simulationState) {
     const companion = routeIndex
       ? localGalaxyGroup.companions[(routeIndex - 1) % localGalaxyGroup.companions.length]
       : null;
-    const routeActive = Boolean(
-      companion
-      && (fleetState || externalPopulation > .01)
-      && routesFormed
-      && fatePhase < .08
-    );
+    const routeActive = intergalacticRouteOperational({
+      hasDestination: Boolean(companion),
+      civilizationActive: Boolean(simulationState?.active?.[speciesIndex]),
+      fleetState,
+      externalPopulation,
+      routesFormed,
+      fatePhase
+    });
     route.visible = false;
-    ships.forEach((ship) => { ship.visible = false; });
-    if (!routeActive) return;
+    if (!routeActive) {
+      ships.forEach((ship) => {
+        if (ship.userData.trafficActive) {
+          const disappearanceMode = fleetState === fleetStates.lost
+            ? 'explosion'
+            : ship.userData.defaultDisappearance;
+          const targetProgress = fleetState === fleetStates.returned ? 0 : null;
+          beginShipDisappearance(ship, disappearanceMode, targetProgress);
+        }
+        ship.userData.trafficActive = false;
+        if (!ship.userData.disappearance) ship.visible = false;
+      });
+      return;
+    }
+    ships.forEach((ship) => {
+      if (!ship.userData.disappearance) ship.visible = false;
+    });
     const recordedProgress = simulationState.fleetProgress?.[speciesIndex] || 0;
     const targetGalaxy = localGroupGalaxies.find((item) => (
       item.galaxy.userData.companionIndex === companion.index
@@ -3341,6 +3493,10 @@ function updateLocalGroupVisuals(simulationState) {
     ship.userData.isInitialFlight = traffic.initialFlight;
     ship.userData.isLost = traffic.isLost;
     ship.userData.trafficSpeed = traffic.trafficSpeed;
+    if (!ship.userData.trafficActive || ship.userData.disappearanceComplete) {
+      resetShipDisappearance(ship);
+    }
+    ship.userData.trafficActive = true;
     ship.visible = shipHighlightEnabled && localGroupView;
     updateIntergalacticShipNavigationPath(ship);
     updateIntergalacticShipAppearance(ship);
@@ -3410,9 +3566,8 @@ function updateLogisticsShipNavigationPath(ship) {
   updateRouteTrafficShipPosition(ship);
 }
 
-function updateVisibleShipsForFrame() {
-  if (!shipHighlightEnabled) return;
-  if (!localGroupView) {
+function updateVisibleShipsForFrame(now) {
+  if (shipHighlightEnabled && !localGroupView) {
     syncCivilizationHosts({
       clickableStars,
       stellarRemnants,
@@ -3423,11 +3578,13 @@ function updateVisibleShipsForFrame() {
     });
   }
   intergalacticMarkers.forEach((ships) => ships.forEach((ship) => {
+    if (updateShipDisappearance(ship, now)) return;
     if (!ship.visible) return;
     updateIntergalacticShipPosition(ship);
     updateIntergalacticShipAppearance(ship);
   }));
   logisticsShipMarkers.forEach((ships) => ships.forEach((ship) => {
+    if (updateShipDisappearance(ship, now)) return;
     if (!ship.visible) return;
     updateLogisticsShipNavigationPath(ship);
     updateIntergalacticShipAppearance(ship);
@@ -3634,7 +3791,6 @@ function animate(now) {
   if (mode === 'explorer') {
     if (timePlaying && !transition) {
       advanceCosmicTime(delta);
-      updateVisibleShipsForFrame();
       let reachedTimelineEnd = false;
       if (cosmicPosition >= 1000) {
         cosmicPosition = 1000;
@@ -3648,6 +3804,7 @@ function animate(now) {
         updateCosmicTime(cosmicPosition);
       }
     }
+    updateVisibleShipsForFrame(now);
     controls.update();
     epochEffectsGroup.position.set(0, 0, 0);
     if (heatDeathGroup.visible && !prefersReducedMotion) {
