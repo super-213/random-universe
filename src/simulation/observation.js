@@ -1,4 +1,16 @@
+import {
+  cosmicYearsToTimelinePosition,
+  timelinePositionToCosmicYears
+} from '../domain/cosmic-time.js';
+
 const clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value));
+
+export function lightTravelYearsForSceneDistance(distance, universe) {
+  const galaxyDiameterLightYears = (8 + (universe?.stars ?? 2) * 4.7) * 1e4;
+  return Math.max(0, distance) / 28
+    * galaxyDiameterLightYears
+    / Math.max(.01, universe?.speed || 1);
+}
 
 function snapshotAt(simulation, position) {
   if (!simulation?.snapshots?.length) return null;
@@ -50,15 +62,19 @@ export function civilizationObservation({
     positions[observerOffset + 1] - positions[targetOffset + 1],
     positions[observerOffset + 2] - positions[targetOffset + 2]
   );
-  const delay = distance / Math.max(.38, universe.speed) * 3.2;
-  const observedAt = Math.max(civilizationSimulation.start, position - delay);
+  const delay = lightTravelYearsForSceneDistance(distance, universe);
+  const observedYears = Math.max(0, timelinePositionToCosmicYears(position, universe) - delay);
+  const observedAt = Math.max(
+    civilizationSimulation.start,
+    cosmicYearsToTimelinePosition(observedYears, universe)
+  );
   const observedSnapshot = snapshotAt(civilizationSimulation, observedAt);
   const observed = metricSet(observedSnapshot, targetSpeciesIndex);
   const visibility = observedSnapshot?.visibility?.[targetSpeciesIndex] || 0;
   const confidence = clamp(.94 - distance / 52 + visibility * .18, .18, .96);
-  const uncertainty = clamp((1 - confidence) * .72 + delay / 240, .05, .68);
+  const uncertainty = clamp((1 - confidence) * .72 + delay / 1e6, .05, .68);
   const trend = observedSnapshot?.trends?.[targetSpeciesIndex] || 0;
-  const projection = 1 + trend * Math.min(.14, delay / 250);
+  const projection = 1 + trend * Math.min(.14, delay / 2e6);
   const inferred = Object.fromEntries(Object.entries(observed).map(([key, value]) => [
     key,
     key === 'population' ? Math.max(0, value * projection) : clamp(value * projection, 0, 1)

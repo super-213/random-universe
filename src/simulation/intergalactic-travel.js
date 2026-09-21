@@ -16,8 +16,9 @@ const fleetStateLabels = {
   [fleetStates.returned]: '返航'
 };
 
-export function fleetTravelDuration(distanceMly, speedFractionC) {
-  return Math.round(Math.max(18, Math.min(96, distanceMly / Math.max(.04, speedFractionC) * 8)));
+export function fleetTravelDuration(distanceMly, speedFractionC, speedOfLightScale = 1) {
+  const effectiveSpeed = Math.max(.01, speedFractionC * speedOfLightScale);
+  return Math.max(1, distanceMly * 1e6 / effectiveSpeed);
 }
 
 export function fleetProgress(time, departureAt, arrivalAt) {

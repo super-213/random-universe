@@ -1,9 +1,10 @@
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
-export function selectBlackHoleProgenitors(deathThresholds, count, random) {
+export function selectBlackHoleProgenitors(deathThresholds, count, random, eligible = null) {
   if (!deathThresholds?.length || count <= 0) return [];
 
   const candidates = Array.from(deathThresholds, (_, index) => index)
+    .filter((index) => !eligible || eligible(index))
     .sort((left, right) => deathThresholds[left] - deathThresholds[right]);
   const poolSize = Math.max(count, Math.floor(candidates.length * .42));
   const pool = candidates.slice(0, poolSize);

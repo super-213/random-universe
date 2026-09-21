@@ -4,7 +4,8 @@ import {
   cosmicTimeLabel,
   cosmicYearsToTimelinePosition,
   referenceFutureYearsAtTimelinePosition,
-  selectTimelineNarrative
+  selectTimelineNarrative,
+  timelinePositionToCosmicYears
 } from '../src/domain/cosmic-time.js';
 import { erasForUniverse } from '../src/domain/catalog.js';
 import {
@@ -19,6 +20,7 @@ import {
   STELLAR_DAWN_END,
   STELLAR_DAWN_START
 } from '../src/domain/stellar-dawn.js';
+import { createStellarPopulation } from '../src/domain/stellar-population.js';
 import { createStellarGravityState } from '../src/simulation/black-hole-gravity.js';
 import {
   buildCivilizationSimulation,
@@ -47,6 +49,7 @@ import {
 } from '../src/ui/timeline-layout.js';
 import { civilizationObservation } from '../src/simulation/observation.js';
 import {
+  fleetTravelDuration,
   fleetStates,
   intergalacticRouteOperational,
   routeTrafficProfile,
@@ -92,6 +95,11 @@ test('intergalactic shuttle traffic eases between both ends of a route', () => {
   assert.ok(Math.abs(returnMidpoint.progress - .5) < Number.EPSILON);
   assert.equal(returnMidpoint.direction, -1);
   assert.deepEqual(shuttleTrafficAt(2, 0, 1), { progress: 0, direction: 1 });
+});
+
+test('intergalactic travel duration is measured in physical years', () => {
+  assert.equal(fleetTravelDuration(2, .25), 8e6);
+  assert.equal(fleetTravelDuration(2, .25, 2), 4e6);
 });
 
 test('ship traffic is limited to one visible ship per five routes', () => {
@@ -327,6 +335,38 @@ test('physical milestones and their timeline positions round-trip across the ear
       universe
     ) - 340) < 1e-8);
     assert.ok(Math.abs(cosmicYearsToTimelinePosition(universe.presentAgeYears, universe) - 470) < 1e-8);
+    [0, 18, 55, 145, 245, 340, 390, 470, 520, 650, 845, 950].forEach((position) => {
+      const years = timelinePositionToCosmicYears(position, universe);
+      const roundTrip = cosmicYearsToTimelinePosition(years, universe);
+      assert.ok(Math.abs(roundTrip - position) < 1e-5, `${position} round-tripped to ${roundTrip}`);
+    });
+  }
+});
+
+test('stellar entities share formation, lifetime, spectrum, planets, and remnants', () => {
+  const universe = Array.from({ length: 200 }, (_, index) => createUniverse(seedFor(index)))
+    .find((candidate) => candidate.cosmicFate.type === 'heat-death');
+  const positions = new Float32Array(5000 * 3);
+  for (let index = 0; index < positions.length / 3; index++) {
+    const angle = index * .73;
+    const radius = 1 + index % 140 / 10;
+    positions[index * 3] = Math.cos(angle) * radius;
+    positions[index * 3 + 2] = Math.sin(angle) * radius;
+  }
+  const first = createStellarPopulation(universe, positions);
+  const second = createStellarPopulation(universe, positions);
+
+  assert.deepEqual(first.birthAt, second.birthAt);
+  assert.deepEqual(first.massSolar, second.massSolar);
+  assert.ok(Math.max(...first.birthYears) > 10 ** (universe.stellarFormationEndExponent - .5));
+  assert.ok(Math.max(...first.birthAt) > 322);
+  for (let index = 0; index < first.birthAt.length; index++) {
+    assert.ok(first.deathYears[index] > first.birthYears[index]);
+    assert.ok(first.deathAt[index] >= first.birthAt[index]);
+    assert.ok(first.temperatureK[index] >= 2300 && first.temperatureK[index] <= 42000);
+    assert.ok(first.planetCounts[index] > 0 || first.lifeSignals[index] === 0);
+    const expectedRemnant = first.massSolar[index] < 8 ? 1 : first.massSolar[index] < 25 ? 2 : 3;
+    assert.equal(first.remnantTypes[index], expectedRemnant);
   }
 });
 
@@ -403,6 +443,48 @@ test('stellar exhaustion does not run before an earlier finite outcome', () => {
   assert.equal(window.energyStart, Infinity);
   assert.equal(window.energyEnd, Infinity);
   assert.ok(Number.isFinite(window.fateStart));
+});
+
+test('a colony is removed when its host star reaches the shared death time', () => {
+  const universe = Array.from({ length: 200 }, (_, index) => createUniverse(seedFor(index)))
+    .find((candidate) => candidate.cosmicFate.type === 'heat-death');
+  const simulation = {
+    start: 390,
+    end: 420,
+    step: 1,
+    habitatRemnantIndices: new Uint16Array([0]),
+    habitatStarIndices: new Uint16Array([7]),
+    habitatBirthAt: new Float32Array([300]),
+    habitatDeathAt: new Float32Array([405]),
+    habitatPositions: new Float32Array([0, 0, 0]),
+    adjacency: [],
+    snapshots: []
+  };
+  buildCivilizationSimulation({
+    universe,
+    civilizationData: [{
+      name: '宿主测试文明',
+      birth: 390,
+      homeNodeIndex: 0,
+      aggression: .2,
+      cooperation: .8,
+      expansionRate: 1,
+      resilience: 1,
+      technology: .5,
+      visibility: .1,
+      cohesion: .7,
+      machineAutonomy: .2,
+      morphology: '生物共同体',
+      fermiScenario: '稀有生物圈'
+    }],
+    civilizationSimulation: simulation,
+    cosmicEvents: []
+  });
+
+  assert.equal(simulation.snapshots.find((snapshot) => snapshot.time === 404).owners[0], 0);
+  const expired = simulation.snapshots.find((snapshot) => snapshot.time === 405);
+  assert.equal(expired.owners[0], -1);
+  assert.equal(expired.causes[0], '宿主恒星寿命终结');
 });
 
 test('finite fate narrative overrides local events after the terminal phase begins', () => {
@@ -696,8 +778,9 @@ test('causal evolution chains update biosphere, morphology, engineering, migrati
   assert.equal(snapshot.artifacts[0], 1);
   assert.equal(snapshot.signalDelays[1], 42);
   assert.equal(snapshot.causalResponses[2], 1);
-  assert.equal(snapshot.fleetStates[2], 1);
-  assert.ok(snapshot.fleetProgress[2] > 0);
+  assert.equal(snapshot.fleetStates[2], 2);
+  assert.equal(snapshot.fleetProgress[2], 1);
+  assert.equal(snapshot.diasporaModes[2], 1);
   assert.equal(arrivalSnapshot.diasporaModes[2], 1);
   assert.equal(snapshot.blackHoleHabitats[2], 1);
   assert.equal(snapshot.escapeProjects[2], 1);

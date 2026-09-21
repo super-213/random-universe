@@ -55,23 +55,42 @@ export function cosmicYearsToTimelinePosition(years, universe) {
   return 950;
 }
 
-export function referenceFutureYearsAtTimelinePosition(position, universe) {
-  const clampedPosition = clamp(position, 470, 950);
-  const presentExponent = Math.log10(universe?.presentAgeYears || 1.38e10);
-  let exponent;
-  if (clampedPosition < 570) {
-    exponent = presentExponent + (12 - presentExponent) * (clampedPosition - 470) / 100;
-  } else if (clampedPosition < 650) {
-    exponent = 12 + (clampedPosition - 570) / 80 * 2;
-  } else if (clampedPosition < 680) {
-    exponent = 14 + (clampedPosition - 650) / 30;
-  } else if (clampedPosition < 845) {
-    exponent = 15 + (clampedPosition - 680) / 165 * 23;
-  } else {
-    const evaporationExponent = universe?.blackHoleEvaporationExponent || 100;
-    exponent = 38 + (clampedPosition - 845) / 105 * (evaporationExponent - 38);
+export function timelinePositionToCosmicYears(position, universe) {
+  const target = clamp(Number(position) || 0, 0, 1000);
+  const logLerp = (start, end, value) => 10 ** (
+    Math.log10(start) + (Math.log10(end) - Math.log10(start)) * clamp(value, 0, 1)
+  );
+  const milestones = universe?.cosmicMilestones || {};
+  const recombinationYears = milestones.recombinationYears || 380000;
+  const firstStarsYears = Math.max(recombinationYears * 1.1, milestones.firstStarsYears || 1.8e8);
+  const matureGalaxiesYears = Math.max(firstStarsYears * 1.1, milestones.matureGalaxiesYears || 1e9);
+  const presentAgeYears = Math.max(matureGalaxiesYears * 1.1, universe?.presentAgeYears || 1.38e10);
+
+  if (target < 18) return logLerp(.001, 1, target / 18) / 31557600;
+  if (target < 55) return logLerp(1, 180, (target - 18) / 37) / 31557600;
+  if (target < 145) return logLerp(180 / 31557600, recombinationYears, (target - 55) / 90);
+  if (target < 245) return logLerp(recombinationYears, firstStarsYears, (target - 145) / 100);
+  if (target < 340) return logLerp(firstStarsYears, matureGalaxiesYears, (target - 245) / 95);
+  if (target < 470) return logLerp(matureGalaxiesYears, presentAgeYears, (target - 340) / 130);
+
+  const fate = universe?.cosmicFate;
+  if (fate && Number.isFinite(fate.outcomeYears)) {
+    return logLerp(presentAgeYears, fate.outcomeYears, (target - 470) / 530);
   }
-  return 10 ** exponent;
+  if (target < 570) return logLerp(presentAgeYears, 1e12, (target - 470) / 100);
+  if (target < 650) return 10 ** (12 + (target - 570) / 80 * 2);
+  if (target < 680) return 10 ** (14 + (target - 650) / 30);
+  if (target < 845) return 10 ** (15 + (target - 680) / 165 * 23);
+  const evaporationExponent = universe?.blackHoleEvaporationExponent || 100;
+  if (target < 950) return 10 ** (38 + (target - 845) / 105 * (evaporationExponent - 38));
+  return 10 ** evaporationExponent;
+}
+
+export function referenceFutureYearsAtTimelinePosition(position, universe) {
+  return timelinePositionToCosmicYears(clamp(position, 470, 950), {
+    ...universe,
+    cosmicFate: null
+  });
 }
 
 export function createCosmicTimelineState(value, universe, eras) {

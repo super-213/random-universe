@@ -6,6 +6,7 @@ export {
   STELLAR_DAWN_END,
   STELLAR_DAWN_START
 } from './domain/stellar-dawn.js';
+export { createStellarPopulation, stellarSpectralType } from './domain/stellar-population.js';
 export { stellarEndTimelinePosition } from './domain/universe.js';
 export {
   cosmicTimeLabel,
@@ -13,6 +14,7 @@ export {
   createCosmicTimelineState,
   referenceFutureYearsAtTimelinePosition,
   selectTimelineNarrative,
+  timelinePositionToCosmicYears,
   timelineUnitsPerSecond
 } from './domain/cosmic-time.js';
 export { makeGlowTexture, makeRingTexture } from './rendering/textures.js';

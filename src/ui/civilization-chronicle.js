@@ -30,9 +30,14 @@ function renderInternalMetrics(container, state) {
 function renderObservation(container, observation, timeLabel, universe) {
   container.replaceChildren();
   if (!observation) return;
+  const delayLabel = observation.delay >= 1e6
+    ? `${(observation.delay / 1e6).toFixed(2)} 百万年`
+    : observation.delay >= 1e3
+      ? `${(observation.delay / 1e3).toFixed(1)} 千年`
+      : `${Math.round(observation.delay)} 年`;
   const modeLabel = observation.mode === 'omniscient'
     ? '玩家真值视角'
-    : observation.mode === 'direct' ? '文明本地遥测' : `延迟 ${observation.delay.toFixed(1)} 时间单位`;
+    : observation.mode === 'direct' ? '文明本地遥测' : `延迟 ${delayLabel}`;
   const heading = document.createElement('p');
   heading.className = 'observation-summary';
   heading.textContent = observation.mode === 'delayed'

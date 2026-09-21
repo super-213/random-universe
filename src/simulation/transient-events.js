@@ -535,7 +535,8 @@ export function describeTransientSimulation(event) {
 }
 
 export function transientPersistenceAt(position, event) {
-  if (!event.simulation?.persistentRemnant || position < event.impactAt) return 0;
+  const visualImpactAt = event.visualImpactAt ?? event.impactAt;
+  if (!event.simulation?.persistentRemnant || position < visualImpactAt) return 0;
   const persistenceEnd = event.persistUntil ?? 845;
   const fadeDuration = event.persistenceFadeDuration ?? 24;
   return 1 - smoothstep(position, persistenceEnd, persistenceEnd + fadeDuration);
@@ -590,10 +591,11 @@ export function createTransientGravityField(positions, center, simulation, seedV
 
 export function applyTransientGravity(position, targetPositions, event, center) {
   const field = event.transientGravityField;
-  if (!field || position < event.impactAt) return;
+  const visualImpactAt = event.visualImpactAt ?? event.impactAt;
+  if (!field || position < visualImpactAt) return;
   const persistence = transientPersistenceAt(position, event);
   if (persistence <= 0) return;
-  const elapsed = Math.min(position, event.persistUntil ?? 845) - event.impactAt;
+  const elapsed = Math.min(position, event.persistUntil ?? 845) - visualImpactAt;
   const axisX = field.axis[0];
   const axisY = field.axis[1];
   const axisZ = field.axis[2];

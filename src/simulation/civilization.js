@@ -1,5 +1,9 @@
 import * as THREE from 'three';
 import { stellarEndTimelinePosition } from '../domain/universe.js';
+import {
+  cosmicYearsToTimelinePosition,
+  timelinePositionToCosmicYears
+} from '../domain/cosmic-time.js';
 import { createSeededRandom, randomBetween } from '../domain/random.js';
 import {
   advanceTechnologyTree,
@@ -73,6 +77,7 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
   const lastCounts = new Uint16Array(speciesCount);
   const lastCauses = Array(speciesCount).fill('自主扩张');
   const disabledNodes = new Uint8Array(nodeCount);
+  const expiredHostNodes = new Uint8Array(nodeCount);
   const declineWindow = civilizationDeclineWindow(universe);
   const expansionEnd = Math.min(declineWindow.energyStart, declineWindow.fateStart);
   simulation.end = 1000;
@@ -133,6 +138,8 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
   const fleetTargetGalaxyIndices = new Uint8Array(speciesCount);
   const fleetDepartureAt = new Float32Array(speciesCount);
   const fleetArrivalAt = new Float32Array(speciesCount);
+  const fleetDepartureYears = new Float64Array(speciesCount);
+  const fleetArrivalYears = new Float64Array(speciesCount);
   const fleetSpeeds = new Float32Array(speciesCount);
   const fleetPopulations = new Float32Array(speciesCount);
   const fleetSupplies = new Float32Array(speciesCount);
@@ -685,7 +692,13 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
         return;
       }
       const population = Math.min(internalPopulation[targetIndex] * .18, event.fleetPopulation || .16);
-      const duration = fleetTravelDuration(event.fleetDistanceMly || 2.1, event.fleetSpeed || .2);
+      const durationYears = fleetTravelDuration(
+        event.fleetDistanceMly || 2.1,
+        event.fleetSpeed || .2,
+        universe.speed
+      );
+      const departureYears = timelinePositionToCosmicYears(time, universe);
+      const arrivalYears = departureYears + durationYears;
       const outcomeStates = {
         arrived: fleetStates.arrived,
         divided: fleetStates.divided,
@@ -697,7 +710,9 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
         || (event.diasporaSuccess ? fleetStates.arrived : fleetStates.lost);
       fleetTargetGalaxyIndices[targetIndex] = event.targetCompanionIndex || targetIndex % 5 + 1;
       fleetDepartureAt[targetIndex] = time;
-      fleetArrivalAt[targetIndex] = time + duration;
+      fleetArrivalAt[targetIndex] = cosmicYearsToTimelinePosition(arrivalYears, universe);
+      fleetDepartureYears[targetIndex] = departureYears;
+      fleetArrivalYears[targetIndex] = arrivalYears;
       fleetSpeeds[targetIndex] = event.fleetSpeed || .2;
       fleetPopulations[targetIndex] = Math.max(.04, population);
       fleetInitialSupplies[targetIndex] = event.fleetSupplies || .7;
@@ -708,7 +723,7 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       materials[targetIndex] = Math.max(.04, materials[targetIndex] - .08);
       energyReserves[targetIndex] = Math.max(.04, energyReserves[targetIndex] - .06);
       lastCauses[targetIndex] = '跨星系舰队启航';
-      event.outcome = `${target.name} 舰队以 ${Math.round(fleetSpeeds[targetIndex] * 100)}% 光速启航，预计航行 ${duration} 个时间单位`;
+      event.outcome = `${target.name} 舰队以 ${Math.round(fleetSpeeds[targetIndex] * 100)}% 光速启航，预计航行 ${(durationYears / 1e6).toFixed(1)} 百万年`;
       return;
     }
 
@@ -754,6 +769,13 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
 
   let scheduledImpactIndex = 0;
   let civilizationEventIndex = 0;
+  if (simulation.habitatDeathAt) {
+    for (let node = 0; node < nodeCount; node++) {
+      if (simulation.habitatDeathAt[node] >= simulation.start) continue;
+      expiredHostNodes[node] = 1;
+      disabledNodes[node] = 1;
+    }
+  }
   while (scheduledImpactIndex < scheduledImpacts.length
     && scheduledImpacts[scheduledImpactIndex].impact.at < simulation.start) {
     const { impact } = scheduledImpacts[scheduledImpactIndex];
@@ -762,6 +784,29 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
   }
 
   for (let time = simulation.start; time <= simulation.end; time += simulation.step) {
+    const timeYears = timelinePositionToCosmicYears(time, universe);
+    const previousYears = timelinePositionToCosmicYears(
+      Math.max(simulation.start, time - simulation.step),
+      universe
+    );
+    const elapsedMillionYears = Math.max(.01, (timeYears - previousYears) / 1e6);
+    const evolutionStep = THREE.MathUtils.clamp(elapsedMillionYears / 50, .02, 24);
+    const relaxation = (rate) => 1 - (1 - rate) ** evolutionStep;
+    if (simulation.habitatDeathAt) {
+      for (let node = 0; node < nodeCount; node++) {
+        if (expiredHostNodes[node] || time < simulation.habitatDeathAt[node]) continue;
+        expiredHostNodes[node] = 1;
+        disabledNodes[node] = 1;
+        const owner = owners[node];
+        if (owner < 0) continue;
+        const ascended = civilizationData[owner].highDimensional
+          && time >= civilizationData[owner].ascensionAt;
+        if (ascended) continue;
+        owners[node] = -1;
+        strength[node] = 0;
+        lastCauses[owner] = '宿主恒星寿命终结';
+      }
+    }
     civilizationData.forEach((species, speciesIndex) => {
       if (seeded[speciesIndex] || time < species.birth) return;
       seeded[speciesIndex] = 1;
@@ -791,10 +836,17 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
 
     for (let speciesIndex = 0; speciesIndex < speciesCount; speciesIndex++) {
       if (fleetState[speciesIndex] !== fleetStates.outbound) continue;
-      const progress = fleetProgress(time, fleetDepartureAt[speciesIndex], fleetArrivalAt[speciesIndex]);
+      const progress = fleetProgress(
+        timeYears,
+        fleetDepartureYears[speciesIndex],
+        fleetArrivalYears[speciesIndex]
+      );
       fleetProgressValues[speciesIndex] = progress;
       fleetSupplies[speciesIndex] = Math.max(.02, fleetInitialSupplies[speciesIndex] * (1 - progress * .74));
-      fleetPopulations[speciesIndex] = Math.max(.01, fleetPopulations[speciesIndex] * .9992);
+      fleetPopulations[speciesIndex] = Math.max(
+        .01,
+        fleetPopulations[speciesIndex] * Math.exp(-elapsedMillionYears / 18000)
+      );
       const outcome = fleetOutcomeStates[speciesIndex];
       const resolvesAt = outcome === fleetStates.divided ? .58
         : outcome === fleetStates.lost ? .68 : outcome === fleetStates.returned ? .76 : 1;
@@ -877,7 +929,8 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
         * (.76 + resources[owner] * .24)
         * (.74 + stability[owner] * .26)
         * (contamination[owner] > 0 ? .72 : 1) * (filterStates[owner] < 0 ? .78 : 1);
-      strength[node] += (.032 + species.resilience * .018) * support * (1 - strength[node]);
+      strength[node] += relaxation(.032 + species.resilience * .018)
+        * support * (1 - strength[node]);
       strength[node] = THREE.MathUtils.clamp(strength[node], 0, 1.35);
     }
 
@@ -900,15 +953,15 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
         if (contact[relationIndex(a, b)]) {
           const speciesA = civilizationData[a];
           const speciesB = civilizationData[b];
-          score += ((speciesA.cooperation + speciesB.cooperation) - 1) * .026;
-          score -= ((speciesA.aggression + speciesB.aggression) - .82) * .023;
-          score += randomBetween(random, -.012, .012);
+          score += ((speciesA.cooperation + speciesB.cooperation) - 1) * .026 * evolutionStep;
+          score -= ((speciesA.aggression + speciesB.aggression) - .82) * .023 * evolutionStep;
+          score += randomBetween(random, -.012, .012) * Math.sqrt(evolutionStep);
           if (state === 0 && score > .3) state = 1;
           if (state === 0 && score < -.26) state = -1;
           if (state === 1 && score < .08) state = 0;
           if (state === -1 && score > -.04) state = 0;
         } else {
-          score *= .992;
+          score *= .992 ** evolutionStep;
           if (state === 1 && score < .1) state = 0;
           if (state === -1 && score > -.08) state = 0;
         }
@@ -930,13 +983,13 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       const migrationBonus = migrationModes[speciesIndex] > 0 ? .34 : 0;
       const engineeringBonus = engineeringModes[speciesIndex] > 0 ? .38 : 0;
       const diasporaBonus = diasporaModes[speciesIndex] > 0 ? .42 : 0;
-      const attempts = 1 + Math.floor(
+      const attempts = 1 + Math.floor(Math.min(18, evolutionStep) * (
         species.expansionRate + friendlyCounts[speciesIndex] * .34 + probeBonus + frontierBonus
           + substrateBonus + precursorBonus + migrationBonus + engineeringBonus + diasporaBonus
           + technology[speciesIndex] * .28 + resources[speciesIndex] * .25
           + energyReserves[speciesIndex] * .24 + research[speciesIndex] * .2
           + governance[speciesIndex] * .12 + stability[speciesIndex] * .14
-      );
+      ));
       for (let attempt = 0; attempt < attempts; attempt++) {
         const frontier = [];
         territory.forEach((source) => {
@@ -949,7 +1002,12 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
         const defender = owners[target];
         if (defender < 0) {
           if (reservedFor[target] >= 0 && reservedFor[target] !== speciesIndex && !seeded[reservedFor[target]]) continue;
-          if (random() < .18 + species.expansionRate * .19 + friendlyCounts[speciesIndex] * .025) {
+          const colonizationChance = THREE.MathUtils.clamp(
+            .18 + species.expansionRate * .19 + friendlyCounts[speciesIndex] * .025,
+            0,
+            .92
+          );
+          if (random() < 1 - (1 - colonizationChance) ** evolutionStep) {
             owners[target] = speciesIndex;
             strength[target] = Math.max(.14, strength[source] * .34);
             territory.push(target);
@@ -1089,28 +1147,28 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
           .1,
           1
         );
-        energyReserves[speciesIndex] += (targetEnergy - energyReserves[speciesIndex]) * .075;
+        energyReserves[speciesIndex] += (targetEnergy - energyReserves[speciesIndex]) * relaxation(.075);
         const targetMaterials = THREE.MathUtils.clamp(
           .32 + Math.min(.34, counts[speciesIndex] / 150) + terraforming[speciesIndex] * .08
             - internalPopulation[speciesIndex] / capacity * .12 - conflictPressure * .16,
           .08,
           1
         );
-        materials[speciesIndex] += (targetMaterials - materials[speciesIndex]) * .055;
+        materials[speciesIndex] += (targetMaterials - materials[speciesIndex]) * relaxation(.055);
         const targetCompute = THREE.MathUtils.clamp(
           .12 + technology[speciesIndex] * .4 + research[speciesIndex] * .2
             + substrateModes[speciesIndex] * .18 + energyReserves[speciesIndex] * .08,
           .06,
           1
         );
-        compute[speciesIndex] += (targetCompute - compute[speciesIndex]) * .052;
+        compute[speciesIndex] += (targetCompute - compute[speciesIndex]) * relaxation(.052);
         const targetBiosphere = THREE.MathUtils.clamp(
           .3 + terraforming[speciesIndex] * .22 + biosphereStages[speciesIndex] * .035
             - internalPopulation[speciesIndex] / capacity * .15 - conflictPressure * .12,
           .06,
           1
         );
-        biosphereCapacity[speciesIndex] += (targetBiosphere - biosphereCapacity[speciesIndex]) * .048;
+        biosphereCapacity[speciesIndex] += (targetBiosphere - biosphereCapacity[speciesIndex]) * relaxation(.048);
         logisticsThroughput[speciesIndex] = THREE.MathUtils.clamp(
           (materials[speciesIndex] + energyReserves[speciesIndex] + compute[speciesIndex]) / 3
             * (.45 + governance[speciesIndex] * .35 + stability[speciesIndex] * .2)
@@ -1126,14 +1184,14 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
           .08,
           1
         );
-        governance[speciesIndex] += (targetGovernance - governance[speciesIndex]) * .045;
+        governance[speciesIndex] += (targetGovernance - governance[speciesIndex]) * relaxation(.045);
         const targetResearch = THREE.MathUtils.clamp(
           .18 + technology[speciesIndex] * .38 + energyReserves[speciesIndex] * .16
             + Math.max(0, precursorKnowledge[speciesIndex]) * .14 + artifacts[speciesIndex] * .06,
           .08,
           1
         );
-        research[speciesIndex] += (targetResearch - research[speciesIndex]) * .05;
+        research[speciesIndex] += (targetResearch - research[speciesIndex]) * relaxation(.05);
         const targetStability = THREE.MathUtils.clamp(
           .16 + cohesion[speciesIndex] * .42 + governance[speciesIndex] * .2
             + resources[speciesIndex] * .16 + energyReserves[speciesIndex] * .1
@@ -1141,15 +1199,21 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
           .04,
           1
         );
-        stability[speciesIndex] += (targetStability - stability[speciesIndex]) * .07;
+        stability[speciesIndex] += (targetStability - stability[speciesIndex]) * relaxation(.07);
         const growth = .018 * resources[speciesIndex] * energyReserves[speciesIndex]
           * stability[speciesIndex] * (1 - internalPopulation[speciesIndex] / capacity);
-        internalPopulation[speciesIndex] = Math.max(.02, internalPopulation[speciesIndex] * (1 + growth));
-        technology[speciesIndex] = Math.min(1, technology[speciesIndex] + research[speciesIndex] * .00034);
+        internalPopulation[speciesIndex] = Math.max(
+          .02,
+          internalPopulation[speciesIndex] * Math.exp(growth * evolutionStep)
+        );
+        technology[speciesIndex] = Math.min(
+          1,
+          technology[speciesIndex] + research[speciesIndex] * .00034 * evolutionStep
+        );
         if (externalGalaxyIndices[speciesIndex]) {
           externalPopulations[speciesIndex] = Math.min(
             Math.max(.2, capacity * .32),
-            Math.max(.02, externalPopulations[speciesIndex] * (1 + growth * .72))
+            Math.max(.02, externalPopulations[speciesIndex] * Math.exp(growth * evolutionStep * .72))
           );
         }
       } else {

@@ -271,8 +271,9 @@ export function updateEpochVisuals(position, context) {
     }
   });
   cosmicEvents.forEach((event) => {
-    if (position < event.impactAt) return;
-    const aftermath = THREE.MathUtils.smoothstep(position, event.impactAt, event.impactAt + 24);
+    const visualImpactAt = event.visualImpactAt ?? event.impactAt;
+    if (position < visualImpactAt) return;
+    const aftermath = THREE.MathUtils.smoothstep(position, visualImpactAt, visualImpactAt + 24);
     if (event.type === 'stellar-megastructure' && !event.unstable) {
       const offset = event.sourceIndex * 3;
       const occlusion = 1 - aftermath * .58;
@@ -292,7 +293,7 @@ export function updateEpochVisuals(position, context) {
 
     if (!event.waveSamples) return;
     const waveDuration = event.duration * (1 - event.impactPhase);
-    const waveProgress = THREE.MathUtils.clamp((position - event.impactAt) / waveDuration, 0, 1);
+    const waveProgress = THREE.MathUtils.clamp((position - visualImpactAt) / waveDuration, 0, 1);
     if (waveProgress <= 0 || waveProgress >= 1) return;
     const { waveRadius, waveAmplitude = 1, indices, distances, transverse, polarities } = event.waveSamples;
     const crestRadius = .18 + Math.pow(waveProgress, .72) * waveRadius;
@@ -632,8 +633,9 @@ export function updateCosmicEvents(position, context) {
       ? mergerPersistenceAt(position, event)
       : 0;
     const transientPersistence = transientPersistenceAt(position, event);
+    const visualImpactAt = event.visualImpactAt ?? event.impactAt;
     const civilizationPersistence = event.category === 'civilization'
-      && position >= event.impactAt
+      && position >= visualImpactAt
       && position <= (event.persistentUntil ?? -Infinity) + (event.persistenceFadeDuration ?? 0)
       ? 1 - THREE.MathUtils.smoothstep(
           position,
@@ -642,7 +644,7 @@ export function updateCosmicEvents(position, context) {
         )
       : 0;
     const persistence = Math.max(mergerPersistence, transientPersistence, civilizationPersistence);
-    const persistentRemnant = position >= event.impactAt && persistence > 0;
+    const persistentRemnant = position >= visualImpactAt && persistence > 0;
     const visible = !fateStarted && (active || persistentRemnant) && mode === 'explorer';
     event.group.visible = visible;
     if (!visible) return;

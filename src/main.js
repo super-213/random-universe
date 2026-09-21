@@ -6,7 +6,10 @@ import { galaxyTypes as galaxyTypeLabels } from './domain/catalog.js';
 import { createLocalGalaxyGroup } from './domain/local-group.js';
 import { disposeSharedTextures, getPointTexture } from './rendering/textures.js';
 import { createUniverseRenderer } from './rendering/renderer.js';
-import { civilizationObservation } from './simulation/observation.js';
+import {
+  civilizationObservation,
+  lightTravelYearsForSceneDistance
+} from './simulation/observation.js';
 import {
   fleetProgress,
   fleetStates,
@@ -37,6 +40,8 @@ let speciesNames;
 let randomBetween;
 let gaussianRandom;
 let createStellarDawnModel;
+let createStellarPopulation;
+let stellarSpectralType;
 let STELLAR_DAWN_END;
 let STELLAR_DAWN_START;
 let stellarEndTimelinePosition;
@@ -44,6 +49,7 @@ let cosmicTimeLabel;
 let cosmicYearsToTimelinePosition;
 let createCosmicTimelineState;
 let referenceFutureYearsAtTimelinePosition;
+let timelinePositionToCosmicYears;
 let selectTimelineNarrative;
 let timelineUnitsPerSecond;
 let makeGlowTexture;
@@ -162,6 +168,7 @@ let stellarRemnants = null;
 let originalGalaxyPositions = null;
 let originalGalaxyColors = null;
 let stellarDawnModel = null;
+let stellarPopulation = null;
 let dawnGas = null;
 let dawnSites = [];
 let stellarGravityState = null;
@@ -473,6 +480,8 @@ function loadExplorer() {
       randomBetween,
       gaussianRandom,
       createStellarDawnModel,
+      createStellarPopulation,
+      stellarSpectralType,
       STELLAR_DAWN_END,
       STELLAR_DAWN_START,
       stellarEndTimelinePosition,
@@ -480,6 +489,7 @@ function loadExplorer() {
       cosmicYearsToTimelinePosition,
       createCosmicTimelineState,
       referenceFutureYearsAtTimelinePosition,
+      timelinePositionToCosmicYears,
       selectTimelineNarrative,
       timelineUnitsPerSecond,
       makeGlowTexture,
@@ -746,8 +756,6 @@ function buildLocalGroupMap() {
   localGroupGalaxies = [];
   localGalaxyGroup = createLocalGalaxyGroup(universe.seed, $('#galaxy-name').textContent);
   const random = createSeededRandom(universe.seed, 7317);
-  const stellarEnd = stellarEndTimelinePosition(universe);
-  const stellarDeathStart = Math.min(stellarEnd, cosmicYearsToTimelinePosition(4e10, universe));
   localGalaxyGroup.companions.forEach((companion) => {
     const galaxy = new THREE.Group();
     galaxy.position.fromArray(companion.position);
@@ -774,11 +782,6 @@ function buildLocalGroupMap() {
     const isSpiral = companion.type === '小型螺旋星系';
     const isIrregular = companion.type === '不规则星系';
     const flattening = isIrregular ? .82 : isSpiral ? .68 : .76;
-    const galaxyBirthStart = THREE.MathUtils.clamp(
-      STELLAR_DAWN_START + randomBetween(random, -4, 8),
-      STELLAR_DAWN_START - 4,
-      STELLAR_DAWN_START + 8
-    );
     for (let index = 0; index < count; index++) {
       const offset = index * 3;
       const radius = Math.pow(random(), .78) * companion.radius;
@@ -795,24 +798,27 @@ function buildLocalGroupMap() {
       formationAngles[index] = angle + gaussianRandom(random) * .34;
       formationVerticals[index] = vertical * randomBetween(random, 1.8, 2.5)
         + gaussianRandom(random) * companion.radius * .18;
-      birthAt[index] = THREE.MathUtils.clamp(
-        galaxyBirthStart + Math.pow(radius / companion.radius, .7) * 27 + Math.pow(random(), 1.55) * 31,
-        STELLAR_DAWN_START - 3,
-        STELLAR_DAWN_END - 8
-      );
-      deathAt[index] = stellarDeathStart
-        + Math.pow(random(), 1.9) * Math.max(0, stellarEnd - stellarDeathStart);
-      remnantStrength[index] = random() < .36 ? randomBetween(random, .08, .22) : 0;
       positions[offset] = Math.cos(angle) * radius;
       positions[offset + 1] = vertical;
       positions[offset + 2] = Math.sin(angle) * radius * flattening;
-      const brightness = .68 + random() * .52;
-      baseColors[offset] = tint.r * brightness;
-      baseColors[offset + 1] = tint.g * brightness;
-      baseColors[offset + 2] = tint.b * brightness;
+    }
+    const companionPopulation = createStellarPopulation(universe, positions, {
+      namespace: 7400 + companion.index
+    });
+    birthAt.set(companionPopulation.birthAt);
+    deathAt.set(companionPopulation.deathAt);
+    const galaxyBirthStart = Math.min(...birthAt);
+    for (let index = 0; index < count; index++) {
+      const offset = index * 3;
+      baseColors[offset] = companionPopulation.colors[offset] * .82 + tint.r * .18;
+      baseColors[offset + 1] = companionPopulation.colors[offset + 1] * .82 + tint.g * .18;
+      baseColors[offset + 2] = companionPopulation.colors[offset + 2] * .82 + tint.b * .18;
       colors[offset] = baseColors[offset];
       colors[offset + 1] = baseColors[offset + 1];
       colors[offset + 2] = baseColors[offset + 2];
+      remnantStrength[index] = companionPopulation.remnantTypes[index] > 1
+        ? randomBetween(random, .1, .24)
+        : random() < .22 ? randomBetween(random, .04, .12) : 0;
     }
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
@@ -1017,6 +1023,7 @@ function buildGalaxyPreview() {
   originalPhotonPositions = null;
   originalPhotonColors = null;
   stellarRemnants = null;
+  stellarPopulation = null;
   originalRemnantPositions = null;
   remnantDynamics = null;
   localGalaxyGroup = null;
@@ -1036,10 +1043,6 @@ function buildGalaxyPreview() {
   const positions = new Float32Array(count * 3);
   const colors = new Float32Array(count * 3);
   starDeathThresholds = new Float32Array(count);
-  const core = new THREE.Color(0xffe7b4);
-  const edge = new THREE.Color().setHSL(universe.hue, 0.65, 0.56);
-  const stellarEnd = stellarEndTimelinePosition(universe);
-  const stellarDeathStart = Math.min(stellarEnd, cosmicYearsToTimelinePosition(4e10, universe));
   const irregularClumps = Array.from({ length: 4 + universe.seedValue % 3 }, (_, index) => ({
     x: randomBetween(random, -8, 8) + index * .35,
     y: randomBetween(random, -.6, .6),
@@ -1117,20 +1120,16 @@ function buildGalaxyPreview() {
     positions[i * 3] = x;
     positions[i * 3 + 1] = y;
     positions[i * 3 + 2] = z;
-    const radius = Math.hypot(x, y, z);
-    const color = core.clone().lerp(edge, Math.min(1, radius / 12));
-    const brightness = 0.55 + random() * 0.85;
-    colors[i * 3] = color.r * brightness;
-    colors[i * 3 + 1] = color.g * brightness;
-    colors[i * 3 + 2] = color.b * brightness;
-    // Massive stars disappear early; the last low-mass red dwarfs survive to
-    // roughly 10^14 years, at the end of the Stelliferous Era.
-    starDeathThresholds[i] = stellarDeathStart + Math.pow(random(), 1.9) * (stellarEnd - stellarDeathStart);
   }
 
   originalGalaxyPositions = positions.slice();
+  stellarPopulation = createStellarPopulation(universe, originalGalaxyPositions);
+  colors.set(stellarPopulation.colors);
+  starDeathThresholds.set(stellarPopulation.deathAt);
   originalGalaxyColors = colors.slice();
   stellarDawnModel = createStellarDawnModel(universe.seed, originalGalaxyPositions);
+  stellarDawnModel.birthAt.set(stellarPopulation.birthAt);
+  stellarDawnModel.birthYears = stellarPopulation.birthYears;
   stellarGravityState = createStellarGravityState(originalGalaxyPositions, universe);
 
   const gasPositions = new Float32Array(stellarDawnModel.gasSourceIndices.length * 3);
@@ -1408,7 +1407,8 @@ function buildEpochEffects(starPositions) {
     orbitRates: new Float32Array(remnantCount),
     escapeAt: new Float32Array(remnantCount),
     speeds: new Float32Array(remnantCount),
-    fates: new Uint8Array(remnantCount)
+    fates: new Uint8Array(remnantCount),
+    types: new Uint8Array(remnantCount)
   };
   const haloDelay = THREE.MathUtils.clamp((universe.gravity - .5) * 6 + (universe.galaxyType === 3 ? 4 : 0), 0, 12);
   for (let i = 0; i < remnantCount; i++) {
@@ -1435,6 +1435,8 @@ function buildEpochEffects(starPositions) {
     const fateRoll = random();
     const fate = fateRoll < .82 ? 0 : fateRoll < .92 ? 1 : fateRoll < .99 ? 2 : 3;
     remnantDynamics.fates[i] = fate;
+    const remnantType = stellarPopulation.remnantTypes[source];
+    remnantDynamics.types[i] = remnantType;
     // Most remnants stay bound. Evaporation begins one object at a time near
     // 10^19 years (about timeline position 709), not as a synchronous outflow.
     const referenceEscapeAt = fate === 1
@@ -1447,7 +1449,11 @@ function buildEpochEffects(starPositions) {
           universe
         );
     remnantDynamics.speeds[i] = fate === 3 ? randomBetween(random, 1.7, 2.6) : randomBetween(random, .55, 1.05);
-    const remnantColor = new THREE.Color(random() > .28 ? 0x9bb6d9 : 0x8b3e32);
+    const remnantColor = new THREE.Color(
+      remnantType === 1 ? 0xc8dcff
+        : remnantType === 2 ? 0x7aa7ff
+          : 0x362b48
+    );
     remnantColors[i * 3] = remnantColor.r;
     remnantColors[i * 3 + 1] = remnantColor.g;
     remnantColors[i * 3 + 2] = remnantColor.b;
@@ -1484,12 +1490,13 @@ function buildEpochEffects(starPositions) {
   const sampledProgenitors = selectBlackHoleProgenitors(
     starDeathThresholds,
     universe.hasCentralBlackHole ? 4 : 5,
-    random
+    random,
+    (sourceIndex) => stellarPopulation.remnantTypes[sourceIndex] === 3
   );
   sampledProgenitors.forEach((sourceIndex) => {
     addBlackHoleRemnant({
       random,
-      massSolar: randomBetween(random, 5, 48),
+      massSolar: Math.max(3, stellarPopulation.massSolar[sourceIndex] * randomBetween(random, .1, .22)),
       birthAt: starDeathThresholds[sourceIndex],
       sourceIndex
     });
@@ -1581,6 +1588,24 @@ function buildCosmicEvents(starPositions) {
     'tidal-disruption-event', 'core-collapse-supernova', 'pulsar-glitch',
     'superluminous-supernova', 'failed-supernova'
   ]);
+  const transientDurationYears = {
+    'pair-instability-supernova': 2,
+    'young-pulsar-birth': 10,
+    'classical-nova': .4,
+    'type-ia-supernova': 2,
+    'red-dwarf-superflare': 3 / 365.25,
+    'gamma-ray-burst': 1 / 365.25,
+    'neutron-star-kilonova': 3,
+    'quasar-awakening': 8e6,
+    'magnetar-flare': 1 / 365.25,
+    'tidal-disruption-event': 4,
+    'core-collapse-supernova': 2,
+    'pulsar-glitch': 1 / 365.25,
+    'superluminous-supernova': 5,
+    'failed-supernova': 3,
+    'stellar-black-hole-merger': 1,
+    'late-black-hole-merger': 1
+  };
 
   const nucleusEvent = universe.hasCentralBlackHole
     ? {
@@ -1694,9 +1719,18 @@ function buildCosmicEvents(starPositions) {
     .filter((event) => event.duration >= 1)
     .map((event, eventIndex) => {
       const simulation = createTransientSimulation(event, universe, eventIndex);
+      const physicalStartYears = timelinePositionToCosmicYears(event.start, universe);
+      const physicalDurationYears = transientDurationYears[event.type] || 1;
+      const impactAt = cosmicYearsToTimelinePosition(
+        physicalStartYears + physicalDurationYears,
+        universe
+      );
       const simulatedEvent = {
         ...event,
-        simulation
+        simulation,
+        physicalStartYears,
+        physicalDurationYears,
+        impactAt
       };
       if (simulation?.model === 'black-hole-binary') {
         simulatedEvent.gasRich = simulation.gasRich;
@@ -1730,21 +1764,47 @@ function buildCosmicEvents(starPositions) {
     'late-black-hole-merger': { radius: .08, maxStars: 1, sourceDim: .04, neighborDim: 1, kick: 0, civilization: 0, range: 0, maxSpecies: 0 }
   };
 
-  const pickPosition = (preferCenter = false, aliveThrough = null) => {
-    let source = aliveThrough === null
-      ? Math.floor(random() * starPositions.length / 3)
-      : starDeathThresholds.findIndex((deathAt) => deathAt > aliveThrough);
-    if (source < 0) source = Math.floor(random() * starPositions.length / 3);
+  const compactSourceTypes = {
+    'classical-nova': 1,
+    'type-ia-supernova': 1,
+    'neutron-star-kilonova': 2,
+    'magnetar-flare': 2,
+    'pulsar-glitch': 2
+  };
+  const minimumSourceMasses = {
+    'pair-instability-supernova': 40,
+    'young-pulsar-birth': 8,
+    'gamma-ray-burst': 20,
+    'core-collapse-supernova': 8,
+    'superluminous-supernova': 20,
+    'failed-supernova': 25
+  };
+  const pickPosition = (data) => {
+    const preferCenter = data.preferCenter;
+    const compactType = compactSourceTypes[data.type];
+    const minimumMass = minimumSourceMasses[data.type] || 0;
+    const candidates = [];
     const maxRadius = preferCenter ? 2.8 : 6.2;
-    for (let attempt = 0; attempt < 140; attempt++) {
-      const candidate = Math.floor(random() * starPositions.length / 3);
-      if (aliveThrough !== null && starDeathThresholds[candidate] <= aliveThrough) continue;
+    for (let candidate = 0; candidate < starPositions.length / 3; candidate++) {
+      const born = stellarPopulation.birthAt[candidate] <= data.start;
+      const alive = starDeathThresholds[candidate] > data.impactAt;
+      if (!born) continue;
+      if (compactType) {
+        if (stellarPopulation.remnantTypes[candidate] !== compactType
+          || starDeathThresholds[candidate] > data.start) continue;
+      } else if (data.requiresLivingStar && !alive) {
+        continue;
+      }
+      const mass = stellarPopulation.massSolar[candidate];
+      if (minimumMass && mass < minimumMass) continue;
+      if (data.type === 'red-dwarf-superflare' && mass >= .6) continue;
       const offset = candidate * 3;
       if (Math.hypot(starPositions[offset], starPositions[offset + 1], starPositions[offset + 2]) < maxRadius) {
-        source = candidate;
-        break;
+        candidates.push(candidate);
       }
     }
+    if (!candidates.length) return null;
+    const source = candidates[Math.floor(random() * candidates.length)];
     return {
       index: source,
       position: new THREE.Vector3(starPositions[source * 3], starPositions[source * 3 + 1], starPositions[source * 3 + 2])
@@ -1764,7 +1824,8 @@ function buildCosmicEvents(starPositions) {
       'black-hole-merger': .68
     };
     const impactPhase = impactPhases[data.visual] ?? .5;
-    const impactAt = data.start + data.duration * impactPhase;
+    const visualImpactAt = data.start + data.duration * impactPhase;
+    const impactAt = data.impactAt ?? visualImpactAt;
     const nearbyStars = [];
     for (let index = 0; index < starPositions.length / 3; index++) {
       const offset = index * 3;
@@ -1831,7 +1892,7 @@ function buildCosmicEvents(starPositions) {
         : data.visual === 'pulsar'
           ? `${starImpacts.length} 个位于辐射束或近场内的恒星系受到影响`
           : `爆发源发生结构性改变，${Math.max(0, starImpacts.length - 1)} 个邻近恒星系受冲击`;
-    return { impactAt, impactPhase, starImpacts, systemOutcome: systemSummary };
+    return { impactAt, visualImpactAt, impactPhase, starImpacts, systemOutcome: systemSummary };
   };
 
   const deriveCivilizationNodeImpacts = (data, location, consequences, gravityField, eventIndex) => {
@@ -1884,7 +1945,7 @@ function buildCosmicEvents(starPositions) {
         if (pulsePhases?.length) {
           pulsePhases.forEach((pulsePhase, pulseIndex) => {
             const weight = data.simulation.pulseWeights?.[pulseIndex] ?? 1;
-            addImpact(nodeIndex, data.start + data.duration * pulsePhase, severity * weight);
+            addImpact(nodeIndex, consequences.impactAt, severity * weight);
           });
         } else {
           addImpact(nodeIndex, consequences.impactAt, severity);
@@ -2063,10 +2124,8 @@ function buildCosmicEvents(starPositions) {
               mergerPair.right.massSolar / (mergerPair.left.massSolar + mergerPair.right.massSolar)
             )
         }
-      : pickPosition(
-          data.preferCenter,
-          data.requiresLivingStar ? data.start + data.duration : null
-        );
+      : pickPosition(data);
+    if (!location) return;
     group.position.copy(location.position);
     group.visible = false;
     cosmicEventGroup.add(group);
@@ -2436,6 +2495,18 @@ function buildCosmicEvents(starPositions) {
         starDeathThresholds[location.index],
         consequences.impactAt
       );
+      if (stellarPopulation) {
+        stellarPopulation.deathAt[location.index] = starDeathThresholds[location.index];
+        stellarPopulation.deathYears[location.index] = Math.min(
+          stellarPopulation.deathYears[location.index],
+          timelinePositionToCosmicYears(consequences.impactAt, universe)
+        );
+      }
+      civilizationSimulation?.habitatStarIndices?.forEach((starIndex, nodeIndex) => {
+        if (starIndex === location.index) {
+          civilizationSimulation.habitatDeathAt[nodeIndex] = starDeathThresholds[location.index];
+        }
+      });
       for (let remnantIndex = 0; remnantIndex < remnantDynamics.sourceIndices.length; remnantIndex++) {
         if (remnantDynamics.sourceIndices[remnantIndex] !== location.index) continue;
         // The event owns its explicit compact-remnant visual. Suppress the
@@ -2462,7 +2533,7 @@ function buildCosmicEvents(starPositions) {
         birthAt: consequences.impactAt,
         visibleAt: mergerPair
           ? data.start + data.duration + data.persistenceFadeDuration
-          : consequences.impactAt,
+          : consequences.visualImpactAt,
         formationDuration: mergerPair ? 0 : 8,
         sourceIndex: mergerPair ? null : location.index,
         anchorSourceIndices: mergerPair ? mergerAnchors.indices : null,
@@ -2515,7 +2586,7 @@ function buildCosmicEvents(starPositions) {
       ...data,
       group,
       sourceIndex,
-      impactPhase: (data.impactAt - data.start) / data.duration,
+      impactPhase: ((data.visualImpactAt ?? data.impactAt) - data.start) / data.duration,
       starImpacts: [],
       waveSamples: null,
       gravityField: null,
@@ -2777,15 +2848,49 @@ function buildCivilizations() {
   const random = createSeededRandom(universe.seed, 410);
   const speciesCount = universe.speciesCount;
   const remnantCount = originalRemnantPositions.length / 3;
-  const habitatCount = Math.min(720, remnantCount);
+  const seenHostStars = new Set();
+  const remnantCandidates = Array.from({ length: remnantCount }, (_, remnantIndex) => remnantIndex)
+    .filter((remnantIndex) => {
+      const sourceIndex = remnantDynamics.sourceIndices[remnantIndex];
+      if (seenHostStars.has(sourceIndex)) return false;
+      const viable = stellarPopulation.planetCounts[sourceIndex] > 0
+        && stellarPopulation.habitability[sourceIndex] > .015
+        && stellarPopulation.birthAt[sourceIndex] <= 390
+        && stellarPopulation.deathAt[sourceIndex] > 520;
+      if (viable) seenHostStars.add(sourceIndex);
+      return viable;
+    });
+  let fallbackCandidates = remnantCandidates.length >= 180
+    ? remnantCandidates
+    : Array.from({ length: remnantCount }, (_, remnantIndex) => remnantIndex)
+      .filter((remnantIndex) => {
+        const sourceIndex = remnantDynamics.sourceIndices[remnantIndex];
+        return stellarPopulation.birthAt[sourceIndex] <= 390
+          && stellarPopulation.deathAt[sourceIndex] > 520;
+      });
+  if (fallbackCandidates.length === 0) {
+    fallbackCandidates = Array.from({ length: remnantCount }, (_, remnantIndex) => remnantIndex);
+  }
+  const habitatCount = Math.min(720, fallbackCandidates.length);
   const habitatRemnantIndices = new Uint16Array(habitatCount);
+  const habitatStarIndices = new Uint16Array(habitatCount);
+  const habitatBirthAt = new Float32Array(habitatCount);
+  const habitatDeathAt = new Float32Array(habitatCount);
   const habitatPositions = new Float32Array(habitatCount * 3);
-  const stride = remnantCount / habitatCount;
+  const stride = fallbackCandidates.length / habitatCount;
   for (let node = 0; node < habitatCount; node++) {
-    const remnantIndex = Math.min(remnantCount - 1, Math.floor((node + random() * .86) * stride));
+    const candidateIndex = Math.min(
+      fallbackCandidates.length - 1,
+      Math.floor((node + random() * .86) * stride)
+    );
+    const remnantIndex = fallbackCandidates[candidateIndex];
+    const starIndex = remnantDynamics.sourceIndices[remnantIndex];
     const source = remnantIndex * 3;
     const target = node * 3;
     habitatRemnantIndices[node] = remnantIndex;
+    habitatStarIndices[node] = starIndex;
+    habitatBirthAt[node] = stellarPopulation.birthAt[starIndex];
+    habitatDeathAt[node] = stellarPopulation.deathAt[starIndex];
     habitatPositions[target] = originalRemnantPositions[source];
     habitatPositions[target + 1] = originalRemnantPositions[source + 1];
     habitatPositions[target + 2] = originalRemnantPositions[source + 2];
@@ -2796,6 +2901,9 @@ function buildCivilizations() {
     end: 1000,
     step: 1,
     habitatRemnantIndices,
+    habitatStarIndices,
+    habitatBirthAt,
+    habitatDeathAt,
     habitatPositions,
     adjacency: [],
     snapshots: []
@@ -2943,7 +3051,12 @@ function buildCivilizations() {
     const birthSpread = speciesCount === 1 ? 0 : speciesIndex / (speciesCount - 1);
     const birth = 404 + Math.round(birthSpread * 72 + random() * 11);
     const highDimensional = random() < .01;
-    const ascensionAt = highDimensional ? birth + Math.round(randomBetween(random, 130, 205)) : Infinity;
+    const ascensionAt = highDimensional
+      ? cosmicYearsToTimelinePosition(
+          timelinePositionToCosmicYears(birth, universe) + randomBetween(random, 2e9, 2e10),
+          universe
+        )
+      : Infinity;
     const developmentRandom = createSeededRandom(universe.seed, 4801 + speciesIndex * 31);
     registerSpecies({
       name: speciesNames[(universe.seedValue + speciesIndex) % speciesNames.length],
@@ -3226,22 +3339,19 @@ function inspectStar(event) {
   raycaster.setFromCamera(pointer, camera);
   const hits = raycaster.intersectObject(clickableStars);
   const livingHit = hits.find((hit) => (
-    cosmicPosition < starDeathThresholds[hit.index] + 22
+    cosmicPosition >= stellarPopulation.birthAt[hit.index]
+      && cosmicPosition < starDeathThresholds[hit.index]
   ));
   if (!livingHit) return;
   showStarInspector(livingHit.index);
 }
 
 function showStarInspector(index) {
-  if (!clickableStars || index < 0 || index >= starDeathThresholds.length) return;
-  const random = createSeededRandom(universe.seed, index * 31);
-  const classes = ['M4 V', 'K1 III', 'G2 V', 'F8 V', 'A3 V', 'B1 Ia'];
-  const type = classes[Math.floor(random() * classes.length)];
-  const temps = { M: [2400, 3700], K: [3700, 5200], G: [5200, 6000], F: [6000, 7500], A: [7500, 10000], B: [10000, 30000] };
-  const range = temps[type[0]];
-  const temperature = Math.round(randomBetween(random, range[0], range[1]));
-  const planets = Math.floor(random() * 13);
-  const life = random() < universe.lifeProbability ? '候选信号' : '未检出';
+  if (!clickableStars || !stellarPopulation || index < 0 || index >= starDeathThresholds.length) return;
+  const temperature = stellarPopulation.temperatureK[index];
+  const type = stellarSpectralType(temperature);
+  const planets = stellarPopulation.planetCounts[index];
+  const life = stellarPopulation.lifeSignals[index] ? '候选信号' : '未检出';
   $('#star-name').textContent = `RU-${String(index).padStart(5, '0')}`;
   $('#star-type').textContent = type;
   $('#star-temp').textContent = `${new Intl.NumberFormat('zh-CN').format(temperature)} K`;
@@ -3434,11 +3544,12 @@ function observerDelayForEvent(event) {
     positions[observerOffset + 1] - positions[eventOffset + 1],
     positions[observerOffset + 2] - positions[eventOffset + 2]
   );
-  return distance / Math.max(.38, universe.speed) * 3.2;
+  return lightTravelYearsForSceneDistance(distance, universe);
 }
 
 function observerCanSeeEvent(event, position = cosmicPosition) {
-  return observerSpeciesIndex === null || position >= event.impactAt + observerDelayForEvent(event);
+  return observerSpeciesIndex === null || timelinePositionToCosmicYears(position, universe)
+    >= timelinePositionToCosmicYears(event.impactAt, universe) + observerDelayForEvent(event);
 }
 
 function timelineMarkerEvents(marker) {
@@ -3459,13 +3570,13 @@ function updateObserverMarkers() {
     const beyondLightcone = visibleObservations.length === 0;
     const partial = visibleObservations.length > 0 && visibleObservations.length < observations.length;
     const maximumDelay = Math.max(0, ...visibleObservations.map((observation) => observation.delay));
-    const uncertain = observerSpeciesIndex !== null && !beyondLightcone && maximumDelay > 8;
+    const uncertain = observerSpeciesIndex !== null && !beyondLightcone && maximumDelay > 1e4;
     marker.classList.toggle('is-beyond-lightcone', beyondLightcone);
     marker.classList.toggle('is-partially-observed', partial);
     marker.classList.toggle('is-uncertain-observation', uncertain);
     marker.style.setProperty(
       '--observation-confidence',
-      String(THREE.MathUtils.clamp(1 - maximumDelay / 180, .22, 1))
+      String(THREE.MathUtils.clamp(1 - maximumDelay / 5e5, .22, 1))
     );
   });
 }
@@ -3627,7 +3738,8 @@ function updateLogisticsVisuals(simulationState) {
 
 function updateKeyboardStarMarker() {
   if (!keyboardStarMarker || keyboardStarIndex < 0 || !clickableStars) return;
-  if (cosmicPosition >= starDeathThresholds[keyboardStarIndex] + 22) {
+  if (cosmicPosition < stellarPopulation.birthAt[keyboardStarIndex]
+    || cosmicPosition >= starDeathThresholds[keyboardStarIndex]) {
     keyboardStarMarker.visible = false;
     return;
   }
@@ -4113,7 +4225,11 @@ function updateCosmicTime(value, force = false) {
     civilizationData
   });
   if (observerSpeciesIndex !== null && observedEvent && observedEvent.targetSpeciesIndex !== observerSpeciesIndex) {
-    const confidence = Math.round(THREE.MathUtils.clamp(1 - observerDelayForEvent(observedEvent) / 180, .22, 1) * 100);
+    const confidence = Math.round(THREE.MathUtils.clamp(
+      1 - observerDelayForEvent(observedEvent) / 5e5,
+      .22,
+      1
+    ) * 100);
     narrative.text = `延迟观测 · 置信度 ${confidence}% · ${narrative.text}`;
   }
   renderTimelineEvent(narrative, force);
@@ -4127,7 +4243,8 @@ function selectKeyboardStar(direction) {
     : keyboardStarIndex;
   for (let attempt = 0; attempt < count; attempt++) {
     candidate = (candidate + direction + count) % count;
-    if (cosmicPosition < starDeathThresholds[candidate] + 22) break;
+    if (cosmicPosition >= stellarPopulation.birthAt[candidate]
+      && cosmicPosition < starDeathThresholds[candidate]) break;
   }
   keyboardStarIndex = candidate;
   updateKeyboardStarMarker();

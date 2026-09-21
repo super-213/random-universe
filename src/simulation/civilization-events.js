@@ -1,5 +1,9 @@
 import { stellarEndTimelinePosition } from '../domain/universe.js';
 import { createSeededRandom, randomBetween } from '../domain/random.js';
+import {
+  cosmicYearsToTimelinePosition,
+  timelinePositionToCosmicYears
+} from '../domain/cosmic-time.js';
 
 const clamp = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, value));
 
@@ -38,6 +42,84 @@ const fermiScenarios = [
     description: '文明可被探测的广播阶段远短于宇宙尺度的时间间隔'
   }
 ];
+
+const eventDelayYears = {
+  'first-signal': [2e7, 3e8],
+  'self-replicating-probes': [5e7, 6e8],
+  'stellar-megastructure': [1e8, 1.2e9],
+  'civilization-fracture': [8e7, 1.5e9],
+  'knowledge-ark': [4e7, 8e8],
+  'uplift-experiment': [1e8, 1.8e9],
+  'satellite-disruption': [2e7, 7e8],
+  'terraforming-project': [8e7, 1.4e9],
+  'digital-migration': [1e8, 1.6e9],
+  'precursor-ruins': [5e7, 1e9],
+  'information-plague': [8e7, 1.2e9],
+  'relativistic-divergence': [3e8, 2.5e9],
+  'galactic-encounter': [8e8, 6e9],
+  'great-filter-crisis': [3e7, 8e8],
+  'generation-ship': [1e8, 1.6e9],
+  'stellar-engineering': [4e8, 3e9],
+  'morphology-transition': [1e8, 1.8e9],
+  'cosmic-archaeology': [6e7, 1.2e9],
+  'intergalactic-diaspora': [1e9, 8e9],
+  'black-hole-civilization': [8e8, 6e9],
+  'universe-escape-project': [3e9, 2e10]
+};
+
+const eventCausalDurationYears = {
+  'first-signal': 100,
+  'self-replicating-probes': 2e6,
+  'stellar-megastructure': 2e7,
+  'civilization-fracture': 2e5,
+  'knowledge-ark': 5e4,
+  'uplift-experiment': 2e6,
+  'satellite-disruption': 20,
+  'terraforming-project': 1e8,
+  'digital-migration': 2e4,
+  'precursor-ruins': 500,
+  'information-plague': 50,
+  'relativistic-divergence': 1e7,
+  'galactic-encounter': 2e8,
+  'great-filter-crisis': 1e5,
+  'generation-ship': 2e6,
+  'stellar-engineering': 1e7,
+  'morphology-transition': 1e5,
+  'cosmic-archaeology': 500,
+  'intergalactic-diaspora': 100,
+  'black-hole-civilization': 1e6,
+  'universe-escape-project': 1e6,
+  'biosphere-transition': 1e8,
+  'fermi-paradigm': 1e3,
+  'ghost-signal': 100,
+  'exposure-response': 1e3,
+  'galactic-aftermath': 1e8
+};
+
+function timelineAfterYears(position, years, universe) {
+  return cosmicYearsToTimelinePosition(
+    timelinePositionToCosmicYears(position, universe) + Math.max(0, years),
+    universe
+  );
+}
+
+function timelineBeforeYears(position, years, universe) {
+  return cosmicYearsToTimelinePosition(
+    Math.max(0, timelinePositionToCosmicYears(position, universe) - Math.max(0, years)),
+    universe
+  );
+}
+
+function eventTiming(type, start, visualDuration, universe) {
+  const physicalStartYears = timelinePositionToCosmicYears(start, universe);
+  const physicalDurationYears = eventCausalDurationYears[type] || 1e4;
+  return {
+    physicalStartYears,
+    physicalDurationYears,
+    impactAt: cosmicYearsToTimelinePosition(physicalStartYears + physicalDurationYears, universe),
+    visualImpactAt: start + visualDuration * .56
+  };
+}
 
 const eventCatalog = [
   {
@@ -376,7 +458,10 @@ function eventMessage(event, target, secondary, child) {
     return `${event.fermiScenario.label}成为本宇宙的主导解释：${event.fermiScenario.description}`;
   }
   if (event.type === 'ghost-signal') {
-    return `${target.name} 收到延迟 ${event.delayUnits} 个时间单位的旧广播；发信文明当前状态已无法由信号确认`;
+    const delay = event.delayYears >= 1e6
+      ? `${(event.delayYears / 1e6).toFixed(2)} 百万年`
+      : `${Math.round(event.delayYears || event.delayUnits * 1e3)} 年`;
+    return `${target.name} 收到延迟 ${delay} 的旧广播；发信文明当前状态已无法由信号确认`;
   }
   if (event.type === 'exposure-response') {
     return `${target.name} 根据早期信号接触结果启动${event.responsePolicy}`;
@@ -417,8 +502,14 @@ export function createCivilizationEventPlan({ universe, civilizationData, habita
     ));
     if (!targetEntry) return;
     const target = targetEntry.species;
-    const start = target.birth + randomBetween(random, definition.offset[0], definition.offset[1]);
-    const impactAt = start + definition.duration * .56;
+    const delayRange = eventDelayYears[definition.type] || [1e7, 1e9];
+    const start = timelineAfterYears(
+      target.birth,
+      randomBetween(random, delayRange[0], delayRange[1]),
+      universe
+    );
+    const timing = eventTiming(definition.type, start, definition.duration, universe);
+    const { impactAt } = timing;
     if (impactAt >= eventBoundary) return;
     let secondaryEntry = null;
     if (definition.type === 'first-signal') {
@@ -433,7 +524,7 @@ export function createCivilizationEventPlan({ universe, civilizationData, habita
       category: 'civilization',
       confidence: definition.confidence || 'science-fiction',
       start,
-      impactAt,
+      ...timing,
       targetSpeciesIndex: targetEntry.index,
       secondarySpeciesIndex: secondaryEntry?.index ?? null,
       targetNodeIndex: target.homeNodeIndex,
@@ -560,7 +651,8 @@ export function createCivilizationEventPlan({ universe, civilizationData, habita
     confidence = 'science-fiction',
     ...details
   }) => {
-    const impactAt = start + duration * .56;
+    const timing = eventTiming(type, start, duration, universe);
+    const { impactAt } = timing;
     if (impactAt >= eventBoundary) return null;
     const target = civilizationData[targetSpeciesIndex];
     const event = {
@@ -571,7 +663,7 @@ export function createCivilizationEventPlan({ universe, civilizationData, habita
       color,
       start,
       duration,
-      impactAt,
+      ...timing,
       category: 'civilization',
       confidence,
       targetSpeciesIndex,
@@ -596,7 +688,7 @@ export function createCivilizationEventPlan({ universe, civilizationData, habita
     label: '复杂生物圈形成',
     visual: 'biosphere-chain',
     color: '#7ee7a8',
-    start: Math.max(372, earliestSpecies.birth - 30),
+    start: Math.max(372, timelineBeforeYears(earliestSpecies.birth, 1.2e9, universe)),
     duration: 20,
     targetSpeciesIndex: earliestSpeciesIndex,
     confidence: 'astrobiology-model',
@@ -607,7 +699,7 @@ export function createCivilizationEventPlan({ universe, civilizationData, habita
     label: `费米情景：${fermiScenario.label}`,
     visual: 'signal-wave',
     color: '#c7e6ff',
-    start: earliestSpecies.birth + 10,
+    start: timelineAfterYears(earliestSpecies.birth, 5e7, universe),
     duration: 24,
     targetSpeciesIndex: earliestSpeciesIndex,
     confidence: 'astrobiology-model',
@@ -624,16 +716,20 @@ export function createCivilizationEventPlan({ universe, civilizationData, habita
       habitatPositions[senderOffset + 1] - habitatPositions[receiverOffset + 1],
       habitatPositions[senderOffset + 2] - habitatPositions[receiverOffset + 2]
     );
-    const lightConeDelay = Math.round(clamp(signalDistance / Math.max(.38, universe.speed) * 3.2, 12, 78));
+    const galaxyDiameterLightYears = (8 + universe.stars * 4.7) * 1e4;
+    const lightConeDelayYears = signalDistance / 28
+      * galaxyDiameterLightYears
+      / Math.max(.01, universe.speed);
     const ghostSignal = appendDerivedEvent({
       type: 'ghost-signal',
       label: '光锥中的幽灵信号',
       visual: 'light-cone',
       color: '#8adfff',
-      start: signalEvent.impactAt + lightConeDelay,
+      start: timelineAfterYears(signalEvent.impactAt, lightConeDelayYears, universe),
       duration: 28,
       targetSpeciesIndex: ghostTargetIndex,
-      delayUnits: lightConeDelay,
+      delayUnits: Math.max(1, Math.round(lightConeDelayYears / 1e3)),
+      delayYears: lightConeDelayYears,
       signalDistance,
       sourceEventId: signalEvent.id,
       causalRootId: signalEvent.id
@@ -644,7 +740,11 @@ export function createCivilizationEventPlan({ universe, civilizationData, habita
         label: '信号暴露后续',
         visual: 'signal-wave',
         color: '#ffb36b',
-        start: ghostSignal.impactAt + randomBetween(random, 16, 28),
+        start: timelineAfterYears(
+          ghostSignal.impactAt,
+          randomBetween(random, 1e4, 5e5),
+          universe
+        ),
         duration: 30,
         targetSpeciesIndex: signalEvent.targetSpeciesIndex,
         responsePolicy: signalEvent.decision === 'reply'
@@ -663,7 +763,7 @@ export function createCivilizationEventPlan({ universe, civilizationData, habita
       label: '星系近掠后续演化',
       visual: 'galactic-encounter',
       color: '#ffcf7b',
-      start: galacticEncounter.impactAt + 22,
+      start: timelineAfterYears(galacticEncounter.impactAt, 1e8, universe),
       duration: 46,
       targetSpeciesIndex: galacticEncounter.targetSpeciesIndex,
       confidence: 'astrophysical-model',

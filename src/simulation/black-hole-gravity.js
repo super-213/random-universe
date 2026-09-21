@@ -169,7 +169,8 @@ export function applyMergerGravity(position, targetPositions, colorArray, event,
   const activeUntil = Math.min(position, event.persistUntil);
   const elapsed = activeUntil - event.start;
   const onset = smoothstep(position, event.start, event.start + 4.5);
-  const merged = smoothstep(position, event.impactAt - 1.2, event.impactAt + 2.4);
+  const visualImpactAt = event.visualImpactAt ?? event.impactAt;
+  const merged = smoothstep(position, visualImpactAt - 1.2, visualImpactAt + 2.4);
   const persistence = mergerPersistenceAt(position, event);
   const retainedMass = 1 - event.radiatedMassFraction * merged;
   const axisX = field.axis[0];
@@ -212,7 +213,7 @@ export function applyMergerGravity(position, targetPositions, colorArray, event,
 
     if (restDistance < field.captureRadius) {
       const captureDelay = (restDistance / field.captureRadius) * 11;
-      const capture = smoothstep(position, event.impactAt + captureDelay, event.impactAt + captureDelay + 13);
+      const capture = smoothstep(position, visualImpactAt + captureDelay, visualImpactAt + captureDelay + 13);
       const radiusScale = 1 - capture * .965;
       rotatedX *= radiusScale;
       rotatedY *= radiusScale;
