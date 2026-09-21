@@ -1004,7 +1004,14 @@ export function updateCosmicEvents(position, context) {
 }
 
 export function animateCosmicEvents(now, context) {
-  const { cosmicEventGroup, prefersReducedMotion, cosmicEvents, camera } = context;
+  const {
+    cosmicEventGroup,
+    prefersReducedMotion,
+    cosmicEvents,
+    camera,
+    pulsarAnimationTimeMs = now,
+    timelineAdvancing = true
+  } = context;
   if (!cosmicEventGroup.visible || prefersReducedMotion) return;
   cosmicEvents.forEach((event) => {
     if (!event.group.visible) return;
@@ -1028,6 +1035,7 @@ export function animateCosmicEvents(now, context) {
     } else if (event.visual === 'stellar-collapse') {
       if (effect.remnantHole.visible) animateBlackHoleVisual(effect.remnantHole, now, effect.remnantHole.userData.spinDirection);
     } else if (event.visual === 'pulsar') {
+      const pulsarNow = pulsarAnimationTimeMs;
       const spinPeriodMs = event.simulation?.spinPeriodMs;
       const spinRate = spinPeriodMs
         ? THREE.MathUtils.clamp(80 / spinPeriodMs, .45, 4.8)
@@ -1035,27 +1043,29 @@ export function animateCosmicEvents(now, context) {
       const glitchCue = event.simulation?.model === 'pulsar-glitch' && phase >= .46
         ? 1 + Math.min(.12, event.simulation.fractionalFrequencyJump * 15000)
         : 1;
-      effect.rotor.rotation.y = now * .0024 * spinRate * glitchCue;
+      effect.rotor.rotation.y = pulsarNow * .0024 * spinRate * glitchCue;
       effect.rotor.getWorldQuaternion(pulsarWorldQuaternion);
       event.group.getWorldPosition(pulsarWorldPosition);
       pulsarBeamAxis.set(0, 1, 0).applyQuaternion(pulsarWorldQuaternion).normalize();
       pulsarViewDirection.copy(camera.position).sub(pulsarWorldPosition).normalize();
       const alignment = Math.pow(Math.abs(pulsarBeamAxis.dot(pulsarViewDirection)), 14);
       const pulseFrequency = THREE.MathUtils.clamp(spinRate, .55, 3.2);
-      const pulse = .52 + Math.pow(Math.max(0, Math.sin(now * .012 * pulseFrequency)), 10) * .48;
+      const pulse = .52 + Math.pow(Math.max(0, Math.sin(pulsarNow * .012 * pulseFrequency)), 10) * .48;
       const glitchScale = event.type === 'pulsar-glitch' ? .16 : 1;
       effect.jets.material.opacity = event.group.userData.intensity * (.34 + alignment * .58) * pulse * glitchScale;
       effect.sweepGlow.material.opacity = event.group.userData.intensity * alignment * pulse * .78 * glitchScale;
       const sweepScale = .5 + alignment * 1.8;
       effect.sweepGlow.scale.set(sweepScale, sweepScale, 1);
       effect.knots.forEach((knot) => {
-        const travel = (now * .00055 + knot.userData.offset) % 1;
+        const travel = (pulsarNow * .00055 + knot.userData.offset) % 1;
         knot.position.set(0, knot.userData.side * (.18 + travel * 2.45), 0);
         knot.material.opacity = event.group.userData.intensity * Math.sin(travel * Math.PI) * (.12 + alignment * .55) * glitchScale;
       });
-      effect.fieldLines.forEach((field, index) => {
-        field.rotation.y += .006 + index * .001;
-      });
+      if (timelineAdvancing) {
+        effect.fieldLines.forEach((field, index) => {
+          field.rotation.y += .006 + index * .001;
+        });
+      }
     } else if (event.visual === 'black-hole-merger') {
       animateBlackHoleVisual(effect.holeA, now, effect.holeA.userData.spinDirection);
       animateBlackHoleVisual(effect.holeB, now, effect.holeB.userData.spinDirection);

@@ -172,6 +172,7 @@ let cosmicPosition = 0;
 let timePlaying = false;
 let timeSpeed = 10;
 let lastFrame = performance.now();
+let pulsarAnimationTimeMs = 0;
 let lastTimelineUpdateAt = 0;
 let lastCoordinateUpdateAt = 0;
 let cosmicEvents = [];
@@ -4149,7 +4150,9 @@ function animate(now) {
     universeGroup.position.y = smoothedPointer.y * 0.25;
   }
   if (mode === 'explorer') {
-    if (timePlaying && !transition) {
+    const timelineAdvancing = timePlaying && !transition;
+    if (timelineAdvancing) {
+      pulsarAnimationTimeMs += delta * 1000;
       advanceCosmicTime(delta);
       let reachedTimelineEnd = false;
       if (cosmicPosition >= 1000) {
@@ -4187,7 +4190,9 @@ function animate(now) {
       cosmicEventGroup,
       prefersReducedMotion,
       cosmicEvents,
-      camera
+      camera,
+      pulsarAnimationTimeMs,
+      timelineAdvancing
     });
     if (!controls.enabled) galaxyGroup.rotation.y += 0.0003;
     animateLocalGroupGalaxies(now);
