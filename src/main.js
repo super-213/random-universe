@@ -2362,11 +2362,21 @@ function timelineEventPosition(event) {
 }
 
 const timelineFilterLabels = {
-  all: '事件：全部',
-  astro: '事件：天体',
-  civilization: '事件：文明',
-  speculative: '事件：科幻'
+  all: { zh: '全部事件', en: 'All events' },
+  astro: { zh: '天体事件', en: 'Astronomical events' },
+  civilization: { zh: '文明事件', en: 'Civilization events' },
+  speculative: { zh: '科幻假设', en: 'Speculative events' }
 };
+
+function updateTimelineFilterToggle(filter) {
+  const label = timelineFilterLabels[filter];
+  const sourceIcon = document.querySelector(`[data-event-filter="${filter}"] .timeline-filter-icon`);
+  const currentIcon = timelineFilterToggle.querySelector('.timeline-filter-icon');
+  if (sourceIcon && currentIcon) currentIcon.replaceWith(sourceIcon.cloneNode(true));
+  timelineFilterToggle.querySelector('[data-timeline-filter-label]').textContent = label.zh;
+  timelineFilterToggle.setAttribute('aria-label', `筛选事件：${label.zh}`);
+  timelineFilterToggle.title = `${label.zh} / ${label.en}`;
+}
 
 function timelineEventMatchesFilter(event, filter = timelineEventFilter) {
   if (filter === 'astro') return event.category !== 'civilization';
@@ -4261,7 +4271,7 @@ timelineFilterMenu.querySelectorAll('[data-event-filter]').forEach((button) => {
     timelineFilterMenu.querySelectorAll('[data-event-filter]').forEach((item) => {
       item.setAttribute('aria-checked', String(item === button));
     });
-    timelineFilterToggle.textContent = timelineFilterLabels[timelineEventFilter];
+    updateTimelineFilterToggle(timelineEventFilter);
     setTimelineFilterMenuOpen(false);
     renderCosmicEventMarkers();
     timelineFilterToggle.focus({ preventScroll: true });

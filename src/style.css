@@ -717,6 +717,24 @@ h1 strong {
 .timeline-tool-button:hover { color: var(--ink); border-color: rgba(241,238,231,.28); }
 .timeline-tool-button:active { transform: scale(.96); }
 .timeline-tool-button.is-active { color: var(--accent); border-color: rgba(216,255,95,.4); background: rgba(216,255,95,.07); }
+.timeline-filter-toggle {
+  display: inline-grid;
+  width: 30px;
+  padding: 6px;
+  place-items: center;
+}
+.timeline-filter-icon {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.55;
+  transition: filter .2s ease, opacity .2s ease, transform .2s cubic-bezier(.2,.8,.2,1);
+}
+.timeline-filter-toggle:hover .timeline-filter-icon,
+.timeline-filter-toggle:focus-visible .timeline-filter-icon { transform: rotate(8deg) scale(1.06); }
 .timeline-snap-toggle { display: inline-grid; place-items: center; width: 30px; padding: 6px; }
 .timeline-snap-icon {
   width: 16px;
@@ -756,35 +774,51 @@ h1 strong {
   z-index: 12;
   bottom: calc(100% + 8px);
   left: 0;
-  width: 148px;
-  padding: 5px;
+  width: 220px;
+  padding: 6px;
   border: 1px solid rgba(241,238,231,.14);
   border-radius: 12px;
   background: rgba(5,5,8,.92);
   backdrop-filter: blur(18px) saturate(130%);
   -webkit-backdrop-filter: blur(18px) saturate(130%);
   box-shadow: 0 12px 30px rgba(0,0,0,.34);
+  transform-origin: 16px 100%;
+  animation: timeline-filter-reveal .18s cubic-bezier(.2,.8,.2,1);
 }
 .timeline-filter-menu[hidden] { display: none; }
 .timeline-filter-menu button {
-  display: flex;
-  width: 100%;
-  min-height: 30px;
-  padding: 6px 8px;
+  position: relative;
+  display: inline-grid;
+  width: 48px;
+  min-height: 44px;
+  padding: 7px;
   align-items: center;
-  justify-content: space-between;
+  justify-items: center;
   border: 0;
   border-radius: 8px;
   background: transparent;
   color: var(--muted);
   cursor: pointer;
   font: 8px "Space Mono", monospace;
-  text-align: left;
+  text-align: center;
+  transition: color .18s ease, background .18s ease, transform .18s cubic-bezier(.2,.8,.2,1);
 }
 .timeline-filter-menu button:hover,
-.timeline-filter-menu button:focus-visible { background: rgba(241,238,231,.07); color: var(--ink); }
-.timeline-filter-menu button[aria-checked="true"] { background: rgba(216,255,95,.08); color: var(--accent); }
-.timeline-filter-menu small { color: rgba(241,238,231,.34); font: inherit; }
+.timeline-filter-menu button:focus-visible { background: rgba(241,238,231,.07); color: var(--ink); transform: translateY(-2px); }
+.timeline-filter-menu button:focus-visible { outline: 1px solid rgba(216,255,95,.7); outline-offset: -1px; }
+.timeline-filter-menu button[aria-checked="true"] { background: rgba(216,255,95,.1); color: var(--accent); }
+.timeline-filter-menu button[aria-checked="true"] .timeline-filter-icon { filter: drop-shadow(0 0 5px rgba(216,255,95,.88)); }
+.timeline-filter-menu small {
+  position: absolute;
+  right: 4px;
+  bottom: 3px;
+  color: rgba(241,238,231,.38);
+  font: 6px "Space Mono", monospace;
+}
+@keyframes timeline-filter-reveal {
+  from { opacity: 0; transform: translateY(5px) scale(.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
 .speed-control { position: relative; flex: 0 0 auto; margin-left: auto; }
 .speed-toggle {
   display: flex;
@@ -1462,19 +1496,20 @@ h1 strong {
   .timeline-tools {
     display: grid;
     grid-area: tools;
-    grid-template-columns: 100px 48px 48px;
+    grid-template-columns: 48px 48px 48px;
     gap: 8px;
     width: 100%;
     margin-left: 0;
   }
-  .timeline-filter { width: 100px; }
+  .timeline-filter { width: 48px; }
   .timeline-tool-button {
     min-height: 44px;
     padding: 10px 14px;
     border-radius: 22px;
     font-size: 9px;
   }
-  #timeline-filter-toggle { width: 100px; }
+  #timeline-filter-toggle { width: 48px; padding: 0; }
+  #timeline-filter-toggle .timeline-filter-icon { width: 20px; height: 20px; }
   #toggle-timeline-snap { width: 48px; padding: 0; overflow: hidden; }
   #toggle-timeline-snap .timeline-snap-icon { width: 20px; height: 20px; }
   #toggle-ship-highlight { width: 48px; padding: 0; justify-content: center; }
@@ -1486,7 +1521,8 @@ h1 strong {
     left: 16px;
     width: min(260px, calc(100vw - 32px));
   }
-  .timeline-filter-menu button { min-height: 44px; padding: 10px; font-size: 9px; }
+  .timeline-filter-menu button { width: 58px; min-height: 52px; padding: 10px; font-size: 9px; }
+  .timeline-filter-menu .timeline-filter-icon { width: 21px; height: 21px; }
   .speed-control { grid-area: speed; margin-left: 0; }
   .speed-toggle {
     min-width: 86px;
