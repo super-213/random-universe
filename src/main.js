@@ -60,7 +60,9 @@ let createMergerGravityField;
 let createStellarGravityState;
 let blackHoleEvaporationExponent;
 let blackHoleMassFromSimulation;
+let selectBlackHoleMergerPair;
 let selectBlackHoleProgenitors;
+let orbitalAngleAt;
 let buildCivilizationSimulationAsync;
 let civilizationSnapshotAt;
 let deriveCivilizationRuntime;
@@ -493,7 +495,9 @@ function loadExplorer() {
       createStellarGravityState,
       blackHoleEvaporationExponent,
       blackHoleMassFromSimulation,
+      selectBlackHoleMergerPair,
       selectBlackHoleProgenitors,
+      orbitalAngleAt,
       buildCivilizationSimulationAsync,
       civilizationSnapshotAt,
       deriveCivilizationRuntime,
@@ -585,12 +589,17 @@ function addBlackHoleRemnant({
   random,
   massSolar,
   birthAt,
+  visibleAt = birthAt,
+  originEventId = null,
+  formationDuration = originEventId ? 8 : 12,
   sourceIndex = null,
-  isCentral = false,
-  originEventId = null
+  anchorSourceIndices = null,
+  anchorWeights = null,
+  positionOffset = null,
+  isCentral = false
 }) {
   const massScale = THREE.MathUtils.clamp((Math.log10(massSolar) - .6) / 8.4, 0, 1);
-  const baseScale = isCentral ? .9 : .3 + massScale * .34;
+  const baseScale = blackHoleBaseScale(massSolar, isCentral);
   const hole = createBlackHoleVisual({
     color: isCentral ? 0xffc996 : (random() > .35 ? 0xffb77c : 0xb9d7ff),
     tilt: randomBetween(random, -.38, .38),
@@ -638,10 +647,15 @@ function addBlackHoleRemnant({
   Object.assign(hole.userData, {
     baseScale,
     birthAt,
+    visibleAt,
+    formationDuration,
     evaporationAt: cosmicYearsToTimelinePosition(10 ** evaporationExponent, universe),
     evaporationExponent,
     massSolar,
     sourceIndex,
+    anchorSourceIndices,
+    anchorWeights,
+    positionOffset,
     isCentral,
     originEventId,
     accretionStrength: isCentral
@@ -654,6 +668,61 @@ function addBlackHoleRemnant({
   blackHoleRemnants.push(hole);
   remnantGroup.add(hole);
   return hole;
+}
+
+function blackHoleBaseScale(massSolar, isCentral = false) {
+  if (isCentral) return .9;
+  const massScale = THREE.MathUtils.clamp((Math.log10(massSolar) - .6) / 8.4, 0, 1);
+  return .3 + massScale * .34;
+}
+
+function blackHoleDisplayScaleAt(hole, timelinePosition) {
+  const { baseScale, evaporationAt } = hole.userData;
+  const remaining = 1 - THREE.MathUtils.smoothstep(
+    timelinePosition,
+    evaporationAt - 24,
+    evaporationAt
+  );
+  return baseScale * (.18 + .82 * Math.cbrt(Math.max(0, remaining)));
+}
+
+function stellarPositionAt(sourceIndex, timelinePosition) {
+  if (!Number.isInteger(sourceIndex)) return new THREE.Vector3();
+  const offset = sourceIndex * 3;
+  const position = new THREE.Vector3(
+    originalGalaxyPositions[offset],
+    originalGalaxyPositions[offset + 1],
+    originalGalaxyPositions[offset + 2]
+  );
+  const axis = new THREE.Vector3(
+    stellarGravityState.axes[offset],
+    stellarGravityState.axes[offset + 1],
+    stellarGravityState.axes[offset + 2]
+  );
+  return position.applyAxisAngle(
+    axis,
+    orbitalAngleAt(timelinePosition, stellarGravityState.orbitRates[sourceIndex])
+  );
+}
+
+function blackHolePositionAt(hole, timelinePosition) {
+  const { anchorSourceIndices, anchorWeights, isCentral, positionOffset, sourceIndex } = hole.userData;
+  if (isCentral) return new THREE.Vector3();
+  let position;
+  if (anchorSourceIndices?.length) {
+    const totalWeight = anchorWeights?.reduce((sum, weight) => sum + weight, 0)
+      || anchorSourceIndices.length;
+    position = anchorSourceIndices.reduce((center, anchorIndex, index) => {
+      const weight = anchorWeights?.[index] ?? 1;
+      return center.addScaledVector(stellarPositionAt(anchorIndex, timelinePosition), weight / totalWeight);
+    }, new THREE.Vector3());
+  } else if (Number.isInteger(sourceIndex)) {
+    position = stellarPositionAt(sourceIndex, timelinePosition);
+  } else {
+    position = hole.position.clone();
+  }
+  if (positionOffset) position.add(new THREE.Vector3().fromArray(positionOffset));
+  return position;
 }
 
 function disposeGroup(group) {
@@ -1589,12 +1658,12 @@ function buildCosmicEvents(starPositions) {
     },
     {
       type: 'stellar-black-hole-merger', visual: 'black-hole-merger', label: '双黑洞合并',
-      message: '时空啁啾达到峰值，引力波波前穿过局部星域（形变已视觉放大）', preferCenter: true,
+      message: '两颗既有黑洞近距离相遇并被彼此引力俘获，旋近啁啾达到峰值', preferCenter: true,
       start: 616 + random() * 18, duration: 38, persistUntil: persistentEpochEnd, persistenceFadeDuration: 24, color: '#c897ff', repeatRate: .36, maximumOccurrences: 2
     },
     {
       type: 'late-black-hole-merger', visual: 'black-hole-merger', label: '孤立黑洞捕获合并',
-      message: '漫长引力散射后完成并合，残余黑洞在阻尼振铃中反冲', preferCenter: true,
+      message: '两个存续至简并时代的黑洞近遇后被引力束缚，最终完成并合', preferCenter: true,
       start: 872 + random() * 18, duration: 42, persistUntil: Math.min(eventBoundary, remapEventStart(950)), persistenceFadeDuration: 18, color: '#9bb8ff', repeatRate: .14, maximumOccurrences: 2
     }
   ].filter((event) => (!event.requiresCentralBlackHole || universe.hasCentralBlackHole)
@@ -1904,12 +1973,99 @@ function buildCosmicEvents(starPositions) {
     return { waveRadius, waveAmplitude, indices, distances, transverse, polarities };
   };
 
-  schedule.forEach((data, index) => {
+  schedule.forEach((scheduledData, index) => {
+    let data = scheduledData;
+    let mergerPair = null;
+    let mergerAnchors = null;
+    if (data.visual === 'black-hole-merger') {
+      const candidates = blackHoleRemnants.map((hole, holeIndex) => ({
+        id: hole.userData.originEventId || `primordial-remnant-${holeIndex}`,
+        hole,
+        birthAt: hole.userData.birthAt,
+        evaporationAt: hole.userData.evaporationAt,
+        consumedAt: hole.userData.handoffAt ?? hole.userData.consumedAt,
+        isCentral: hole.userData.isCentral,
+        massSolar: hole.userData.massSolar,
+        position: blackHolePositionAt(hole, data.start).toArray()
+      }));
+      mergerPair = selectBlackHoleMergerPair(candidates, {
+        at: data.start,
+        maximumSeparation: data.type === 'late-black-hole-merger' ? 8.2 : 5.4
+      });
+      // A scheduled narrative beat is discarded when the extant compact-object
+      // population has no close encounter. This keeps the event causal rather
+      // than manufacturing a binary merely because the timeline reached a date.
+      if (!mergerPair) return;
+
+      const pairMasses = [mergerPair.left.massSolar, mergerPair.right.massSolar];
+      const totalMass = pairMasses[0] + pairMasses[1];
+      const center = new THREE.Vector3()
+        .fromArray(mergerPair.left.position)
+        .multiplyScalar(pairMasses[0] / totalMass)
+        .addScaledVector(
+          new THREE.Vector3().fromArray(mergerPair.right.position),
+          pairMasses[1] / totalMass
+        );
+      const anchorEntries = [mergerPair.left.hole, mergerPair.right.hole].flatMap((hole) => {
+        const anchors = hole.userData.anchorSourceIndices;
+        const weights = hole.userData.anchorWeights;
+        if (!anchors?.length) {
+          return Number.isInteger(hole.userData.sourceIndex)
+            ? [{ index: hole.userData.sourceIndex, weight: hole.userData.massSolar }]
+            : [];
+        }
+        const existingTotal = weights?.reduce((sum, weight) => sum + weight, 0) || anchors.length;
+        return anchors.map((anchorIndex, anchorIndexInHole) => ({
+          index: anchorIndex,
+          weight: (weights?.[anchorIndexInHole] ?? 1) / existingTotal * hole.userData.massSolar
+        }));
+      });
+      const combinedAnchors = new Map();
+      anchorEntries.forEach(({ index: anchorIndex, weight }) => {
+        combinedAnchors.set(anchorIndex, (combinedAnchors.get(anchorIndex) || 0) + weight);
+      });
+      mergerAnchors = {
+        indices: Array.from(combinedAnchors.keys()),
+        weights: Array.from(combinedAnchors.values())
+      };
+      data = {
+        ...data,
+        blackHoleMasses: pairMasses,
+        triggerSeparation: mergerPair.separation,
+        message: `两颗已存在的黑洞相距 ${mergerPair.separation.toFixed(2)} 个星系尺度单位，近遇后被彼此引力俘获`,
+        mergerStartScales: [
+          blackHoleDisplayScaleAt(mergerPair.left.hole, data.start),
+          blackHoleDisplayScaleAt(mergerPair.right.hole, data.start)
+        ],
+        mergerStartOffsets: [
+          new THREE.Vector3().fromArray(mergerPair.left.position).sub(center).toArray(),
+          new THREE.Vector3().fromArray(mergerPair.right.position).sub(center).toArray()
+        ],
+        mergerAnchorSourceIndices: mergerAnchors.indices,
+        mergerAnchorWeights: mergerAnchors.weights
+      };
+      data.simulation = createTransientSimulation(data, universe, index);
+      data.mergerRemnantScale = blackHoleBaseScale(data.simulation.remnantMass);
+      data.gasRich = data.simulation.gasRich;
+      data.radiatedMassFraction = data.simulation.radiatedMassFraction;
+      data.recoilKms = data.simulation.recoilKms;
+    }
     const group = new THREE.Group();
-    const location = pickPosition(
-      data.preferCenter,
-      data.requiresLivingStar ? data.start + data.duration : null
-    );
+    const location = mergerPair
+      ? {
+          index: mergerAnchors.indices[0],
+          position: new THREE.Vector3()
+            .fromArray(mergerPair.left.position)
+            .multiplyScalar(mergerPair.left.massSolar / (mergerPair.left.massSolar + mergerPair.right.massSolar))
+            .addScaledVector(
+              new THREE.Vector3().fromArray(mergerPair.right.position),
+              mergerPair.right.massSolar / (mergerPair.left.massSolar + mergerPair.right.massSolar)
+            )
+        }
+      : pickPosition(
+          data.preferCenter,
+          data.requiresLivingStar ? data.start + data.duration : null
+        );
     group.position.copy(location.position);
     group.visible = false;
     cosmicEventGroup.add(group);
@@ -2156,17 +2312,20 @@ function buildCosmicEvents(starPositions) {
           color,
           tilt: randomBetween(random, -.28, .28),
           phase: random() * Math.PI * 2,
-          visualScale: 1.08
+          visualScale: 1
         });
         hole.userData.spinDirection = direction;
         return hole;
       };
       const orbitalPlane = new THREE.Group();
-      orbitalPlane.rotation.set(.76, .18, .24);
+      const usesExistingPair = Boolean(data.mergerStartOffsets);
+      if (!usesExistingPair) orbitalPlane.rotation.set(.76, .18, .24);
       const holeA = makeHole(0xffba70, 1);
       const holeB = makeHole(0xa7d7ff, -1);
       const remnantHole = makeHole(0xffd9ad, 1);
-      remnantHole.scale.setScalar(1.24);
+      holeA.scale.setScalar(data.mergerStartScales?.[0] ?? 1);
+      holeB.scale.setScalar(data.mergerStartScales?.[1] ?? 1);
+      remnantHole.scale.setScalar(data.mergerRemnantScale ?? 1);
       remnantHole.visible = false;
 
       const makeTrail = (color) => {
@@ -2229,7 +2388,13 @@ function buildCosmicEvents(starPositions) {
       const recoilTrail = new THREE.Line(recoilGeometry, new THREE.LineBasicMaterial({ color: 0xffd4aa, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
       const recoilVector = new THREE.Vector3(gaussianRandom(random), gaussianRandom(random) * .45, gaussianRandom(random)).normalize();
       group.add(waveDust, ...waveHalos, gasEcho, orbitalPlane, mergerGlow, recoilTrail);
-      group.userData.effect = { orbitalPlane, holeA, holeB, remnantHole, trailA, trailB, mergerGlow, gasEcho, waveHalos, wavefronts, waveDust, waveDirections, recoilTrail, recoilVector, gasRich: data.gasRich };
+      group.userData.effect = {
+        orbitalPlane, holeA, holeB, remnantHole, trailA, trailB,
+        mergerGlow, gasEcho, waveHalos, wavefronts, waveDust,
+        waveDirections, recoilTrail, recoilVector, gasRich: data.gasRich,
+        mergerStartOffsets: data.mergerStartOffsets,
+        remnantScale: data.mergerRemnantScale
+      };
     }
 
     const consequences = deriveConsequences(data, location);
@@ -2256,6 +2421,13 @@ function buildCosmicEvents(starPositions) {
     );
     const id = `${data.type}-${index}-${universe.seed}`;
     const blackHoleMass = blackHoleMassFromSimulation(data.simulation);
+    if (mergerPair) {
+      [mergerPair.left.hole, mergerPair.right.hole].forEach((hole) => {
+        hole.userData.handoffAt = data.start;
+        hole.userData.consumedAt = consequences.impactAt;
+        hole.userData.mergerEventId = id;
+      });
+    }
     const sourceDestroyed = profile.sourceDim <= .15
       && data.visual !== 'black-hole-merger';
     if (sourceDestroyed) {
@@ -2276,11 +2448,25 @@ function buildCosmicEvents(starPositions) {
       // both sides of the event instead of inventing it in the black-hole era.
       data.persistUntil = data.start + data.duration;
       data.persistenceFadeDuration = 8;
+      const persistentOffset = mergerPair
+        ? group.userData.effect.recoilVector.clone().multiplyScalar(THREE.MathUtils.clamp(
+            (data.simulation?.recoilKms || data.recoilKms || 500) / 720,
+            .22,
+            2.2
+          )).toArray()
+        : null;
       addBlackHoleRemnant({
         random,
         massSolar: blackHoleMass,
         birthAt: consequences.impactAt,
-        sourceIndex: location.index,
+        visibleAt: mergerPair
+          ? data.start + data.duration + data.persistenceFadeDuration
+          : consequences.impactAt,
+        formationDuration: mergerPair ? 0 : 8,
+        sourceIndex: mergerPair ? null : location.index,
+        anchorSourceIndices: mergerPair ? mergerAnchors.indices : null,
+        anchorWeights: mergerPair ? mergerAnchors.weights : null,
+        positionOffset: persistentOffset,
         originEventId: id
       });
     }

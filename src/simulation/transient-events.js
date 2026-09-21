@@ -263,10 +263,16 @@ export function createTransientSimulation(event, universe, eventIndex) {
 
   if (event.type === 'stellar-black-hole-merger' || event.type === 'late-black-hole-merger') {
     const late = event.type === 'late-black-hole-merger';
-    const massA = late ? logarithmicRandom(random, 2.7, 5.4) : randomBetween(random, 18, 86);
-    const massB = late
-      ? logarithmicRandom(random, 2.5, Math.log10(massA))
-      : randomBetween(random, 7, Math.min(70, massA));
+    const suppliedMasses = event.blackHoleMasses
+      ?.filter(Number.isFinite)
+      .map((mass) => Math.max(2.5, mass))
+      .sort((left, right) => right - left);
+    const massA = suppliedMasses?.[0]
+      ?? (late ? logarithmicRandom(random, 2.7, 5.4) : randomBetween(random, 18, 86));
+    const massB = suppliedMasses?.[1]
+      ?? (late
+        ? logarithmicRandom(random, 2.5, Math.log10(massA))
+        : randomBetween(random, 7, Math.min(70, massA)));
     const totalMass = massA + massB;
     const symmetricMassRatio = massA * massB / (totalMass * totalMass);
     const spinMagnitudeA = randomBetween(random, 0, .94);

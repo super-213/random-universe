@@ -36,3 +36,42 @@ export function blackHoleEvaporationExponent(massSolar, maximumExponent = 100) {
   // central black hole rather than forcing every compact object to vanish at once.
   return clamp(67 + 3 * Math.log10(mass / 10), 64, maximumExponent);
 }
+
+export function selectBlackHoleMergerPair(candidates, {
+  at,
+  maximumSeparation,
+  allowCentral = false
+}) {
+  if (!Array.isArray(candidates) || candidates.length < 2) return null;
+
+  const available = candidates.filter((candidate) => (
+    candidate
+    && Number.isFinite(candidate.birthAt)
+    && candidate.birthAt < at
+    && (!Number.isFinite(candidate.evaporationAt) || candidate.evaporationAt > at)
+    && (!Number.isFinite(candidate.consumedAt) || candidate.consumedAt > at)
+    && (allowCentral || !candidate.isCentral)
+    && Number.isFinite(candidate.position?.[0])
+    && Number.isFinite(candidate.position?.[1])
+    && Number.isFinite(candidate.position?.[2])
+  ));
+  let closest = null;
+
+  for (let leftIndex = 0; leftIndex < available.length - 1; leftIndex++) {
+    const left = available[leftIndex];
+    for (let rightIndex = leftIndex + 1; rightIndex < available.length; rightIndex++) {
+      const right = available[rightIndex];
+      const separation = Math.hypot(
+        left.position[0] - right.position[0],
+        left.position[1] - right.position[1],
+        left.position[2] - right.position[2]
+      );
+      if (separation > maximumSeparation) continue;
+      if (!closest || separation < closest.separation) {
+        closest = { left, right, separation };
+      }
+    }
+  }
+
+  return closest;
+}

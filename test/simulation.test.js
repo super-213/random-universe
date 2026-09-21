@@ -31,6 +31,7 @@ import {
 import {
   blackHoleEvaporationExponent,
   blackHoleMassFromSimulation,
+  selectBlackHoleMergerPair,
   selectBlackHoleProgenitors
 } from '../src/simulation/compact-objects.js';
 import { expandEventSchedule } from '../src/simulation/event-occurrence.js';
@@ -873,6 +874,21 @@ test('black-hole recoil vanishes in the exactly symmetric limit', () => {
   }), 0);
 });
 
+test('black-hole merger physics uses the selected extant objects', () => {
+  const universe = createUniverse('EXTANTBHMERGER01');
+  const simulation = createTransientSimulation({
+    type: 'stellar-black-hole-merger',
+    blackHoleMasses: [12, 37]
+  }, universe, 4);
+
+  assert.equal(simulation.massA, 37);
+  assert.equal(simulation.massB, 12);
+  assert.ok(Math.abs(
+    simulation.remnantMass
+      - (simulation.massA + simulation.massB) * (1 - simulation.radiatedMassFraction)
+  ) < 1e-9);
+});
+
 test('outer galactic potential approaches a flat rotation curve', () => {
   const universe = createUniverse('ORBT-FLAT-0000-0001');
   const positions = new Float32Array([8, 0, 0, 16, 0, 0]);
@@ -920,4 +936,27 @@ test('more massive black holes evaporate later without exceeding the universe ce
   assert.ok(intermediate > stellar);
   assert.ok(central > intermediate);
   assert.ok(central <= 100);
+});
+
+test('black-hole mergers select an already existing close pair', () => {
+  const pair = selectBlackHoleMergerPair([
+    { id: 'old-a', birthAt: 410, evaporationAt: 900, position: [1, 0, 0] },
+    { id: 'old-b', birthAt: 430, evaporationAt: 910, position: [1.7, .1, 0] },
+    { id: 'far', birthAt: 390, evaporationAt: 920, position: [8, 0, 0] },
+    { id: 'future', birthAt: 650, evaporationAt: 940, position: [1.2, 0, 0] },
+    { id: 'used', birthAt: 380, evaporationAt: 940, consumedAt: 600, position: [1.05, 0, 0] }
+  ], { at: 620, maximumSeparation: 2 });
+
+  assert.equal(pair.left.id, 'old-a');
+  assert.equal(pair.right.id, 'old-b');
+  assert.ok(pair.separation < 1);
+});
+
+test('black-hole mergers do not manufacture a pair outside capture range', () => {
+  const pair = selectBlackHoleMergerPair([
+    { id: 'a', birthAt: 410, evaporationAt: 900, position: [0, 0, 0] },
+    { id: 'b', birthAt: 430, evaporationAt: 910, position: [6, 0, 0] }
+  ], { at: 620, maximumSeparation: 2 });
+
+  assert.equal(pair, null);
 });

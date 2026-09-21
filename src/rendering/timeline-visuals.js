@@ -30,6 +30,30 @@ const pulsarWorldQuaternion = new THREE.Quaternion();
 const pulsarWorldPosition = new THREE.Vector3();
 const pulsarBeamAxis = new THREE.Vector3();
 const pulsarViewDirection = new THREE.Vector3();
+const mergerOrbitAxis = new THREE.Vector3(0, 1, 0);
+const mergerTrailPoint = new THREE.Vector3();
+
+function eventCenterFromStars(event, positionArray) {
+  const indices = event.mergerAnchorSourceIndices;
+  const weights = event.mergerAnchorWeights;
+  if (indices?.length) {
+    const totalWeight = weights?.reduce((sum, weight) => sum + weight, 0) || indices.length;
+    return indices.reduce((center, sourceIndex, index) => {
+      const offset = sourceIndex * 3;
+      const weight = (weights?.[index] ?? 1) / totalWeight;
+      center.x += positionArray[offset] * weight;
+      center.y += positionArray[offset + 1] * weight;
+      center.z += positionArray[offset + 2] * weight;
+      return center;
+    }, { x: 0, y: 0, z: 0 });
+  }
+  const sourceOffset = event.sourceIndex * 3;
+  return {
+    x: positionArray[sourceOffset],
+    y: positionArray[sourceOffset + 1],
+    z: positionArray[sourceOffset + 2]
+  };
+}
 
 export function updateEpochVisuals(position, context) {
   const {
@@ -237,12 +261,7 @@ export function updateEpochVisuals(position, context) {
     colorArray[i + 2] = originalGalaxyColors[i + 2] * alive * born * (1 + young * .95);
   }
   cosmicEvents.forEach((event) => {
-    const sourceOffset = event.sourceIndex * 3;
-    const center = {
-      x: positionArray[sourceOffset],
-      y: positionArray[sourceOffset + 1],
-      z: positionArray[sourceOffset + 2]
-    };
+    const center = eventCenterFromStars(event, positionArray);
     event.group.position.set(center.x, center.y, center.z);
     if (event.visual === 'black-hole-merger') {
       applyMergerGravity(position, positionArray, colorArray, event, center);
@@ -339,11 +358,11 @@ export function updateEpochVisuals(position, context) {
   // visuals to their final transformed host position so a collapsing or
   // unbinding galaxy cannot slide away from its black-hole remnant.
   cosmicEvents.forEach((event) => {
-    const sourceOffset = event.sourceIndex * 3;
+    const center = eventCenterFromStars(event, positionArray);
     event.group.position.set(
-      positionArray[sourceOffset],
-      positionArray[sourceOffset + 1],
-      positionArray[sourceOffset + 2]
+      center.x,
+      center.y,
+      center.z
     );
   });
   clickableStars.geometry.attributes.position.needsUpdate = true;
@@ -377,7 +396,8 @@ export function updateEpochVisuals(position, context) {
     && position >= remnantDynamics.firstBirthAt
     && position < remnantFadeEnd;
   const blackHolesVisible = outcomeVisibility > .001 && blackHoleRemnants.some((hole) => (
-    position >= hole.userData.birthAt
+    position >= (hole.userData.visibleAt ?? hole.userData.birthAt)
+      && position < (hole.userData.handoffAt ?? Infinity)
       && position <= hole.userData.evaporationAt + 7.5
   ));
   remnantGroup.visible = (remnantsVisible || blackHolesVisible) && mode === 'explorer';
@@ -477,7 +497,18 @@ export function updateEpochVisuals(position, context) {
 
   blackHoleRemnants.forEach((hole) => {
     const data = hole.userData;
-    if (!data.isCentral && Number.isInteger(data.sourceIndex)) {
+    if (!data.isCentral && data.anchorSourceIndices?.length) {
+      const totalWeight = data.anchorWeights?.reduce((sum, weight) => sum + weight, 0)
+        || data.anchorSourceIndices.length;
+      hole.position.set(0, 0, 0);
+      data.anchorSourceIndices.forEach((sourceIndex, index) => {
+        const sourceOffset = sourceIndex * 3;
+        const weight = (data.anchorWeights?.[index] ?? 1) / totalWeight;
+        hole.position.x += positionArray[sourceOffset] * weight;
+        hole.position.y += positionArray[sourceOffset + 1] * weight;
+        hole.position.z += positionArray[sourceOffset + 2] * weight;
+      });
+    } else if (!data.isCentral && Number.isInteger(data.sourceIndex)) {
       const sourceOffset = data.sourceIndex * 3;
       hole.position.set(
         positionArray[sourceOffset],
@@ -485,7 +516,20 @@ export function updateEpochVisuals(position, context) {
         positionArray[sourceOffset + 2]
       );
     }
+    if (!data.isCentral && data.positionOffset) {
+      hole.position.x += data.positionOffset[0];
+      hole.position.y += data.positionOffset[1];
+      hole.position.z += data.positionOffset[2];
+    }
     const born = THREE.MathUtils.smoothstep(position, data.birthAt, data.birthAt + 7);
+    const formationDuration = Math.max(0, data.formationDuration ?? 12);
+    const formed = formationDuration === 0
+      ? 1
+      : THREE.MathUtils.smoothstep(
+          position,
+          data.visibleAt ?? data.birthAt,
+          (data.visibleAt ?? data.birthAt) + formationDuration
+        );
     const remaining = 1 - THREE.MathUtils.smoothstep(position, data.evaporationAt - 24, data.evaporationAt);
     const lateEvaporation = THREE.MathUtils.smoothstep(position, data.evaporationAt - 15, data.evaporationAt);
     const isolationStart = Math.max(data.birthAt + 12, stellarEnd - 50);
@@ -504,16 +548,19 @@ export function updateEpochVisuals(position, context) {
     const pulse = pulseDistance < pulseWindow ? Math.sin((1 - pulseDistance / pulseWindow) * Math.PI / 2) : 0;
     hole.visible = outcomeVisibility > .001
       && mode === 'explorer'
-      && position >= data.birthAt
+      && position >= (data.visibleAt ?? data.birthAt)
+      && position < (data.handoffAt ?? Infinity)
       && position <= data.evaporationAt + pulseWindow;
     const dawnMaturity = data.isCentral
       ? THREE.MathUtils.smoothstep(position, data.birthAt, STELLAR_DAWN_END + 18)
       : 1;
     const massScale = data.baseScale
       * THREE.MathUtils.lerp(.28, 1, dawnMaturity)
-      * (.18 + .82 * Math.cbrt(Math.max(0, remaining)));
+      * (.18 + .82 * Math.cbrt(Math.max(0, remaining)))
+      * (data.isCentral ? 1 : THREE.MathUtils.lerp(.12, 1, formed));
     hole.scale.setScalar(Math.max(.035, massScale));
     const accretionIntensity = born
+      * formed
       * dawnMaturity
       * THREE.MathUtils.lerp(data.accretionStrength, .24, isolated)
       * Math.sqrt(Math.max(0, remaining));
@@ -848,20 +895,34 @@ export function updateCosmicEvents(position, context) {
       const inspiral = Math.min(1, phase / mergePoint);
       const angleFor = (value) => Math.PI * 2 * (1.15 * value + 4.1 * Math.pow(value, 3));
       const radiusFor = (value) => .12 + 2.45 * Math.pow(1 - value, .72);
-      const angle = angleFor(inspiral);
-      const radius = radiusFor(inspiral);
-      effect.holeA.position.set(Math.cos(angle) * radius, Math.sin(angle) * radius, Math.sin(angle * .5) * .09);
-      effect.holeB.position.set(-Math.cos(angle) * radius, -Math.sin(angle) * radius, -Math.sin(angle * .5) * .09);
+      const positionFor = (side, value, target) => {
+        const initialOffset = effect.mergerStartOffsets?.[side > 0 ? 0 : 1];
+        if (!initialOffset) {
+          const angle = angleFor(value);
+          const radius = radiusFor(value);
+          return target.set(
+            side * Math.cos(angle) * radius,
+            side * Math.sin(angle) * radius,
+            side * Math.sin(angle * .5) * .09
+          );
+        }
+        target.fromArray(initialOffset);
+        const startRadius = Math.max(.001, target.length());
+        const endRadius = Math.min(.11, startRadius * .12);
+        const radius = THREE.MathUtils.lerp(startRadius, endRadius, Math.pow(value, .72));
+        return target.applyAxisAngle(mergerOrbitAxis, angleFor(value)).setLength(radius);
+      };
+      positionFor(1, inspiral, effect.holeA.position);
+      positionFor(-1, inspiral, effect.holeB.position);
 
       const updateTrail = (trail, side) => {
         const array = trail.geometry.attributes.position.array;
         for (let i = 0; i < 84; i++) {
           const historical = Math.max(0, inspiral - (83 - i) * (.0028 + inspiral * .0009));
-          const oldAngle = angleFor(historical);
-          const oldRadius = radiusFor(historical);
-          array[i * 3] = side * Math.cos(oldAngle) * oldRadius;
-          array[i * 3 + 1] = side * Math.sin(oldAngle) * oldRadius;
-          array[i * 3 + 2] = side * Math.sin(oldAngle * .5) * .09;
+          positionFor(side, historical, mergerTrailPoint);
+          array[i * 3] = mergerTrailPoint.x;
+          array[i * 3 + 1] = mergerTrailPoint.y;
+          array[i * 3 + 2] = mergerTrailPoint.z;
         }
         trail.geometry.attributes.position.needsUpdate = true;
         trail.material.opacity = merged ? 0 : THREE.MathUtils.smoothstep(phase, .02, .22) * .34;
@@ -871,7 +932,12 @@ export function updateCosmicEvents(position, context) {
 
       const postMerge = THREE.MathUtils.clamp((phase - mergePoint) / (1 - mergePoint), 0, 1);
       const ringdown = Math.exp(-postMerge * 7) * Math.sin(postMerge * 38);
-      effect.remnantHole.scale.set(1.24 + ringdown * .07, 1.24 - ringdown * .045, 1.24);
+      const remnantScale = effect.remnantScale ?? 1;
+      effect.remnantHole.scale.set(
+        remnantScale * (1 + ringdown * .056),
+        remnantScale * (1 - ringdown * .036),
+        remnantScale
+      );
       setBlackHoleIntensity(effect.holeA, .62 + inspiral * .38);
       setBlackHoleIntensity(effect.holeB, .62 + inspiral * .38);
       setBlackHoleIntensity(effect.remnantHole, .74 + Math.exp(-postMerge * 4) * .34, persistence);

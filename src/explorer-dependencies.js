@@ -24,8 +24,10 @@ export { createMergerGravityField, createStellarGravityState } from './simulatio
 export {
   blackHoleEvaporationExponent,
   blackHoleMassFromSimulation,
+  selectBlackHoleMergerPair,
   selectBlackHoleProgenitors
 } from './simulation/compact-objects.js';
+export { orbitalAngleAt } from './domain/orbital-motion.js';
 export {
   civilizationSnapshotAt,
   deriveCivilizationRuntime,
