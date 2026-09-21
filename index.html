@@ -399,9 +399,6 @@
             </div>
             <div class="speed-control is-collapsed" id="speed-control" data-timeline-control>
               <div class="speed-slider-panel" id="speed-slider-panel" aria-hidden="true">
-                <div class="speed-slider-heading">
-                  <output id="speed-panel-value" for="time-speed">10×</output>
-                </div>
                 <div class="speed-slider-track">
                   <input
                     id="time-speed"
@@ -414,12 +411,12 @@
                     aria-valuetext="10 倍"
                   />
                   <div class="speed-snap-points" aria-label="常用时间倍率">
-                    <button type="button" data-speed-exponent="-1" style="--speed-point:25%" aria-label="设置为 0.1 倍"><i></i><span>0.1×</span></button>
-                    <button type="button" data-speed-exponent="0" style="--speed-point:50%" aria-label="设置为 1 倍"><i></i><span>1×</span></button>
-                    <button type="button" data-speed-exponent="1" style="--speed-point:75%" aria-label="设置为 10 倍"><i></i><span>10×</span></button>
+                    <button type="button" data-speed-exponent="-1" data-speed-label-exponent="-1" style="--speed-point:25%" aria-label="设置为 0.1 倍"><i></i><span>0.1×</span></button>
+                    <button type="button" data-speed-exponent="0" data-speed-label-exponent="0" style="--speed-point:50%" aria-label="设置为 1 倍"><i></i><span>1×</span></button>
+                    <button type="button" data-speed-exponent="1" data-speed-label-exponent="1" style="--speed-point:75%" aria-label="设置为 10 倍"><i></i><span>10×</span></button>
                   </div>
-                  <span class="speed-bound speed-bound--min" aria-hidden="true">0.01×</span>
-                  <span class="speed-bound speed-bound--max" aria-hidden="true">100×</span>
+                  <span class="speed-bound speed-bound--min" data-speed-label-exponent="-2" aria-hidden="true">0.01×</span>
+                  <span class="speed-bound speed-bound--max" data-speed-label-exponent="2" aria-hidden="true">100×</span>
                 </div>
               </div>
               <button

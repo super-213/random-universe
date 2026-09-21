@@ -4291,10 +4291,9 @@ function updateTimeSpeed(exponent, snap = true) {
   speedInput.style.setProperty('--speed-progress', `${(nextExponent - speedExponentMin) / (speedExponentMax - speedExponentMin) * 100}%`);
   speedInput.setAttribute('aria-valuetext', `${label.slice(0, -1)} 倍`);
   $('#time-speed-value').textContent = label;
-  $('#speed-panel-value').textContent = label;
   updateSpeedToggleLabel();
-  speedControl.querySelectorAll('[data-speed-exponent]').forEach((marker) => {
-    marker.classList.toggle('is-active', Number(marker.dataset.speedExponent) === nextExponent);
+  speedControl.querySelectorAll('[data-speed-label-exponent]').forEach((marker) => {
+    marker.classList.toggle('is-active', Number(marker.dataset.speedLabelExponent) === nextExponent);
   });
 }
 

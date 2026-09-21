@@ -832,8 +832,6 @@ h1 strong {
   pointer-events: none;
   transition: opacity .14s ease, transform .2s cubic-bezier(.4,0,1,1), visibility 0s .2s;
 }
-.speed-slider-heading { display: flex; min-height: 16px; align-items: center; justify-content: flex-end; }
-.speed-slider-heading output { color: var(--accent); font: 600 13px "Space Mono", monospace; letter-spacing: 0; }
 .speed-slider-track { position: relative; height: 48px; margin-top: 6px; }
 #time-speed {
   --speed-progress: 75%;
@@ -880,7 +878,7 @@ h1 strong {
   padding: 0;
   border: 0;
   background: transparent;
-  color: rgba(241,238,231,.4);
+  color: var(--ink);
   cursor: pointer;
   font: 600 9px "Space Mono", monospace;
   transform: translateX(-50%);
@@ -888,12 +886,13 @@ h1 strong {
 }
 .speed-snap-points button i { display: block; width: 4px; height: 4px; margin: 0 auto 6px; border: 1px solid rgba(241,238,231,.42); border-radius: 50%; background: #050508; transition: background .15s ease, border-color .15s ease, box-shadow .15s ease, transform .15s ease; }
 .speed-snap-points button:hover,
-.speed-snap-points button:focus-visible,
-.speed-snap-points button.is-active { color: var(--ink); }
+.speed-snap-points button:focus-visible { color: var(--ink); }
+.speed-snap-points button.is-active { color: var(--accent); }
 .speed-snap-points button:hover i,
 .speed-snap-points button:focus-visible i,
 .speed-snap-points button.is-active i { border-color: var(--accent); background: var(--accent); box-shadow: 0 0 8px rgba(216,255,95,.7); transform: scale(1.25); }
-.speed-bound { position: absolute; top: 35px; color: rgba(241,238,231,.34); font: 500 8px "Space Mono", monospace; }
+.speed-bound { position: absolute; top: 35px; color: var(--ink); font: 500 8px "Space Mono", monospace; }
+.speed-bound.is-active { color: var(--accent); }
 .speed-bound--min { left: 0; }
 .speed-bound--max { right: 0; }
 .timeline-event-detail {
