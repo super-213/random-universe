@@ -811,6 +811,7 @@ function buildLocalGroupMap() {
 function buildUniverseObject() {
   disposeGroup(universeGroup);
   const random = createSeededRandom(universe.seed);
+  const compactViewport = compactCivilizationLayout.matches;
 
   const count = Math.min(10500, Math.floor(5200 + universe.stars * 900));
   const positions = new Float32Array(count * 3);
@@ -827,7 +828,7 @@ function buildUniverseObject() {
     positions[i * 3 + 1] = radius * Math.cos(phi) * 0.82;
     positions[i * 3 + 2] = radius * Math.sin(phi) * Math.sin(theta);
     const color = base.clone().lerp(warm, Math.pow(random(), 2.3));
-    const brightness = 0.45 + random() * 0.7;
+    const brightness = (0.58 + random() * 0.78) * (compactViewport ? 1.16 : 1);
     colors[i * 3] = color.r * brightness;
     colors[i * 3 + 1] = color.g * brightness;
     colors[i * 3 + 2] = color.b * brightness;
@@ -839,7 +840,16 @@ function buildUniverseObject() {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-  const material = new THREE.PointsMaterial({ size: 0.065, map: getPointTexture(), alphaTest: .015, vertexColors: true, transparent: true, opacity: 0.86, depthWrite: false, blending: THREE.AdditiveBlending });
+  const material = new THREE.PointsMaterial({
+    size: compactViewport ? .105 : .075,
+    map: getPointTexture(),
+    alphaTest: compactViewport ? .004 : .008,
+    vertexColors: true,
+    transparent: true,
+    opacity: compactViewport ? 1 : .96,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+  });
   const points = new THREE.Points(geometry, material);
   universeGroup.add(points);
 
