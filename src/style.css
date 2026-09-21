@@ -705,19 +705,21 @@ h1 strong {
 .timeline-tool-button:hover { color: var(--ink); border-color: rgba(241,238,231,.28); }
 .timeline-tool-button:active { transform: scale(.96); }
 .timeline-tool-button.is-active { color: var(--accent); border-color: rgba(216,255,95,.4); background: rgba(216,255,95,.07); }
-.ship-highlight-toggle { display: inline-flex; align-items: center; gap: 6px; }
-.ship-highlight-toggle::before {
-  width: 5px;
-  height: 5px;
-  border: 1px solid currentColor;
-  border-radius: 50%;
-  content: '';
+.ship-highlight-toggle { display: inline-grid; place-items: center; width: 30px; padding: 6px; }
+.ship-highlight-icon {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.45;
   opacity: .72;
-  transition: background .2s ease, box-shadow .2s ease, opacity .2s ease;
+  transition: filter .2s ease, opacity .2s ease, transform .2s ease;
 }
-.ship-highlight-toggle.is-active::before {
-  background: var(--accent);
-  box-shadow: 0 0 9px rgba(216,255,95,.9);
+.ship-highlight-toggle:hover .ship-highlight-icon { opacity: 1; transform: translate(1px, -1px); }
+.ship-highlight-toggle.is-active .ship-highlight-icon {
+  filter: drop-shadow(0 0 4px rgba(216,255,95,.9));
   opacity: 1;
 }
 .timeline-filter-menu {
@@ -1417,8 +1419,7 @@ h1 strong {
   .timeline-tool-button { min-height: 32px; padding: 6px 8px; font-size: 7px; }
   #toggle-timeline-snap { width: 34px; padding: 0; overflow: hidden; }
   #toggle-ship-highlight { width: 34px; padding: 0; justify-content: center; }
-  #toggle-ship-highlight span { display: none; }
-  #toggle-ship-highlight::before { width: 7px; height: 7px; }
+  #toggle-ship-highlight .ship-highlight-icon { width: 17px; height: 17px; }
   .timeline-filter-menu { right: 0; left: auto; }
   .speed-control { margin-left: 0; }
   .speed-toggle { min-width: 70px; min-height: 34px; padding: 6px 8px 6px 10px; }
@@ -1497,5 +1498,6 @@ h1 strong {
   .time-progress::before,
   .timeline-scrub-value,
   .speed-slider-panel,
-  .speed-toggle i { transition: none !important; }
+  .speed-toggle i,
+  .ship-highlight-icon { transition: none !important; }
 }
