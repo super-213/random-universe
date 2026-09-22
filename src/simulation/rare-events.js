@@ -865,20 +865,25 @@ export function createRareEventPlan({
       }));
     }
 
-    const protonDecayStart = cosmicYearsToTimelinePosition(10 ** randomBetween(random, 34.5, 36), universe);
-    add(createMarker({
-      universe,
-      type: 'proton-decay-era',
-      label: '质子衰变时代开始',
-      visual: 'signal-silence',
-      color: '#8490a6',
-      start: protonDecayStart,
-      duration: 30,
-      physicalDurationYears: 10 ** randomBetween(random, 32, 34),
-      sourceIndex: galacticCenterIndex,
-      message: '若质子不稳定，重子物质开始在极长时间尺度上转化为轻子与辐射',
-      outcome: '这是依赖粒子物理参数的条件分支；若质子稳定，白矮星与中子物质将沿另一条远未来路径存留'
-    }));
+    if (Number.isFinite(universe.protonDecayExponent)) {
+      const protonDecayStart = cosmicYearsToTimelinePosition(
+        10 ** universe.protonDecayExponent,
+        universe
+      );
+      add(createMarker({
+        universe,
+        type: 'proton-decay-era',
+        label: '质子衰变时代开始',
+        visual: 'signal-silence',
+        color: '#8490a6',
+        start: protonDecayStart,
+        duration: 30,
+        physicalDurationYears: 10 ** randomBetween(random, 32, 34),
+        sourceIndex: galacticCenterIndex,
+        message: '此宇宙采用质子衰变路径，重子物质开始在极长时间尺度上转化为轻子与辐射',
+        outcome: '白矮星与中子物质逐渐消失，因此不会再进入黑矮星超新星路径'
+      }));
+    }
 
     const evaporationStart = futurePosition(812 + random() * 22, universe);
     add(createMarker({
@@ -937,7 +942,7 @@ export function createRareEventPlan({
       }));
     }
 
-    if (whiteDwarfSource !== null) {
+    if (!Number.isFinite(universe.protonDecayExponent) && whiteDwarfSource !== null) {
       const blackDwarfExponent = randomBetween(random, 1080, 1120);
       const blackDwarfImpactAt = cosmicLogYearsToTimelinePosition(blackDwarfExponent, universe);
       add(createMarker({
@@ -955,7 +960,7 @@ export function createRareEventPlan({
         visualImpactAt: blackDwarfImpactAt - .25,
         sourceIndex: whiteDwarfSource,
         confidence: 'astrophysical-model',
-        message: '若质子长期稳定，量子隧穿可能让极冷黑矮星在超远未来重新点燃核反应并发生爆炸',
+        message: '此宇宙采用质子稳定路径，量子隧穿可能让极冷黑矮星在暗时代重新点燃核反应并发生爆炸',
         outcome: `事件被安排在约 10^${blackDwarfExponent.toFixed(0)} 年；其发生机制和时间尺度高度推测，不代表标准宇宙学的确定预言`
       }));
     }

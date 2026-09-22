@@ -78,6 +78,14 @@ export function deriveCosmicMilestones({
     40000,
     4e6
   );
+  const matterRadiationEqualityYears = THREE.MathUtils.clamp(
+    50000
+      * Math.pow(cmbTemperature / REFERENCE_CMB_TEMPERATURE, 6)
+      / Math.pow(expansionRate, 4)
+      * Math.pow(REFERENCE_MATTER_DENSITY / omegaMatter, 2),
+    5000,
+    recombinationYears * .85
+  );
   const firstStarsYears = THREE.MathUtils.clamp(
     1.8e8
       / Math.pow(structureEfficiency, .7)
@@ -89,6 +97,7 @@ export function deriveCosmicMilestones({
   const matureGalaxiesYears = THREE.MathUtils.clamp(firstStarsYears * 5.4, firstStarsYears * 1.8, 3.2e9);
   return {
     atomicBindingScale,
+    matterRadiationEqualityYears,
     recombinationYears,
     firstStarsYears,
     matureGalaxiesYears,
@@ -176,6 +185,10 @@ export function createUniverse(seed = generateSeedCode()) {
   ));
   const hue = randomBetween(random, 0.48, 0.76);
   const darkEnergy = darkEnergyModelForSeed(seedCode);
+  const farFutureRandom = createSeededRandom(seedCode, 6077);
+  const protonDecayExponent = farFutureRandom() < .5
+    ? randomBetween(farFutureRandom, 34.5, 49)
+    : Infinity;
   const cosmicMilestones = deriveCosmicMilestones({
     speed,
     fineStructure,
@@ -199,7 +212,7 @@ export function createUniverse(seed = generateSeedCode()) {
     stellarFormationEndExponent, lastStarDeathExponent, elements, stars, habitability, lifeProbability,
     civilizations, estimatedCivilizations, speciesCount, trackedSpeciesCount: speciesCount,
     lifetime, blackHoleEvaporationExponent, armCount, galaxyType,
-    hasCentralBlackHole, activeNucleus, hue, cosmicMilestones,
+    hasCentralBlackHole, activeNucleus, hue, cosmicMilestones, protonDecayExponent,
     presentAgeYears: cosmicMilestones.presentAgeYears, cosmicFate
   };
 }

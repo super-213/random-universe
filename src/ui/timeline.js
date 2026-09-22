@@ -22,7 +22,8 @@ const setStyle = (element, property, value) => {
 const timelineSegments = [
   [0, 18],
   [18, 55],
-  [55, 145],
+  [55, 115],
+  [115, 145],
   [145, 245],
   [245, 340],
   [340, 470]

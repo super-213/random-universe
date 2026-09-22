@@ -1,5 +1,6 @@
 const NORMAL_JOURNEY_SECONDS = 35 * 60;
 const SECONDS_PER_YEAR = 31557600;
+const MATTER_RADIATION_EQUALITY_POSITION = 115;
 const ULTRA_FUTURE_START = 950;
 const ASYMPTOTIC_FUTURE_START = 995;
 const ULTRA_FUTURE_END_EXPONENT = 1200;
@@ -16,6 +17,11 @@ export function cosmicLogYearsToTimelinePosition(exponent, universe) {
   const presentAgeYears = universe?.presentAgeYears || 1.38e10;
   const milestones = universe?.cosmicMilestones || {};
   const recombinationYears = milestones.recombinationYears || 380000;
+  const equalityYears = clamp(
+    milestones.matterRadiationEqualityYears || 50000,
+    180 / SECONDS_PER_YEAR * 1.01,
+    recombinationYears * .99
+  );
   const firstStarsYears = Math.max(recombinationYears * 1.1, milestones.firstStarsYears || 1.8e8);
   const matureGalaxiesYears = Math.max(firstStarsYears * 1.1, milestones.matureGalaxiesYears || 1e9);
   const clampedPresentYears = Math.max(matureGalaxiesYears * 1.1, presentAgeYears);
@@ -26,6 +32,7 @@ export function cosmicLogYearsToTimelinePosition(exponent, universe) {
     : Number.isFinite(numericExponent) ? Math.max(minimumExponent, numericExponent) : minimumExponent;
   const secondsExponent = targetExponent + Math.log10(SECONDS_PER_YEAR);
   const recombinationExponent = Math.log10(recombinationYears);
+  const equalityExponent = Math.log10(equalityYears);
   const firstStarsExponent = Math.log10(firstStarsYears);
   const matureGalaxiesExponent = Math.log10(matureGalaxiesYears);
   const presentExponent = Math.log10(clampedPresentYears);
@@ -34,13 +41,19 @@ export function cosmicLogYearsToTimelinePosition(exponent, universe) {
     if (secondsExponent < 0) return clamp((secondsExponent + 3) / 3, 0, 1) * 18;
     return 18 + clamp(secondsExponent / Math.log10(180), 0, 1) * 37;
   }
-  if (targetExponent < recombinationExponent) {
+  if (targetExponent < equalityExponent) {
     return 55 + clamp(
       (targetExponent - Math.log10(180 / SECONDS_PER_YEAR))
-        / (recombinationExponent - Math.log10(180 / SECONDS_PER_YEAR)),
+        / (equalityExponent - Math.log10(180 / SECONDS_PER_YEAR)),
       0,
       1
-    ) * 90;
+    ) * (MATTER_RADIATION_EQUALITY_POSITION - 55);
+  }
+  if (targetExponent < recombinationExponent) {
+    return MATTER_RADIATION_EQUALITY_POSITION
+      + (targetExponent - equalityExponent)
+        / (recombinationExponent - equalityExponent)
+        * (145 - MATTER_RADIATION_EQUALITY_POSITION);
   }
   if (targetExponent < firstStarsExponent) {
     return 145 + (targetExponent - recombinationExponent)
@@ -98,6 +111,11 @@ export function timelinePositionToCosmicLogYears(position, universe) {
   const target = clamp(Number(position) || 0, 0, 1000);
   const milestones = universe?.cosmicMilestones || {};
   const recombinationYears = milestones.recombinationYears || 380000;
+  const equalityYears = clamp(
+    milestones.matterRadiationEqualityYears || 50000,
+    180 / SECONDS_PER_YEAR * 1.01,
+    recombinationYears * .99
+  );
   const firstStarsYears = Math.max(recombinationYears * 1.1, milestones.firstStarsYears || 1.8e8);
   const matureGalaxiesYears = Math.max(firstStarsYears * 1.1, milestones.matureGalaxiesYears || 1e9);
   const presentAgeYears = Math.max(matureGalaxiesYears * 1.1, universe?.presentAgeYears || 1.38e10);
@@ -107,7 +125,21 @@ export function timelinePositionToCosmicLogYears(position, universe) {
 
   if (target < 18) return interpolateExponent(.001, 1, target / 18) - Math.log10(SECONDS_PER_YEAR);
   if (target < 55) return interpolateExponent(1, 180, (target - 18) / 37) - Math.log10(SECONDS_PER_YEAR);
-  if (target < 145) return interpolateExponent(180 / SECONDS_PER_YEAR, recombinationYears, (target - 55) / 90);
+  if (target < MATTER_RADIATION_EQUALITY_POSITION) {
+    return interpolateExponent(
+      180 / SECONDS_PER_YEAR,
+      equalityYears,
+      (target - 55) / (MATTER_RADIATION_EQUALITY_POSITION - 55)
+    );
+  }
+  if (target < 145) {
+    return interpolateExponent(
+      equalityYears,
+      recombinationYears,
+      (target - MATTER_RADIATION_EQUALITY_POSITION)
+        / (145 - MATTER_RADIATION_EQUALITY_POSITION)
+    );
+  }
   if (target < 245) return interpolateExponent(recombinationYears, firstStarsYears, (target - 145) / 100);
   if (target < 340) return interpolateExponent(firstStarsYears, matureGalaxiesYears, (target - 245) / 95);
   if (target < 470) return interpolateExponent(matureGalaxiesYears, presentAgeYears, (target - 340) / 130);
@@ -245,7 +277,8 @@ export function selectTimelineNarrative({
   }
   if (ascendedSpecies > 0) return { key: `ascended-${ascendedSpecies}`, time: label, text: `${ascendedSpecies} 个种群已转化为高维生命，脱离恒星与黑洞的普通物质演化` };
   if (position < 55) return { key: 'bang', time: 'T+0', text: '整个可观测区域处于超高温、高密度状态，空间本身在膨胀' };
-  if (position < 145) return { key: 'plasma', time: label, text: '光子在等离子体中不断散射，宇宙随膨胀持续冷却' };
+  if (position < MATTER_RADIATION_EQUALITY_POSITION) return { key: 'radiation-plasma', time: label, text: '辐射密度高于物质密度，光子在等离子体中频繁散射，宇宙随膨胀持续冷却' };
+  if (position < 145) return { key: 'matter-plasma', time: label, text: '物质密度已经超过辐射，结构增长加快；光子仍被自由电子散射，宇宙尚未透明' };
   if (position < 245) return { key: 'dark', time: label, text: '复合后宇宙变得透明；微弱云团表示中性气体密度，此时尚没有恒星光' };
   if (position < 270) return { key: 'stars-first-light', time: label, text: '最早的高密度气体云发生坍缩，第一代大质量恒星在少数区域点燃' };
   if (position < 312) return { key: 'stars-ionization', time: label, text: '年轻恒星的紫外辐射正在吹出电离泡，原星系仍处于成团与坍缩中' };
@@ -259,8 +292,8 @@ export function selectTimelineNarrative({
   if (position < stellarEnd) return { key: 'last-stars', time: label, text: '恒星形成已经停止，最后的低质量红矮星仍在极缓慢地消耗燃料' };
   if (position < 845) return { key: 'evaporation', time: label, text: '长期引力近遇持续重分配能量，少数残骸逐个逃离，极少数落向星系中心' };
   if (position < 950) return { key: 'holes', time: label, text: '黑洞通过霍金辐射缓慢蒸发' };
-  if (position < 995) return { key: 'ultra-future', time: label, text: '黑洞时代已经结束；极少数简并残骸仍可能经历高度推测的量子与引力事件' };
-  return { key: 'heatdeath', time: label, text: '最后的黑洞已经蒸发，残余光子持续红移并稀释，可用能量梯度趋近于零' };
+  if (position < 995) return { key: 'dark-era-events', time: label, text: '宇宙已进入暗时代并趋近热寂；仅在质子稳定路径中，极少数简并残骸仍可能发生高度推测的量子事件' };
+  return { key: 'heatdeath', time: label, text: '暗时代持续展开，残余光子不断红移并稀释，可用能量梯度渐近于零' };
 }
 
 export function cosmicTimeLabel(position, universe) {
@@ -282,10 +315,29 @@ export function cosmicTimeLabel(position, universe) {
   if (position < 55) return `T+${Math.max(1, Math.round(logLerp(1, 180, (position - 18) / 37)))} s`;
   const milestones = universe?.cosmicMilestones || {};
   const recombinationYears = milestones.recombinationYears || 380000;
+  const equalityYears = clamp(
+    milestones.matterRadiationEqualityYears || 50000,
+    180 / SECONDS_PER_YEAR * 1.01,
+    recombinationYears * .99
+  );
   const firstStarsYears = Math.max(recombinationYears * 1.1, milestones.firstStarsYears || 1.8e8);
   const matureGalaxiesYears = Math.max(firstStarsYears * 1.1, milestones.matureGalaxiesYears || 1e9);
   const presentAgeYears = Math.max(matureGalaxiesYears * 1.1, universe?.presentAgeYears || 1.38e10);
-  if (position < 145) return `T+${formatYears(logLerp(180 / 31557600, recombinationYears, (position - 55) / 90))}`;
+  if (position < MATTER_RADIATION_EQUALITY_POSITION) {
+    return `T+${formatYears(logLerp(
+      180 / SECONDS_PER_YEAR,
+      equalityYears,
+      (position - 55) / (MATTER_RADIATION_EQUALITY_POSITION - 55)
+    ))}`;
+  }
+  if (position < 145) {
+    return `T+${formatYears(logLerp(
+      equalityYears,
+      recombinationYears,
+      (position - MATTER_RADIATION_EQUALITY_POSITION)
+        / (145 - MATTER_RADIATION_EQUALITY_POSITION)
+    ))}`;
+  }
   if (position < 245) return `T+${formatYears(logLerp(recombinationYears, firstStarsYears, (position - 145) / 100))}`;
   if (position < 340) return `T+${formatYears(logLerp(firstStarsYears, matureGalaxiesYears, (position - 245) / 95))}`;
   if (position < 470) return `T+${formatYears(logLerp(matureGalaxiesYears, presentAgeYears, (position - 340) / 130))}`;

@@ -320,6 +320,8 @@ test('derived cosmic milestones remain ordered and react to generated constants'
   for (let index = 0; index < 1000; index++) {
     const universe = createUniverse(seedFor(index));
     const milestones = universe.cosmicMilestones;
+    assert.ok(milestones.matterRadiationEqualityYears > 180 / 31557600);
+    assert.ok(milestones.matterRadiationEqualityYears < milestones.recombinationYears);
     assert.ok(milestones.recombinationYears < milestones.firstStarsYears);
     assert.ok(milestones.firstStarsYears < milestones.matureGalaxiesYears);
     assert.ok(milestones.matureGalaxiesYears < milestones.presentAgeYears);
@@ -333,6 +335,10 @@ test('physical milestones and their timeline positions round-trip across the ear
   for (let index = 0; index < 100; index++) {
     const universe = createUniverse(seedFor(index));
     assert.ok(Math.abs(cosmicYearsToTimelinePosition(
+      universe.cosmicMilestones.matterRadiationEqualityYears,
+      universe
+    ) - 115) < 1e-8);
+    assert.ok(Math.abs(cosmicYearsToTimelinePosition(
       universe.cosmicMilestones.recombinationYears,
       universe
     ) - 145) < 1e-8);
@@ -345,7 +351,7 @@ test('physical milestones and their timeline positions round-trip across the ear
       universe
     ) - 340) < 1e-8);
     assert.ok(Math.abs(cosmicYearsToTimelinePosition(universe.presentAgeYears, universe) - 470) < 1e-8);
-    [0, 18, 55, 145, 245, 340, 390, 470, 520, 650, 845, 950].forEach((position) => {
+    [0, 18, 55, 115, 145, 245, 340, 390, 470, 520, 650, 845, 950].forEach((position) => {
       const years = timelinePositionToCosmicYears(position, universe);
       const roundTrip = cosmicYearsToTimelinePosition(years, universe);
       assert.ok(Math.abs(roundTrip - position) < 1e-5, `${position} round-tripped to ${roundTrip}`);
@@ -361,6 +367,9 @@ test('the heat-death timeline expands beyond black-hole evaporation in log-year 
   assert.equal(timelinePositionToCosmicLogYears(950, universe), universe.blackHoleEvaporationExponent);
   assert.equal(timelinePositionToCosmicLogYears(995, universe), 1200);
   assert.equal(timelinePositionToCosmicLogYears(1000, universe), Infinity);
+  const eraNames = erasForUniverse(universe).map((era) => era.name);
+  assert.ok(eraNames.includes('暗时代 · 热寂趋近'));
+  assert.equal(eraNames.includes('超远未来'), false);
 
   [100, 308, 1100, 1200, 1600, 5000].forEach((exponent) => {
     const position = cosmicLogYearsToTimelinePosition(exponent, universe);
@@ -438,6 +447,22 @@ test('early-era descriptions use each universe physical milestones', () => {
   assert.ok(second);
   assert.notEqual(erasForUniverse(first)[2].description, erasForUniverse(second)[2].description);
   assert.notEqual(erasForUniverse(first)[3].description, erasForUniverse(second)[3].description);
+  assert.equal(erasForUniverse(first)[3].name, '恒星时代 · 宇宙黎明');
+});
+
+test('proton decay and stable-proton futures are deterministic exclusive branches', () => {
+  const universes = Array.from({ length: 500 }, (_, index) => createUniverse(seedFor(index)));
+  const decayUniverses = universes.filter((universe) => Number.isFinite(universe.protonDecayExponent));
+  const stableUniverses = universes.filter((universe) => !Number.isFinite(universe.protonDecayExponent));
+  assert.ok(decayUniverses.length > 0);
+  assert.ok(stableUniverses.length > 0);
+  assert.ok(decayUniverses.every((universe) => (
+    universe.protonDecayExponent >= 34.5 && universe.protonDecayExponent <= 49
+  )));
+  assert.equal(
+    createUniverse(decayUniverses[0].seed).protonDecayExponent,
+    decayUniverses[0].protonDecayExponent
+  );
 });
 
 test('stellar dawn ignites deterministically from staggered local sites', () => {
@@ -741,6 +766,17 @@ test('rare observations are seeded and require simulated sources or causal precu
     const first = createRareEventPlan(input);
     const second = createRareEventPlan(input);
     assert.deepEqual(first, second);
+    const generatedTypes = new Set(first.map((event) => event.type));
+    if (universe.cosmicFate.type === 'heat-death') {
+      assert.equal(
+        generatedTypes.has('proton-decay-era'),
+        Number.isFinite(universe.protonDecayExponent)
+      );
+      assert.equal(
+        generatedTypes.has('proton-decay-era') && generatedTypes.has('black-dwarf-supernova'),
+        false
+      );
+    }
     if (first.length < rareEventTypes.length) foundIncompleteUniverse = true;
     first.forEach((event) => {
       seen.add(event.type);
@@ -787,10 +823,13 @@ test('rare observations are seeded and require simulated sources or causal precu
       } else if (['proton-decay-era', 'galactic-evaporation', 'hawking-final-burst', 'black-dwarf-supernova', 'last-observable-signal'].includes(event.type)) {
         assert.equal(universe.cosmicFate.type, 'heat-death');
         if (event.type === 'proton-decay-era') {
-          assert.ok(event.physicalStartYears >= 10 ** 34.5);
+          assert.ok(Math.abs(
+            Math.log10(event.physicalStartYears) - universe.protonDecayExponent
+          ) < 1e-8);
         } else if (event.type === 'hawking-final-burst' && !universe.hasCentralBlackHole) {
           assert.equal(population.remnantTypes[event.sourceIndex], 3);
         } else if (event.type === 'black-dwarf-supernova') {
+          assert.equal(Number.isFinite(universe.protonDecayExponent), false);
           assert.ok(event.physicalStartLogYears >= 1080);
           assert.ok(event.physicalStartLogYears <= 1120);
         }

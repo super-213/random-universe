@@ -39,7 +39,14 @@ export function updateUniverseData(universe) {
   $('#dark-energy-model-value').title = fate.modelDescription;
   $('#dark-energy-eos-value').textContent = `w₀ ${fate.w0.toFixed(2)} · wₐ ${fate.wa.toFixed(2)} · 有界 BA`;
   $('#vacuum-value').textContent = formatVacuumState(fate);
+  $('#baryon-fate-value').textContent = Number.isFinite(universe.protonDecayExponent)
+    ? (fate.outcomeExponent <= universe.protonDecayExponent
+        ? '质子衰变路径 · 终局前未发生'
+        : `质子衰变路径 · 约 10^${universe.protonDecayExponent.toFixed(1)} 年`)
+    : '质子稳定路径 · 黑矮星事件可发生';
   $('#lifetime-value').textContent = `${fate.label} · ${formatOutcomeTime(fate)}`;
+  const equalityLabel = $('#timeline-equality-label');
+  equalityLabel.title = `约 ${(universe.cosmicMilestones.matterRadiationEqualityYears / 1e4).toFixed(1)} 万年`;
   const stellarEnd = stellarEndTimelinePosition(universe);
   const stellarLabel = $('#timeline-stellar-label');
   const stellarEndReached = fate.type === 'heat-death' || stellarEnd < fate.onsetAt;

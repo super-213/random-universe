@@ -21,14 +21,13 @@ export const speciesColors = [
 
 export const eras = [
   { until: 55, name: '早期热大爆炸', description: '时间轴从大爆炸后 1 毫秒开始；高温粒子汤膨胀冷却，并在最初数分钟完成原初核合成。' },
-  { until: 145, name: '光子—等离子体时代', description: '原初核合成结束后，光子仍被自由电子频繁散射，直至复合使宇宙变得透明。' },
+  { until: 145, name: '光子—等离子体时代', description: '原初核合成结束后，宇宙先由辐射主导，经过物质—辐射平衡后转为物质主导，直至复合。' },
   { until: 245, name: '宇宙黑暗时代', description: '38 万年后宇宙变得透明，但第一代恒星尚未点亮。' },
-  { until: 340, name: '宇宙黎明', description: '约 1～2 亿年后，第一代恒星与星系开始形成并推动再电离。' },
-  { until: 650, name: '成熟恒星时代', description: '恒星、星系与重元素持续演化；生命与文明属于未证实的模型层。' },
+  { until: 340, name: '恒星时代 · 宇宙黎明', description: '恒星时代从第一代恒星点亮开始；其早期子阶段“宇宙黎明”包含初代星系形成与再电离。' },
+  { until: 650, name: '恒星时代', description: '恒星、星系与重元素持续演化；生命与文明属于未证实的模型层。' },
   { until: 845, name: '简并时代', description: '恒星残骸继续经历长期引力演化；质子是否稳定将决定重子物质的最终路径。' },
   { until: 950, name: '黑洞时代', description: '若霍金辐射的标准推断适用，孤立黑洞在极漫长时间中逐个蒸发。' },
-  { until: 995, name: '超远未来', description: '黑洞已经蒸发；时间轴继续展开到 10^1200 年，以容纳依赖质子稳定性的高度推测事件。' },
-  { until: 1001, name: '渐近暗时代', description: '时间坐标趋向无限远，辐射持续红移与稀释，可用能量梯度趋近于零。' }
+  { until: 1001, name: '暗时代 · 热寂趋近', description: '最后的黑洞已经蒸发；时间坐标趋向无限远，辐射持续红移与稀释，可用能量梯度趋近于零。' }
 ];
 
 function formatEraYears(years) {
@@ -39,12 +38,16 @@ function formatEraYears(years) {
 
 function earlyErasForUniverse(universe) {
   const milestones = universe?.cosmicMilestones || {};
+  const equalityYears = milestones.matterRadiationEqualityYears || 50000;
   const recombinationYears = milestones.recombinationYears || 380000;
   const firstStarsYears = milestones.firstStarsYears || 1.8e8;
   const matureGalaxiesYears = milestones.matureGalaxiesYears || 1e9;
   return [
     eras[0],
-    eras[1],
+    {
+      ...eras[1],
+      description: `宇宙先由辐射主导；约${formatEraYears(equalityYears)}时物质密度追平辐射，此后转为物质主导，并在${formatEraYears(recombinationYears)}左右完成复合。`
+    },
     {
       until: 245,
       name: '宇宙黑暗时代',
@@ -52,8 +55,8 @@ function earlyErasForUniverse(universe) {
     },
     {
       until: 340,
-      name: '宇宙黎明',
-      description: `第一代恒星从${formatEraYears(firstStarsYears)}左右开始形成，并持续推动再电离与星系组装；约${formatEraYears(matureGalaxiesYears)}后进入成熟恒星时代。`
+      name: '恒星时代 · 宇宙黎明',
+      description: `恒星时代从${formatEraYears(firstStarsYears)}左右第一代恒星点亮开始；宇宙黎明作为其早期子阶段，持续推动再电离与星系组装，约${formatEraYears(matureGalaxiesYears)}后进入成熟阶段。`
     }
   ];
 }
@@ -62,16 +65,23 @@ export function erasForUniverse(universe) {
   const fate = universe?.cosmicFate;
   const stellarEnd = cosmicYearsToTimelinePosition(10 ** universe.lastStarDeathExponent, universe);
   const earlyEras = earlyErasForUniverse(universe);
+  const degenerateEra = {
+    ...eras[5],
+    description: Number.isFinite(universe.protonDecayExponent)
+      ? `此宇宙采用质子衰变路径：约 10^${universe.protonDecayExponent.toFixed(1)} 年后，重子物质开始转化为轻子与辐射。`
+      : '此宇宙采用质子稳定路径：简并残骸可以长期存留，并可能在超远未来发生高度推测的黑矮星热核事件。'
+  };
   const stellarEra = {
     until: Math.min(stellarEnd, fate?.type === 'heat-death' ? stellarEnd : fate?.onsetAt ?? stellarEnd),
-    name: '成熟恒星时代',
+    name: '恒星时代',
     description: '恒星、星系与重元素持续演化；生命与文明属于未证实的模型层。'
   };
   if (!fate || fate.type === 'heat-death') {
     return [
       ...earlyEras,
       stellarEra,
-      ...eras.slice(5)
+      degenerateEra,
+      ...eras.slice(6)
     ];
   }
 
