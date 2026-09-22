@@ -661,7 +661,11 @@ test('rare observations are seeded and require simulated sources or causal precu
         id: 'stable-engineering', type: 'stellar-engineering', impactAt: 500,
         targetSpeciesIndex: 0, engineeringStable: true
       },
-      { id: 'known-signal', type: 'first-signal', impactAt: 490, targetSpeciesIndex: 0 }
+      { id: 'known-signal', type: 'first-signal', impactAt: 490, targetSpeciesIndex: 0 },
+      {
+        id: 'known-fleet', type: 'intergalactic-diaspora', impactAt: 540,
+        targetSpeciesIndex: 0, fleetSpeed: .32
+      }
     ];
     const input = {
       universe,
@@ -684,6 +688,15 @@ test('rare observations are seeded and require simulated sources or causal precu
       if (event.type === 'fast-radio-burst') {
         assert.equal(population.remnantTypes[event.sourceIndex], 2);
         assert.ok(population.deathAt[event.sourceIndex] <= event.start);
+      } else if (event.type === 'x-ray-binary-outburst') {
+        assert.ok([2, 3].includes(population.remnantTypes[event.sourceIndex]));
+        assert.ok(population.deathAt[event.sourceIndex] <= event.start);
+      } else if (event.type === 'pulsar-nulling') {
+        assert.equal(population.remnantTypes[event.sourceIndex], 2);
+        assert.ok(population.deathAt[event.sourceIndex] <= event.start);
+      } else if (event.type === 'white-dwarf-collision') {
+        assert.equal(population.remnantTypes[event.sourceIndex], 1);
+        assert.ok(population.deathAt[event.sourceIndex] <= event.start);
       } else if (event.type === 'gravitational-microlensing') {
         assert.ok(population.remnantTypes[event.sourceIndex] > 0);
         assert.ok(Number.isInteger(event.backgroundSourceIndex));
@@ -692,8 +705,26 @@ test('rare observations are seeded and require simulated sources or causal precu
         assert.ok(population.planetCounts[event.sourceIndex] >= 3);
       } else if (event.type === 'infrared-waste-heat') {
         assert.equal(event.sourceEventId, 'stable-engineering');
+      } else if (event.type === 'megastructure-occultation') {
+        assert.equal(event.sourceEventId, 'stable-engineering');
       } else if (event.type === 'civilization-signal-silence') {
         assert.equal(event.sourceEventId, 'known-signal');
+      } else if (['narrowband-signal-drift', 'optical-laser-beacon'].includes(event.type)) {
+        assert.equal(event.sourceEventId, 'known-signal');
+      } else if (event.type === 'relativistic-fleet-trail') {
+        assert.equal(event.sourceEventId, 'known-fleet');
+      } else if (event.type === 'planetary-impact') {
+        assert.equal(event.targetSpeciesIndex, 0);
+        assert.equal(event.targetNodeIndex, 0);
+      } else if (['runaway-greenhouse', 'snowball-climate-cycle'].includes(event.type)) {
+        assert.match(event.sourceEventId, /^rare-planetary-impact-/);
+        assert.equal(event.targetSpeciesIndex, 0);
+      } else if (event.type === 'biosignature-loss') {
+        assert.match(event.sourceEventId, /^rare-(runaway-greenhouse|snowball-climate-cycle)-/);
+      } else if (['proton-decay-era', 'galactic-evaporation', 'hawking-final-burst', 'last-observable-signal'].includes(event.type)) {
+        assert.equal(universe.cosmicFate.type, 'heat-death');
+      } else if (['agn-jet-reorientation', 'black-hole-state-transition', 'black-hole-photon-ring-flare'].includes(event.type)) {
+        assert.equal(universe.hasCentralBlackHole, true);
       } else if (event.type === 'last-star-extinction') {
         assert.ok(universe.cosmicFate.type === 'heat-death'
           || 10 ** universe.lastStarDeathExponent < universe.cosmicFate.onsetYears);
@@ -936,7 +967,16 @@ test('second-wave civilization events persist outcomes and relativistic lineages
       category: 'observation', markerVisual: true, label: '伴星系潮汐瓦解',
       tidalStrength: .08, outcome: '伴星系形成潮汐尾'
     }),
-    makeEvent('galactic-encounter', 470, 1, { encounterMode: 'starburst' })
+    makeEvent('galactic-encounter', 470, 1, { encounterMode: 'starburst' }),
+    makeEvent('galaxy-starburst', 471, null, {
+      starFormationBoost: 3.2, outcome: '恒星形成率升高'
+    }),
+    makeEvent('ram-pressure-stripping', 472, null, {
+      gasLossFraction: .5, outcome: '外盘气体被剥离'
+    }),
+    makeEvent('planetary-impact', 473, 1, { impactSeverity: .5 }),
+    makeEvent('runaway-greenhouse', 474, 1),
+    makeEvent('biosignature-loss', 475, 1, { signalLossFraction: .7 })
   ];
   buildCivilizationSimulation({
     universe,
@@ -953,6 +993,9 @@ test('second-wave civilization events persist outcomes and relativistic lineages
   assert.equal(snapshot.temporalDrift[0], 1);
   assert.equal(snapshot.temporalDrift[4], 1);
   assert.ok(snapshot.visibility[0] < .1);
+  assert.equal(snapshot.climateStates[1], -2);
+  assert.equal(snapshot.biosignatureStates[1], -1);
+  assert.ok(snapshot.biosphereCapacity[1] < snapshot.biosphereCapacity[0]);
   assert.equal(simulation.snapshots.some((item) => item.time >= 462 && item.active[4]), true);
   assert.match(events.find((event) => event.type === 'galaxy-collision').outcome, /当时存续文明/);
   assert.ok(events.every((event) => event.outcome !== '事件仍在演化'));

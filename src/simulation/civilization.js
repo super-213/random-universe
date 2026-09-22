@@ -116,6 +116,8 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
   const temporalDrift = new Uint8Array(speciesCount);
   const evacuations = new Uint8Array(speciesCount);
   const biosphereStages = new Uint8Array(speciesCount);
+  const climateStates = new Int8Array(speciesCount);
+  const biosignatureStates = new Int8Array(speciesCount);
   const filterStates = new Int8Array(speciesCount);
   const migrationModes = new Int8Array(speciesCount);
   const engineeringModes = new Int8Array(speciesCount);
@@ -303,6 +305,51 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       event.outcome = `${event.outcome}；${affected} 个当时存续文明的外缘星域经历轨道与供能扰动`;
       return;
     }
+    if (event.type === 'galaxy-starburst') {
+      let affected = 0;
+      civilizationData.forEach((species, speciesIndex) => {
+        if (!seeded[speciesIndex] || territoryCountFor(speciesIndex) === 0) return;
+        affected++;
+        energyReserves[speciesIndex] = Math.min(1, energyReserves[speciesIndex] + .08);
+        materials[speciesIndex] = Math.min(1, materials[speciesIndex] + .06);
+        for (let node = 0; node < nodeCount; node++) {
+          if (owners[node] === speciesIndex) strength[node] = Math.min(1.35, strength[node] + .05);
+        }
+        lastCauses[speciesIndex] = '星暴提供短期能源窗口';
+      });
+      event.outcome = `${event.outcome}；${affected} 个存续文明获得短期能源与原料增益，但后续超新星率也同步上升`;
+      return;
+    }
+    if (event.type === 'ram-pressure-stripping') {
+      let affected = 0;
+      civilizationData.forEach((species, speciesIndex) => {
+        if (!seeded[speciesIndex] || territoryCountFor(speciesIndex) === 0) return;
+        affected++;
+        const loss = THREE.MathUtils.clamp(event.gasLossFraction * .16, .03, .14);
+        materials[speciesIndex] = Math.max(.03, materials[speciesIndex] - loss);
+        for (let node = 0; node < nodeCount; node++) {
+          if (owners[node] === speciesIndex && (node + speciesIndex) % 6 === 0) {
+            strength[node] *= 1 - loss;
+          }
+        }
+        lastCauses[speciesIndex] = '冲压剥离削弱外盘供给';
+      });
+      event.outcome = `${event.outcome}；${affected} 个存续文明的外盘物质补给与新殖民地恢复速度下降`;
+      return;
+    }
+    if (event.type === 'galactic-wind-outflow') {
+      let affected = 0;
+      civilizationData.forEach((species, speciesIndex) => {
+        if (!seeded[speciesIndex] || territoryCountFor(speciesIndex) === 0) return;
+        affected++;
+        const loss = THREE.MathUtils.clamp((event.windVelocityKms || 800) / 24000, .025, .12);
+        energyReserves[speciesIndex] = Math.max(.03, energyReserves[speciesIndex] - loss);
+        materials[speciesIndex] = Math.max(.03, materials[speciesIndex] - loss * .7);
+        lastCauses[speciesIndex] = '星系风改变气体供给';
+      });
+      event.outcome = `${event.outcome}；${affected} 个存续文明经历短期供能扰动，外流压缩区仍可能形成新恒星`;
+      return;
+    }
     if (event.type === 'biosphere-transition') {
       biosphereStages[targetIndex] = 5;
       event.outcome = `${target.name} 的生物圈跨过复杂生命门槛，并最终演化出技术物种`;
@@ -394,6 +441,68 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       visibility[targetIndex] *= .18;
       lastCauses[targetIndex] = '可探测信号静默';
       event.outcome = `${target.name} 的人工载波降到巡天阈值以下；文明仍存续，因此静默不能被解释为灭绝证据`;
+      return;
+    }
+    if (event.type === 'planetary-impact') {
+      const severity = THREE.MathUtils.clamp(event.impactSeverity || .3, .08, .8);
+      const homeNode = target.homeNodeIndex;
+      if (owners[homeNode] === targetIndex) strength[homeNode] *= 1 - severity * .48;
+      biosphereCapacity[targetIndex] *= 1 - severity * .62;
+      stability[targetIndex] *= 1 - severity * .28;
+      cohesion[targetIndex] = Math.max(0, cohesion[targetIndex] - severity * .12);
+      lastCauses[targetIndex] = '大型小行星撞击';
+      event.outcome = `${target.name} 的母世界生物承载力下降 ${(severity * 62).toFixed(0)}%，尘埃遮蔽同时削弱能源与粮食系统`;
+      return;
+    }
+    if (event.type === 'runaway-greenhouse') {
+      climateStates[targetIndex] = -2;
+      biosphereCapacity[targetIndex] *= .24;
+      stability[targetIndex] *= .62;
+      lastCauses[targetIndex] = '母世界失控温室';
+      event.outcome = `${target.name} 的母世界失去长期地表液态水，文明必须转向封闭生态或外域聚居地`;
+      return;
+    }
+    if (event.type === 'snowball-climate-cycle') {
+      climateStates[targetIndex] = event.thawed ? 1 : -1;
+      biosphereCapacity[targetIndex] *= event.thawed ? .72 : .42;
+      stability[targetIndex] *= event.thawed ? .88 : .7;
+      if (event.thawed) research[targetIndex] = Math.min(1, research[targetIndex] + .035);
+      lastCauses[targetIndex] = event.thawed ? '全球冰封后解冻' : '全球冰封持续';
+      event.outcome = event.thawed
+        ? `${target.name} 的母世界跨过解冻阈值，生态瓶颈仍长期限制人口恢复`
+        : `${target.name} 尚未扭转冰雪反照率反馈，开放生物圈与地表聚居区持续收缩`;
+      return;
+    }
+    if (event.type === 'biosignature-loss') {
+      biosignatureStates[targetIndex] = -1;
+      visibility[targetIndex] *= 1 - (event.signalLossFraction || .6) * .48;
+      lastCauses[targetIndex] = '母世界生物信号衰减';
+      event.outcome = `${target.name} 的远程生物信号降到探测阈值附近；文明遥测仍在，因此不能把光谱静默直接等同于文明灭绝`;
+      return;
+    }
+    if (event.type === 'narrowband-signal-drift') {
+      visibility[targetIndex] = Math.min(1, visibility[targetIndex] + .035);
+      research[targetIndex] = Math.min(1, research[targetIndex] + .012);
+      lastCauses[targetIndex] = '窄带载波被持续跟踪';
+      event.outcome = `${target.name} 的载波漂移跨设备复现，人工源可信度上升但仍未排除轨道运动与干扰`;
+      return;
+    }
+    if (event.type === 'optical-laser-beacon') {
+      visibility[targetIndex] = Math.min(1, visibility[targetIndex] + .09);
+      lastCauses[targetIndex] = '光学激光信标可见';
+      event.outcome = `${target.name} 的短脉冲在异地设备中复现，成为高置信度定向技术信号候选`;
+      return;
+    }
+    if (event.type === 'megastructure-occultation') {
+      visibility[targetIndex] = Math.min(1, visibility[targetIndex] + .055);
+      lastCauses[targetIndex] = '巨型工程产生复杂遮光';
+      event.outcome = `${target.name} 的复杂遮光与红外废热同时出现，技术迹象可信度高于单一异常凌日`;
+      return;
+    }
+    if (event.type === 'relativistic-fleet-trail') {
+      visibility[targetIndex] = Math.min(1, visibility[targetIndex] + .045);
+      lastCauses[targetIndex] = '相对论舰队尾迹被间接观测';
+      event.outcome = `${target.name} 舰队仍不可直接成像，但冲击波与高能粒子尾迹泄露了航向和最低能量预算`;
       return;
     }
 
@@ -1239,7 +1348,11 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
           1
         );
         compute[speciesIndex] += (targetCompute - compute[speciesIndex]) * relaxation(.052);
-        const targetBiosphere = THREE.MathUtils.clamp(environmentalAvailability * (
+        const climateBiosphereFactor = climateStates[speciesIndex] === -2
+          ? .22
+          : climateStates[speciesIndex] === -1 ? .48
+            : climateStates[speciesIndex] === 1 ? .82 : 1;
+        const targetBiosphere = THREE.MathUtils.clamp(environmentalAvailability * climateBiosphereFactor * (
           .3 + terraforming[speciesIndex] * .22 + biosphereStages[speciesIndex] * .035
             - internalPopulation[speciesIndex] / capacity * .15 - conflictPressure * .12
         ),
@@ -1337,6 +1450,8 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       temporalDrift: temporalDrift.slice(),
       evacuations: evacuations.slice(),
       biosphereStages: biosphereStages.slice(),
+      climateStates: climateStates.slice(),
+      biosignatureStates: biosignatureStates.slice(),
       filterStates: filterStates.slice(),
       migrationModes: migrationModes.slice(),
       engineeringModes: engineeringModes.slice(),
@@ -1471,6 +1586,10 @@ export function deriveCivilizationRuntime(position, simulationState, civilizatio
     const morphology = morphologyLabels[simulationState?.morphologyModes[index]] || species.morphology;
     if (morphology) statuses.push(morphology);
     if (simulationState?.biosphereStages[index] >= 5) statuses.push('复杂生物圈');
+    if (simulationState?.climateStates?.[index] === -2) statuses.push('失控温室');
+    if (simulationState?.climateStates?.[index] === -1) statuses.push('全球冰封');
+    if (simulationState?.climateStates?.[index] === 1) statuses.push('冰封后解冻');
+    if (simulationState?.biosignatureStates?.[index] < 0) statuses.push('生物信号衰减');
     if (simulationState?.fermiAwareness[index]) statuses.push(`费米：${species.fermiScenario}`);
     if (simulationState?.diasporaModes[index] === 1) statuses.push('星系桥殖民地');
     if (simulationState?.diasporaModes[index] === 2) statuses.push('星系际流浪');
