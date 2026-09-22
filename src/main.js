@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import './style.css';
 import { createSeededRandom } from './domain/random.js';
 import { createUniverse } from './domain/universe.js';
+import { createCosmicWebModel } from './domain/cosmic-web.js';
 import { galaxyTypes as galaxyTypeLabels } from './domain/catalog.js';
 import { createLocalGalaxyGroup } from './domain/local-group.js';
 import { disposeSharedTextures, getPointTexture } from './rendering/textures.js';
@@ -127,6 +128,7 @@ let preparedGalaxyPositions = null;
 let galaxyBuildVersion = 0;
 
 let universeGroup = new THREE.Group();
+let detailGroup = new THREE.Group();
 let galaxyGroup = new THREE.Group();
 let epochEffectsGroup = new THREE.Group();
 let remnantGroup = new THREE.Group();
@@ -134,7 +136,9 @@ let heatDeathGroup = new THREE.Group();
 let cosmicFateGroup = new THREE.Group();
 let cosmicEventGroup = new THREE.Group();
 let localGroupGroup = new THREE.Group();
-scene.add(universeGroup, galaxyGroup, localGroupGroup, epochEffectsGroup, remnantGroup, heatDeathGroup, cosmicFateGroup, cosmicEventGroup);
+let cosmicWebGroup = new THREE.Group();
+detailGroup.add(galaxyGroup, localGroupGroup, epochEffectsGroup, remnantGroup, heatDeathGroup, cosmicFateGroup, cosmicEventGroup);
+scene.add(universeGroup, detailGroup, cosmicWebGroup);
 
 let universe = null;
 let mode = 'generator';
@@ -203,8 +207,9 @@ let localGroupRoutes = [];
 let intergalacticMarkers = [];
 let intergalacticRouteAssignments = [];
 let localGroupGalaxies = [];
-let localGroupView = false;
-let localGroupFrameRadius = 36;
+let universeScaleView = false;
+let cosmicWebModel = null;
+let cosmicWebVisual = null;
 let shipHighlightEnabled = false;
 let immersiveMode = false;
 let immersiveUiTimer = null;
@@ -400,8 +405,8 @@ function updateShipDisappearance(ship, now) {
     1
   );
   const correctView = ship.userData.shipContext === 'local-group'
-    ? localGroupView
-    : !localGroupView;
+    ? universeScaleView
+    : !universeScaleView;
   ship.visible = shipHighlightEnabled && mode === 'explorer' && correctView;
 
   if (disappearance.mode === 'explosion') {
@@ -895,10 +900,6 @@ function buildLocalGroupMap() {
     });
   });
 
-  localGroupFrameRadius = localGalaxyGroup.companions.reduce((radius, companion) => (
-    Math.max(radius, Math.hypot(companion.position[0], companion.position[2]) + companion.radius * 2.2)
-  ), 36);
-
   civilizationData.forEach((species) => {
     const destination = localGalaxyGroup.companions[species.color % localGalaxyGroup.companions.length];
     const geometry = new THREE.BufferGeometry().setFromPoints([
@@ -925,12 +926,186 @@ function buildLocalGroupMap() {
     });
     intergalacticMarkers.push(ships);
   });
-  $('#local-group-count').textContent = `1 个主星系 · ${localGalaxyGroup.companions.length} 个伴星系`;
-  $('#local-group-routes').textContent = '尚无跨星系航线';
-  $('#local-group-members').textContent = localGalaxyGroup.companions
-    .map((companion) => `${companion.name} · ${companion.type}`)
-    .join(' / ');
   localGroupGroup.visible = false;
+}
+
+function buildCosmicWebMap() {
+  disposeGroup(cosmicWebGroup);
+  cosmicWebGroup.rotation.set(.12, -.22, .04);
+  cosmicWebModel = createCosmicWebModel(universe);
+  const { positions, luminosity, colorMix } = cosmicWebModel;
+  const colors = new Float32Array(positions.length);
+  const baseColors = new Float32Array(positions.length);
+  const cool = new THREE.Color().setHSL(universe.hue, .58, .69);
+  const warm = new THREE.Color(0xffd6a1);
+  const color = new THREE.Color();
+  for (let index = 0; index < luminosity.length; index++) {
+    color.copy(cool).lerp(warm, colorMix[index]);
+    const offset = index * 3;
+    baseColors[offset] = color.r * luminosity[index];
+    baseColors[offset + 1] = color.g * luminosity[index];
+    baseColors[offset + 2] = color.b * luminosity[index];
+  }
+
+  const galaxyGeometry = new THREE.BufferGeometry();
+  galaxyGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  galaxyGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  const galaxyMaterial = new THREE.PointsMaterial({
+    size: compactCivilizationLayout.matches ? 1.65 : 1.25,
+    sizeAttenuation: false,
+    map: getPointTexture(),
+    alphaTest: .012,
+    vertexColors: true,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+  });
+  const galaxies = new THREE.Points(galaxyGeometry, galaxyMaterial);
+  cosmicWebGroup.add(galaxies);
+
+  const filamentPositions = new Float32Array(cosmicWebModel.filamentCount * 6);
+  cosmicWebModel.filaments.forEach((filament, index) => {
+    const start = cosmicWebModel.clusters[filament.startIndex].position;
+    const end = cosmicWebModel.clusters[filament.endIndex].position;
+    filamentPositions.set(start, index * 6);
+    filamentPositions.set(end, index * 6 + 3);
+  });
+  const filamentGeometry = new THREE.BufferGeometry();
+  filamentGeometry.setAttribute('position', new THREE.BufferAttribute(filamentPositions, 3));
+  const filamentMaterial = new THREE.LineBasicMaterial({
+    color: 0x8ab8c9,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+  });
+  const filaments = new THREE.LineSegments(filamentGeometry, filamentMaterial);
+  cosmicWebGroup.add(filaments);
+
+  const clusterGlows = cosmicWebModel.clusters
+    .slice()
+    .sort((left, right) => right.mass - left.mass)
+    .slice(0, 12)
+    .map((cluster) => {
+      const glowMaterial = new THREE.SpriteMaterial({
+        map: makeGlowTexture(),
+        color: cool,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending
+      });
+      const glow = new THREE.Sprite(glowMaterial);
+      glow.position.fromArray(cluster.position);
+      glow.scale.setScalar(2.2 + cluster.mass * 2.1);
+      cosmicWebGroup.add(glow);
+      return glow;
+    });
+
+  const boundary = new THREE.LineSegments(
+    new THREE.WireframeGeometry(new THREE.IcosahedronGeometry(cosmicWebModel.radius, 2)),
+    new THREE.LineBasicMaterial({
+      color: 0x9eb4bd,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false
+    })
+  );
+  cosmicWebGroup.add(boundary);
+
+  const locatorMaterial = new THREE.SpriteMaterial({
+    map: makeRingTexture(),
+    color: 0xd8ff5f,
+    transparent: true,
+    opacity: 0,
+    depthTest: false,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+  });
+  const locator = new THREE.Sprite(locatorMaterial);
+  locator.scale.setScalar(3.2);
+  locator.renderOrder = 8;
+  cosmicWebGroup.add(locator);
+
+  cosmicWebVisual = {
+    galaxies,
+    filaments,
+    clusterGlows,
+    boundary,
+    locator,
+    baseColors,
+    reveal: 0
+  };
+  cosmicWebGroup.visible = false;
+  $('#universe-scale-structure').textContent = `${cosmicWebModel.clusterCount} 个超星系团节点 · ${cosmicWebModel.filamentCount} 条宇宙网主纤维 · 当前星系已标记`;
+}
+
+function applyCosmicWebOpacity() {
+  if (!cosmicWebVisual) return;
+  const opacity = cosmicWebVisual.reveal * cosmicWebVisual.epochOpacity * cosmicWebVisual.fateOpacity;
+  cosmicWebVisual.galaxies.material.opacity = opacity * .96;
+  cosmicWebVisual.filaments.material.opacity = opacity * .115;
+  cosmicWebVisual.clusterGlows.forEach((glow) => {
+    glow.material.opacity = opacity * .1;
+  });
+  cosmicWebVisual.boundary.material.opacity = cosmicWebVisual.reveal * .026;
+  cosmicWebVisual.locator.material.opacity = opacity * .92;
+}
+
+function updateCosmicWebVisuals(position) {
+  if (!cosmicWebVisual || !cosmicWebModel) return;
+  const colors = cosmicWebVisual.galaxies.geometry.attributes.color.array;
+  const stellarEnd = stellarEndTimelinePosition(universe);
+  const stellarLight = 1 - THREE.MathUtils.smoothstep(position, stellarEnd - 75, stellarEnd + 12);
+  const remnantLight = THREE.MathUtils.smoothstep(position, stellarEnd - 24, stellarEnd + 18)
+    * (1 - THREE.MathUtils.smoothstep(position, 900, 985));
+  let formedCount = 0;
+  for (let index = 0; index < cosmicWebModel.galaxyCount; index++) {
+    const born = THREE.MathUtils.smoothstep(
+      position,
+      cosmicWebModel.formationAt[index],
+      cosmicWebModel.formationAt[index] + 18
+    );
+    if (position >= cosmicWebModel.formationAt[index]) formedCount++;
+    const brightness = born * (stellarLight + remnantLight * .075);
+    const offset = index * 3;
+    colors[offset] = cosmicWebVisual.baseColors[offset] * brightness;
+    colors[offset + 1] = cosmicWebVisual.baseColors[offset + 1] * brightness;
+    colors[offset + 2] = cosmicWebVisual.baseColors[offset + 2] * brightness;
+  }
+  cosmicWebVisual.galaxies.geometry.attributes.color.needsUpdate = true;
+
+  const fate = universe.cosmicFate;
+  const finiteOutcome = fate.type !== 'heat-death';
+  const fatePhase = finiteOutcome
+    ? THREE.MathUtils.smoothstep(position, fate.onsetAt, 1000)
+    : 0;
+  cosmicWebVisual.epochOpacity = THREE.MathUtils.smoothstep(position, 195, 330);
+  cosmicWebVisual.fateOpacity = fate.type === 'vacuum-decay'
+    ? 1 - fatePhase
+    : fate.type === 'big-rip'
+      ? Math.pow(1 - fatePhase, .42)
+      : 1;
+  if (fate.type === 'big-rip') {
+    cosmicWebGroup.scale.setScalar(1 + Math.pow(fatePhase, 1.45) * 1.8);
+  } else if (fate.type === 'big-crunch') {
+    cosmicWebGroup.scale.setScalar(Math.max(.015, 1 - Math.pow(fatePhase, 1.28) * .985));
+  } else {
+    cosmicWebGroup.scale.setScalar(1);
+  }
+  applyCosmicWebOpacity();
+
+  const countLabel = formedCount === 0
+    ? '宇宙网尚未形成'
+    : `${formedCount.toLocaleString('zh-CN')} / ${cosmicWebModel.galaxyCount.toLocaleString('zh-CN')} 个代表性星系`;
+  $('#universe-scale-count').textContent = countLabel;
+  let eraLabel = '等待第一批星系形成';
+  if (formedCount > 0) eraLabel = `可观测直径约 ${cosmicWebModel.observableDiameterBillionLightYears.toFixed(0)}0 亿光年 · 宇宙网形成中`;
+  if (formedCount === cosmicWebModel.galaxyCount) eraLabel = `可观测直径约 ${cosmicWebModel.observableDiameterBillionLightYears.toFixed(0)}0 亿光年 · 宇宙网已形成`;
+  if (stellarLight < .08) eraLabel = '恒星时代结束 · 星系只剩致密残骸';
+  if (finiteOutcome && fatePhase > 0) eraLabel = `${fate.label}正在改变整个可观测尺度`;
+  $('#universe-scale-era').textContent = eraLabel;
 }
 
 function buildUniverseObject() {
@@ -1002,6 +1177,7 @@ function buildGalaxyPreview() {
   disposeGroup(heatDeathGroup);
   disposeGroup(cosmicFateGroup);
   disposeGroup(cosmicEventGroup);
+  disposeGroup(cosmicWebGroup);
   civilizationGroups = [];
   logisticsGroups = [];
   logisticsShipMarkers = [];
@@ -1033,6 +1209,8 @@ function buildGalaxyPreview() {
   intergalacticMarkers = [];
   intergalacticRouteAssignments = [];
   localGroupGalaxies = [];
+  cosmicWebModel = null;
+  cosmicWebVisual = null;
   currentEras = erasForUniverse(universe);
   cachedTimelineVisualContext = null;
   lastCivilizationSnapshot = null;
@@ -1276,6 +1454,10 @@ async function hydrateGalaxy(starPositions, seed, version) {
   await yieldToMainThread();
   if (!galaxyBuildIsCurrent(seed, version)) return false;
   buildLocalGroupMap();
+
+  await yieldToMainThread();
+  if (!galaxyBuildIsCurrent(seed, version)) return false;
+  buildCosmicWebMap();
 
   await yieldToMainThread();
   if (!galaxyBuildIsCurrent(seed, version)) return false;
@@ -3265,7 +3447,7 @@ function setExplorerHydrationState(loading, failed = false) {
   document.body.classList.toggle('is-hydrating-explorer', loading);
   $('#toggle-time').disabled = loading;
   $('#toggle-civilizations').disabled = loading;
-  $('#toggle-local-group').disabled = loading;
+  $('#toggle-universe-scale').disabled = loading;
   $('#mode-label').textContent = failed
     ? '深空航行中 · 扩展数据不可用'
     : loading ? '深空航行中 · 星图同步中' : '深空航行中';
@@ -3324,12 +3506,13 @@ async function enterUniverse() {
   $('#civilization-legend').setAttribute('aria-hidden', 'true');
   galaxyGroup.visible = true;
   localGroupGroup.visible = alreadyHydrated;
-  galaxyGroup.scale.setScalar(0.02);
-  localGroupGroup.scale.setScalar(0.02);
-  localGroupView = false;
-  document.body.classList.remove('is-local-group-view');
-  $('#toggle-local-group').setAttribute('aria-pressed', 'false');
-  $('#toggle-local-group').textContent = '查看局部星系群';
+  detailGroup.visible = true;
+  detailGroup.scale.setScalar(0.02);
+  cosmicWebGroup.visible = false;
+  universeScaleView = false;
+  document.body.classList.remove('is-universe-scale-view');
+  $('#toggle-universe-scale').setAttribute('aria-pressed', 'false');
+  $('#toggle-universe-scale').textContent = '查看整个宇宙';
   setImmersiveMode(false);
   setGalaxyMenuOpen(false);
   controls.enabled = true;
@@ -3374,8 +3557,8 @@ function leaveUniverse() {
   $('#generator-view').classList.add('is-active');
   $('#star-inspector').classList.remove('is-open');
   observerSpeciesIndex = null;
-  localGroupView = false;
-  document.body.classList.remove('is-local-group-view');
+  universeScaleView = false;
+  document.body.classList.remove('is-universe-scale-view');
   setGalaxyMenuOpen(false);
   closeCivilizationChronicle();
   $('#civilization-panel').classList.remove('is-expanded');
@@ -3393,6 +3576,8 @@ function leaveUniverse() {
   heatDeathGroup.visible = false;
   cosmicEventGroup.visible = false;
   localGroupGroup.visible = false;
+  cosmicWebGroup.visible = false;
+  scene.fog.density = .008;
   transition = { type: 'leave', start: performance.now(), duration: prefersReducedMotion ? 1 : 1300 };
 }
 
@@ -3411,28 +3596,44 @@ function updateTransition(now) {
     const e = easeInOutCubic(t);
     universeGroup.scale.setScalar(Math.max(0.001, 1 - e * 1.5));
     universeGroup.rotation.z += 0.018 * (1 - t);
-    galaxyGroup.scale.setScalar(0.02 + easeOutExpo(t) * 0.98);
-    localGroupGroup.scale.setScalar(0.02 + easeOutExpo(t) * 0.98);
+    detailGroup.scale.setScalar(0.02 + easeOutExpo(t) * 0.98);
     camera.position.z = 32 - e * 12;
     camera.position.y = 0.5 + e * 4.2;
   }
   if (transition.type === 'leave') {
     const e = easeInOutCubic(t);
-    galaxyGroup.scale.setScalar(1 - e * .96);
-    localGroupGroup.scale.setScalar(1 - e * .96);
+    detailGroup.scale.setScalar(1 - e * .96);
     universeGroup.scale.setScalar(e);
     camera.position.z = 20 + e * 12;
     camera.position.y = 4.7 - e * 4.2;
   }
+  if (transition.type === 'universe-out' || transition.type === 'universe-in') {
+    const e = easeInOutCubic(t);
+    const outward = transition.type === 'universe-out';
+    const reveal = outward ? e : 1 - e;
+    detailGroup.scale.setScalar(THREE.MathUtils.lerp(1, .018, reveal));
+    camera.position.lerpVectors(transition.cameraStart, transition.cameraEnd, e);
+    cosmicWebVisual.reveal = reveal;
+    applyCosmicWebOpacity();
+    scene.fog.density = THREE.MathUtils.lerp(.008, .0024, reveal);
+  }
   if (t === 1) {
     if (transition.type === 'enter') universeGroup.visible = false;
-    if (transition.type === 'leave') { galaxyGroup.visible = false; localGroupGroup.visible = false; universeGroup.visible = true; universeGroup.scale.setScalar(1); }
+    if (transition.type === 'leave') { detailGroup.visible = false; galaxyGroup.visible = false; localGroupGroup.visible = false; universeGroup.visible = true; universeGroup.scale.setScalar(1); }
+    if (transition.type === 'universe-in') {
+      cosmicWebGroup.visible = false;
+      detailGroup.scale.setScalar(1);
+      scene.fog.density = .008;
+    }
+    if (transition.type === 'universe-out' || transition.type === 'universe-in') {
+      controls.enabled = mode === 'explorer';
+    }
     transition = null;
   }
 }
 
 function inspectStar(event) {
-  if (mode !== 'explorer' || transition || !clickableStars || cosmicPosition < 250) return;
+  if (mode !== 'explorer' || universeScaleView || transition || !clickableStars || cosmicPosition < 250) return;
   pointer.x = (event.clientX / innerWidth) * 2 - 1;
   pointer.y = -(event.clientY / innerHeight) * 2 + 1;
   raycaster.setFromCamera(pointer, camera);
@@ -3595,26 +3796,38 @@ function setImmersiveMode(enabled) {
   if (immersiveMode) showImmersiveUi();
 }
 
-function toggleLocalGroupView() {
-  if (mode !== 'explorer') return;
-  localGroupView = !localGroupView;
-  document.body.classList.toggle('is-local-group-view', localGroupView);
-  $('#toggle-local-group').setAttribute('aria-pressed', String(localGroupView));
-  $('#toggle-local-group').textContent = localGroupView ? '返回主星系' : '查看局部星系群';
+function toggleUniverseScaleView() {
+  if (mode !== 'explorer' || transition || !cosmicWebVisual) return;
+  universeScaleView = !universeScaleView;
+  document.body.classList.toggle('is-universe-scale-view', universeScaleView);
+  $('#toggle-universe-scale').setAttribute('aria-pressed', String(universeScaleView));
+  $('#toggle-universe-scale').textContent = universeScaleView ? '返回当前星系' : '查看整个宇宙';
   setGalaxyMenuOpen(false);
-  if (localGroupView) {
-    const verticalFov = THREE.MathUtils.degToRad(camera.fov);
-    const horizontalFov = 2 * Math.atan(Math.tan(verticalFov / 2) * camera.aspect);
-    const widthDistance = localGroupFrameRadius / Math.tan(horizontalFov / 2);
-    const heightDistance = localGroupFrameRadius * .62 / Math.tan(verticalFov / 2);
-    const frameDistance = Math.max(64, widthDistance, heightDistance) * 1.12;
-    camera.far = Math.max(240, frameDistance + localGroupFrameRadius * 2);
-    camera.position.set(0, frameDistance * .46, frameDistance * .89);
-    controls.maxDistance = frameDistance * 1.35;
+  const cameraStart = camera.position.clone();
+  controls.enabled = false;
+  if (universeScaleView) {
+    cosmicWebGroup.visible = true;
+    camera.far = 360;
+    controls.minDistance = 68;
+    controls.maxDistance = 158;
+    transition = {
+      type: 'universe-out',
+      start: performance.now(),
+      duration: prefersReducedMotion ? 1 : 2200,
+      cameraStart,
+      cameraEnd: new THREE.Vector3(0, 24, 112)
+    };
   } else {
     camera.far = 200;
-    camera.position.set(0, 5.6, 23.3);
+    controls.minDistance = 8;
     controls.maxDistance = 46;
+    transition = {
+      type: 'universe-in',
+      start: performance.now(),
+      duration: prefersReducedMotion ? 1 : 1800,
+      cameraStart,
+      cameraEnd: new THREE.Vector3(0, 5.6, 23.3)
+    };
   }
   camera.updateProjectionMatrix();
   controls.target.set(0, 0, 0);
@@ -3828,7 +4041,7 @@ function updateLogisticsVisuals(simulationState) {
       resetShipDisappearance(ship);
     }
     ship.userData.trafficActive = true;
-    ship.visible = shipHighlightEnabled && mode === 'explorer' && !localGroupView;
+    ship.visible = shipHighlightEnabled && mode === 'explorer' && !universeScaleView;
     ship.userData.navigationObstacles = navigationObstacles;
     updateLogisticsShipNavigationPath(ship);
     updateIntergalacticShipAppearance(ship);
@@ -3844,7 +4057,7 @@ function updateKeyboardStarMarker() {
   }
   const positions = clickableStars.geometry.attributes.position.array;
   keyboardStarMarker.position.fromArray(positions, keyboardStarIndex * 3);
-  keyboardStarMarker.visible = mode === 'explorer' && cosmicPosition >= 250;
+  keyboardStarMarker.visible = mode === 'explorer' && !universeScaleView && cosmicPosition >= 250;
 }
 
 function updateLocalGroupVisuals(simulationState) {
@@ -3852,7 +4065,7 @@ function updateLocalGroupVisuals(simulationState) {
   const visible = mode === 'explorer' && cosmicPosition >= 205;
   const routesFormed = visible && cosmicPosition >= STELLAR_DAWN_END;
   localGroupGroup.visible = visible;
-  const viewBoost = localGroupView ? 1 : .34;
+  const viewBoost = universeScaleView ? 1 : .34;
   const stellarEnd = stellarEndTimelinePosition(universe);
   const remapReferencePosition = (referencePosition) => cosmicYearsToTimelinePosition(
     referenceFutureYearsAtTimelinePosition(referencePosition, universe),
@@ -3966,25 +4179,10 @@ function updateLocalGroupVisuals(simulationState) {
       * stellarPopulation
       * fateSurvival;
     companion.core.material.opacity = companion.coreEvolutionOpacity;
-    if (prefersReducedMotion || !localGroupView) {
+    if (prefersReducedMotion || !universeScaleView) {
       updateLocalGalaxyParticlePositions(companion, performance.now(), false);
     }
   });
-
-  let epochLabel = '原星系云';
-  if (cosmicPosition < STELLAR_DAWN_START) epochLabel = '原星系云';
-  else if (cosmicPosition < STELLAR_DAWN_END) epochLabel = '恒星形成中';
-  else if (cosmicPosition < stellarEnd - 75) epochLabel = '恒星时代';
-  else if (cosmicPosition < stellarEnd + 10) epochLabel = '恒星逐渐熄灭';
-  else if (cosmicPosition < remnantFadeEnd) epochLabel = '致密残骸时代';
-  else epochLabel = '暗星系遗迹';
-  if (fatePhase > 0) epochLabel = fate.type === 'big-rip'
-    ? '结构解体中'
-    : fate.type === 'big-crunch' ? '整体坍缩中' : '真空衰变中';
-  const groupCountText = `1 个主星系 · ${localGalaxyGroup.companions.length} 个伴星系 · ${epochLabel}`;
-  if ($('#local-group-count').textContent !== groupCountText) {
-    $('#local-group-count').textContent = groupCountText;
-  }
 
   const activeRouteTraffic = [];
   civilizationData.forEach((species, speciesIndex) => {
@@ -4069,15 +4267,10 @@ function updateLocalGroupVisuals(simulationState) {
       resetShipDisappearance(ship);
     }
     ship.userData.trafficActive = true;
-    ship.visible = shipHighlightEnabled && localGroupView;
+    ship.visible = shipHighlightEnabled && universeScaleView;
     updateIntergalacticShipNavigationPath(ship);
     updateIntergalacticShipAppearance(ship);
   });
-  const activeRoutes = activeRouteTraffic.length;
-  const activeShips = intergalacticRouteAssignments.length;
-  $('#local-group-routes').textContent = activeRoutes
-    ? `${activeRoutes} 条跨星系航路 · ${activeShips} 艘运输船往返中`
-    : '尚无跨星系航线';
 }
 
 function updateIntergalacticShipNavigationPath(ship) {
@@ -4139,7 +4332,7 @@ function updateLogisticsShipNavigationPath(ship) {
 }
 
 function updateVisibleShipsForFrame(now) {
-  if (shipHighlightEnabled && !localGroupView) {
+  if (shipHighlightEnabled && !universeScaleView) {
     syncCivilizationHosts({
       clickableStars,
       stellarRemnants,
@@ -4241,7 +4434,7 @@ function updateLocalGalaxyParticlePositions(companion, now, motionEnabled) {
 }
 
 function animateLocalGroupGalaxies(now) {
-  if (!localGroupView || !localGroupGroup.visible) return;
+  if (!universeScaleView || !localGroupGroup.visible) return;
   const elapsed = now * .001;
   if (!prefersReducedMotion) {
     localGroupGalaxies.forEach((companion) => {
@@ -4264,6 +4457,7 @@ function updateCosmicTime(value, force = false) {
   if (!clickableStars || galaxyHydratedForSeed !== universe.seed) return;
 
   updateEpochVisuals(cosmicPosition, timelineVisualContext());
+  updateCosmicWebVisuals(cosmicPosition);
   const simulationState = civilizationSnapshotAt(civilizationSimulation, cosmicPosition);
   const civilizationSnapshotChanged = force || simulationState !== lastCivilizationSnapshot;
   if (civilizationSnapshotChanged) {
@@ -4335,7 +4529,7 @@ function updateCosmicTime(value, force = false) {
 }
 
 function selectKeyboardStar(direction) {
-  if (mode !== 'explorer' || !clickableStars || cosmicPosition < 250) return;
+  if (mode !== 'explorer' || universeScaleView || !clickableStars || cosmicPosition < 250) return;
   const count = starDeathThresholds.length;
   let candidate = keyboardStarIndex < 0
     ? (direction < 0 ? count : -1)
@@ -4412,6 +4606,11 @@ function animate(now) {
     });
     if (!controls.enabled) galaxyGroup.rotation.y += 0.0003;
     animateLocalGroupGalaxies(now);
+    if (universeScaleView && cosmicWebGroup.visible && !prefersReducedMotion) {
+      cosmicWebGroup.rotation.y += .000055;
+      const locatorPulse = 3.2 + Math.sin(now * .0016) * .28;
+      cosmicWebVisual?.locator.scale.setScalar(locatorPulse);
+    }
     if (now - lastCoordinateUpdateAt >= coordinateUpdateIntervalMs) {
       lastCoordinateUpdateAt = now;
       const time = now * 0.00012;
@@ -4454,6 +4653,7 @@ function disposePageResources() {
     universeGroup,
     galaxyGroup,
     localGroupGroup,
+    cosmicWebGroup,
     epochEffectsGroup,
     remnantGroup,
     heatDeathGroup,
@@ -4542,7 +4742,7 @@ $('#multiverse-list').addEventListener('click', (event) => {
 });
 $('#close-inspector').addEventListener('click', () => $('#star-inspector').classList.remove('is-open'));
 $('#close-chronicle').addEventListener('click', closeCivilizationChronicle);
-$('#toggle-local-group').addEventListener('click', toggleLocalGroupView);
+$('#toggle-universe-scale').addEventListener('click', toggleUniverseScaleView);
 $('#toggle-fullscreen').addEventListener('click', toggleFullscreen);
 $('#toggle-immersive').addEventListener('click', () => setImmersiveMode(!immersiveMode));
 document.addEventListener('fullscreenchange', syncFullscreenState);

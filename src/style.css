@@ -44,7 +44,7 @@ button:disabled { cursor: progress; }
 
 .is-hydrating-explorer #toggle-time,
 .is-hydrating-explorer #toggle-civilizations,
-.is-hydrating-explorer #toggle-local-group {
+.is-hydrating-explorer #toggle-universe-scale {
   opacity: 0.38;
   pointer-events: none;
 }
@@ -452,7 +452,7 @@ h1 strong {
 .galaxy-menu-action:hover,
 .galaxy-menu-action:focus-visible,
 .galaxy-menu-action[aria-pressed="true"] { background: rgba(216,255,95,.08); color: var(--accent); outline: none; }
-.local-group-readout {
+.universe-scale-readout {
   position: absolute;
   top: 19vh;
   left: 3.4vw;
@@ -465,11 +465,11 @@ h1 strong {
   transition: opacity .35s ease, transform .35s ease;
   pointer-events: none;
 }
-.is-local-group-view .local-group-readout { opacity: 1; transform: translateX(0); }
-.local-group-readout span { color: var(--muted); font: 8px "Space Mono", monospace; }
-.local-group-readout b { font: 400 13px var(--display-font); }
-.local-group-readout small { color: var(--muted); font-size: 8px; }
-.local-group-readout .local-group-members { max-width: 280px; margin-top: 3px; line-height: 1.55; opacity: .68; }
+.is-universe-scale-view .universe-scale-readout { opacity: 1; transform: translateX(0); }
+.universe-scale-readout span { color: var(--muted); font: 8px "Space Mono", monospace; }
+.universe-scale-readout b { font: 400 13px var(--display-font); }
+.universe-scale-readout small { color: var(--muted); font-size: 8px; }
+.universe-scale-readout .universe-scale-structure { max-width: 310px; margin-top: 3px; line-height: 1.55; opacity: .68; }
 
 .coordinates {
   position: absolute;
@@ -1434,7 +1434,7 @@ h1 strong {
   .explorer-title .kicker { display: none; }
   .galaxy-submenu { min-width: 174px; }
   .galaxy-menu-action { padding: 12px 14px; font-size: 12px; }
-  .local-group-readout { top: calc(env(safe-area-inset-top) + 72px); left: 16px; }
+  .universe-scale-readout { top: calc(env(safe-area-inset-top) + 72px); left: 16px; }
   .coordinates { display: none; }
   .era-readout {
     left: 16px;

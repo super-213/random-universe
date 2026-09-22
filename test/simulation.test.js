@@ -18,6 +18,7 @@ import {
 } from '../src/domain/universe.js';
 import { createSeededRandom } from '../src/domain/random.js';
 import { createLocalGalaxyGroup } from '../src/domain/local-group.js';
+import { createCosmicWebModel } from '../src/domain/cosmic-web.js';
 import {
   createStellarDawnModel,
   STELLAR_DAWN_END,
@@ -82,6 +83,30 @@ import {
 } from '../src/simulation/technology-tree.js';
 
 const seedFor = (index) => index.toString(36).toUpperCase().padStart(16, '0');
+
+test('cosmic web deterministically fills the observable volume with clusters and filaments', () => {
+  const universe = createUniverse(seedFor(71));
+  const options = { galaxyCount: 480, clusterCount: 14 };
+  const first = createCosmicWebModel(universe, options);
+  const second = createCosmicWebModel(universe, options);
+
+  assert.deepEqual(first.positions, second.positions);
+  assert.deepEqual(first.formationAt, second.formationAt);
+  assert.equal(first.galaxyCount, 480);
+  assert.equal(first.clusterCount, 14);
+  assert.ok(first.filamentCount >= first.clusterCount - 1);
+  for (let index = 0; index < first.galaxyCount; index++) {
+    const offset = index * 3;
+    const radius = Math.hypot(
+      first.positions[offset],
+      first.positions[offset + 1],
+      first.positions[offset + 2]
+    );
+    assert.ok(radius <= first.radius + 1e-5);
+    assert.ok(first.formationAt[index] > 0);
+    assert.ok(first.formationAt[index] < 1000);
+  }
+});
 
 test('time speed uses a logarithmic range with deliberate snap points', () => {
   assert.equal(speedFromExponent(-2), .01);
