@@ -149,7 +149,7 @@ export function createUniverse(seed = generateSeedCode()) {
   return {
     seed: seedCode, seedValue, speed, gravity, fineStructure, massRatio, expansionRate, darkEnergyDensity,
     primordialFluctuation, cmbTemperature, chemistryStability, structureEfficiency,
-    stellarFormationEndExponent, lastStarDeathExponent, elements, stars, lifeProbability,
+    stellarFormationEndExponent, lastStarDeathExponent, elements, stars, habitability, lifeProbability,
     civilizations, estimatedCivilizations, speciesCount, trackedSpeciesCount: speciesCount,
     lifetime, blackHoleEvaporationExponent, armCount, galaxyType,
     hasCentralBlackHole, activeNucleus, hue, cosmicMilestones,

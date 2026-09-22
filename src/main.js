@@ -1614,49 +1614,67 @@ function buildCosmicEvents(starPositions) {
     ? {
         type: 'quasar-awakening', visual: 'pulsar', label: '类星体短暂苏醒',
         message: '中心黑洞吸积率骤升，相对论喷流穿过星系核', preferCenter: true,
-        start: 480 + random() * 16, duration: 30, color: '#8dd9ff', repeatRate: .32, maximumOccurrences: 2
+        start: 480 + random() * 16, duration: 30, color: '#8dd9ff',
+        occurrenceModel: 'bernoulli',
+        occurrenceProbability: universe.activeNucleus ? .78 : .24,
+        maximumOccurrences: 1
       }
     : {
         type: 'magnetar-flare', visual: 'pulsar', label: '磁星巨型耀斑',
         message: '磁壳重排释放高能辐射，脉冲扫过邻近恒星系',
-        start: 480 + random() * 16, duration: 26, color: '#7dcaff', repeatRate: .52, maximumOccurrences: 2
+        start: 480 + random() * 16, duration: 26, color: '#7dcaff',
+        occurrenceModel: 'renewal', occurrenceProbability: .54,
+        repeatProbability: .34, maximumOccurrences: 2
       };
 
   const baseSchedule = [
     {
       type: 'pair-instability-supernova', visual: 'supernova', label: '成对不稳定超新星',
       message: '第一代巨星被完全撕碎，重元素云向外扩散',
-      start: 258 + random() * 18, duration: 28, color: '#ffb36b', repeatRate: .16, maximumOccurrences: 2
+      start: 258 + random() * 18, duration: 28, color: '#ffb36b',
+      occurrenceModel: 'bernoulli',
+      occurrenceProbability: THREE.MathUtils.clamp(.18 + universe.structureEfficiency * .12, .16, .52),
+      maximumOccurrences: 1
     },
     {
       type: 'young-pulsar-birth', visual: 'pulsar', label: '年轻脉冲星诞生',
       message: '新生中子星高速自转，双极束流开始扫掠星际介质',
-      start: 302 + random() * 18, duration: 27, color: '#68c8ff', repeatRate: .42, maximumOccurrences: 2
+      start: 302 + random() * 18, duration: 27, color: '#68c8ff',
+      occurrenceModel: 'poisson', expectedOccurrences: .72, maximumOccurrences: 2
     },
     {
       type: 'classical-nova', visual: 'nova', label: '经典新星爆发',
       message: '白矮星表面的吸积氢发生热核失控，抛出明亮但低质量的壳层',
-      start: 336 + random() * 12, duration: 20, color: '#ffe4a8', repeatRate: .9, maximumOccurrences: 3
+      start: 336 + random() * 12, duration: 20, color: '#ffe4a8',
+      occurrenceModel: 'renewal', occurrenceProbability: .76,
+      repeatProbability: .52, maximumOccurrences: 3
     },
     {
       type: 'type-ia-supernova', visual: 'supernova', label: 'Ia 型超新星爆发',
       message: '白矮星发生热核失控，将铁族元素抛入星际空间',
-      start: 368 + random() * 22, duration: 25, color: '#ffd08a', repeatRate: .66, maximumOccurrences: 3
+      start: 368 + random() * 22, duration: 25, color: '#ffd08a',
+      occurrenceModel: 'poisson', expectedOccurrences: .82, maximumOccurrences: 3
     },
     {
       type: 'red-dwarf-superflare', visual: 'stellar-flare', label: '红矮星超级耀斑',
       message: '磁场突然重联，高能辐射与带电粒子冲击近轨行星',
-      start: 396 + random() * 12, duration: 21, color: '#ffcb72', repeatRate: 1.05, maximumOccurrences: 3
+      start: 396 + random() * 12, duration: 21, color: '#ffcb72',
+      occurrenceModel: 'renewal', occurrenceProbability: .82,
+      repeatProbability: .58, maximumOccurrences: 3
     },
     {
       type: 'gamma-ray-burst', visual: 'pulsar', label: '长伽马射线暴',
       message: '垂死巨星坍缩，狭窄高能喷流贯穿恒星外层',
-      start: 420 + random() * 20, duration: 24, color: '#89b9ff', repeatRate: .2, maximumOccurrences: 2
+      start: 420 + random() * 20, duration: 24, color: '#89b9ff',
+      occurrenceModel: 'bernoulli',
+      occurrenceProbability: THREE.MathUtils.clamp(.12 + universe.structureEfficiency * .1, .1, .38),
+      maximumOccurrences: 1
     },
     {
       type: 'neutron-star-kilonova', visual: 'kilonova', label: '中子星并合千新星',
       message: '双中子星旋近并合，短伽马射线束与富含重元素的抛射物同时释放',
-      start: 450 + random() * 12, duration: 25, color: '#caa5ff', repeatRate: .28, maximumOccurrences: 2
+      start: 450 + random() * 12, duration: 25, color: '#caa5ff',
+      occurrenceModel: 'bernoulli', occurrenceProbability: .3, maximumOccurrences: 1
     },
     nucleusEvent,
     {
@@ -1664,29 +1682,34 @@ function buildCosmicEvents(starPositions) {
       message: '恒星掠过中央黑洞的潮汐半径，被拉成长流并逐步吸积', preferCenter: true,
       requiresCentralBlackHole: true,
       hostBlackHoleId: 'central',
-      start: 502 + random() * 10, duration: 30, color: '#72e4ff', repeatRate: .28,
-      repeatSpacing: 40, maximumOccurrences: 2
+      start: 502 + random() * 10, duration: 30, color: '#72e4ff',
+      occurrenceModel: 'bernoulli', occurrenceProbability: .32,
+      repeatSpacing: 40, maximumOccurrences: 1
     },
     {
       type: 'core-collapse-supernova', visual: 'supernova', label: '核坍缩超新星',
       message: '恒星核心坍缩，冲击波把新合成元素送入星际云',
-      start: 518 + random() * 20, duration: 27, color: '#ff875c', repeatRate: .86, maximumOccurrences: 3
+      start: 518 + random() * 20, duration: 27, color: '#ff875c',
+      occurrenceModel: 'poisson', expectedOccurrences: 1.05, maximumOccurrences: 3
     },
     {
       type: 'pulsar-glitch', visual: 'pulsar', label: '脉冲星自转突变',
       message: '中子星内部角动量重分配，脉冲节律突然跃迁',
-      start: 548 + random() * 18, duration: 22, color: '#8ba8ff', repeatRate: .72, maximumOccurrences: 3
+      start: 548 + random() * 18, duration: 22, color: '#8ba8ff',
+      occurrenceModel: 'renewal', occurrenceProbability: .62,
+      repeatProbability: .5, maximumOccurrences: 3
     },
     {
       type: 'superluminous-supernova', visual: 'supernova', label: '超亮超新星',
       message: '磁星引擎持续注入能量，爆发亮度超过普通超新星',
-      start: 552 + random() * 16, duration: 26, color: '#ff6b52', repeatRate: .2, maximumOccurrences: 2
+      start: 552 + random() * 16, duration: 26, color: '#ff6b52',
+      occurrenceModel: 'bernoulli', occurrenceProbability: .24, maximumOccurrences: 1
     },
     {
       type: 'failed-supernova', visual: 'stellar-collapse', label: '恒星无爆发消失',
       message: '冲击波未能掀开恒星外层，亮度短暂上升后整体坍缩为黑洞',
-      start: 586 + random() * 14, duration: 29, color: '#b87958', repeatRate: .38,
-      maximumOccurrences: 2,
+      start: 586 + random() * 14, duration: 29, color: '#b87958',
+      occurrenceModel: 'bernoulli', maximumOccurrences: 1,
       occurrenceProbability: THREE.MathUtils.clamp(
         .12 + universe.structureEfficiency * .13 + universe.gravity * .07,
         .14,
@@ -1696,12 +1719,16 @@ function buildCosmicEvents(starPositions) {
     {
       type: 'stellar-black-hole-merger', visual: 'black-hole-merger', label: '双黑洞合并',
       message: '两颗既有黑洞近距离相遇并被彼此引力俘获，旋近啁啾达到峰值', preferCenter: true,
-      start: 616 + random() * 18, duration: 38, persistUntil: persistentEpochEnd, persistenceFadeDuration: 24, color: '#c897ff', repeatRate: .36, maximumOccurrences: 2
+      start: 616 + random() * 18, duration: 38, persistUntil: persistentEpochEnd,
+      persistenceFadeDuration: 24, color: '#c897ff',
+      occurrenceModel: 'poisson', expectedOccurrences: .48, maximumOccurrences: 2
     },
     {
       type: 'late-black-hole-merger', visual: 'black-hole-merger', label: '孤立黑洞捕获合并',
       message: '两个存续至简并时代的黑洞近遇后被引力束缚，最终完成并合', preferCenter: true,
-      start: 872 + random() * 18, duration: 42, persistUntil: Math.min(eventBoundary, remapEventStart(950)), persistenceFadeDuration: 18, color: '#9bb8ff', repeatRate: .14, maximumOccurrences: 2
+      start: 872 + random() * 18, duration: 42, persistUntil: Math.min(eventBoundary, remapEventStart(950)),
+      persistenceFadeDuration: 18, color: '#9bb8ff',
+      occurrenceModel: 'bernoulli', occurrenceProbability: .26, maximumOccurrences: 1
     }
   ].filter((event) => (!event.requiresCentralBlackHole || universe.hasCentralBlackHole)
     && (event.type !== 'late-black-hole-merger'
@@ -2885,6 +2912,34 @@ function buildCivilizations() {
   resetCivilizationLegend();
   const random = createSeededRandom(universe.seed, 410);
   const speciesCount = universe.speciesCount;
+  const birthRandom = createSeededRandom(universe.seed, 411);
+  const earliestCivilizationYears = Math.max(
+    universe.cosmicMilestones.matureGalaxiesYears * 1.6,
+    1.2e9
+  );
+  const fateLimitedYears = Number.isFinite(universe.cosmicFate.outcomeYears)
+    ? universe.cosmicFate.outcomeYears * .72
+    : Infinity;
+  const latestCivilizationYears = Math.max(
+    earliestCivilizationYears * 1.08,
+    Math.min(
+      1e12,
+      10 ** universe.stellarFormationEndExponent,
+      universe.presentAgeYears * (3 + universe.habitability * 7),
+      fateLimitedYears
+    )
+  );
+  const earliestExponent = Math.log10(earliestCivilizationYears);
+  const latestExponent = Math.log10(latestCivilizationYears);
+  const speciesBirths = Array.from({ length: speciesCount }, () => {
+    // Averaging independent samples produces a broad, non-uniform emergence
+    // history without forcing civilizations into one evenly spaced cohort.
+    const emergenceProgress = (birthRandom() + birthRandom()) / 2;
+    const birthYears = 10 ** (
+      earliestExponent + (latestExponent - earliestExponent) * emergenceProgress
+    );
+    return cosmicYearsToTimelinePosition(birthYears, universe);
+  }).sort((left, right) => left - right);
   const remnantCount = originalRemnantPositions.length / 3;
   const seenHostStars = new Set();
   const remnantCandidates = Array.from({ length: remnantCount }, (_, remnantIndex) => remnantIndex)
@@ -2935,7 +2990,9 @@ function buildCivilizations() {
   }
 
   civilizationSimulation = {
-    start: 390,
+    start: speciesBirths.length
+      ? Math.max(340, Math.floor(speciesBirths[0] - 16))
+      : 390,
     end: 1000,
     step: 1,
     habitatRemnantIndices,
@@ -3086,8 +3143,7 @@ function buildCivilizations() {
     const cooperation = random();
     const expansionRate = randomBetween(random, .72, 1.36);
     const resilience = randomBetween(random, .68, 1.32);
-    const birthSpread = speciesCount === 1 ? 0 : speciesIndex / (speciesCount - 1);
-    const birth = 404 + Math.round(birthSpread * 72 + random() * 11);
+    const birth = speciesBirths[speciesIndex];
     const highDimensional = random() < .01;
     const ascensionAt = highDimensional
       ? cosmicYearsToTimelinePosition(
@@ -3112,6 +3168,11 @@ function buildCivilizations() {
       cohesion: randomBetween(developmentRandom, .48, .82),
       machineAutonomy: randomBetween(developmentRandom, .08, .38)
     });
+  }
+
+  if (civilizationData.length === 0) {
+    civilizationEvents = [];
+    return;
   }
 
   const plan = createCivilizationEventPlan({ universe, civilizationData, habitatPositions });

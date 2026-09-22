@@ -517,8 +517,40 @@ test('tracked civilization samples are explicit and never exceed the estimate fl
     const universe = createUniverse(seedFor(index));
     assert.ok(universe.trackedSpeciesCount >= 5 && universe.trackedSpeciesCount <= 15);
     assert.equal(universe.trackedSpeciesCount, universe.speciesCount);
-    assert.equal(universe.civilizations, Math.max(universe.estimatedCivilizations, universe.trackedSpeciesCount));
+    assert.equal(universe.civilizations, Math.max(
+      universe.estimatedCivilizations,
+      universe.trackedSpeciesCount
+    ));
   }
+});
+
+test('event occurrence models can produce zero counts without forcing a Poisson process', () => {
+  const universe = createUniverse('EVNTMODL00000001');
+  const neverRandom = () => .999999;
+  const absent = expandEventSchedule([
+    {
+      type: 'independent', label: '独立稀有事件', start: 400, duration: 10,
+      occurrenceModel: 'poisson', expectedOccurrences: 0, maximumOccurrences: 3
+    },
+    {
+      type: 'conditional', label: '条件事件', start: 420, duration: 10,
+      occurrenceModel: 'bernoulli', occurrenceProbability: .2
+    },
+    {
+      type: 'renewal', label: '有恢复期事件', start: 440, duration: 10,
+      occurrenceModel: 'renewal', occurrenceProbability: .2,
+      repeatProbability: .8, maximumOccurrences: 3
+    }
+  ], universe, neverRandom);
+  assert.deepEqual(absent, []);
+
+  const deterministic = expandEventSchedule([
+    {
+      type: 'milestone', label: '状态里程碑', start: 500, duration: 10,
+      occurrenceModel: 'deterministic'
+    }
+  ], universe, neverRandom);
+  assert.equal(deterministic.length, 1);
 });
 
 test('event occurrence sampling preserves one required occurrence and bounded repeats', () => {
@@ -628,6 +660,7 @@ test('speculative civilization event plans are seeded, conditional, and cover ev
   const seen = new Set();
   const fleetOutcomes = new Set();
   let foundConditionalAbsence = false;
+  let totalPlannedEvents = 0;
   for (let seedIndex = 0; seedIndex < 300; seedIndex++) {
     const universe = createUniverse(seedFor(seedIndex));
     const civilizationData = Array.from({ length: 6 }, (_, index) => ({
@@ -646,6 +679,7 @@ test('speculative civilization event plans are seeded, conditional, and cover ev
     const first = createCivilizationEventPlan({ universe, civilizationData, habitatPositions });
     const second = createCivilizationEventPlan({ universe, civilizationData, habitatPositions });
     assert.deepEqual(first, second);
+    totalPlannedEvents += first.events.length;
     assert.equal(first.speciesProfiles.length, civilizationData.length);
     assert.ok(first.speciesProfiles.every((profile) => profile.biospherePath.length >= 4));
     assert.ok(first.fermiScenario?.label);
@@ -668,6 +702,7 @@ test('speculative civilization event plans are seeded, conditional, and cover ev
   assert.deepEqual([...seen].sort(), civilizationEventTypes().sort());
   assert.deepEqual([...fleetOutcomes].sort(), ['arrived', 'divided', 'lost', 'returned']);
   assert.equal(foundConditionalAbsence, true);
+  assert.ok(totalPlannedEvents / 300 > 10 && totalPlannedEvents / 300 < 18);
 });
 
 test('civilization events change snapshots and create active successor cultures', () => {
@@ -804,12 +839,13 @@ test('second-wave civilization events persist outcomes and relativistic lineages
 });
 
 test('causal evolution chains update biosphere, morphology, engineering, migration, and archaeology', () => {
-  const universe = Array.from({ length: 200 }, (_, index) => createUniverse(seedFor(index)))
-    .find((candidate) => candidate.cosmicFate.type === 'heat-death');
+  const universe = createUniverse('0000000000000005');
+  assert.equal(universe.cosmicFate.type, 'heat-death');
+  assert.equal(universe.hasCentralBlackHole, true);
   const civilizationData = [
     { name: '甲', birth: 400, homeNodeIndex: 0, aggression: .2, cooperation: .8, expansionRate: 1.2, resilience: 1, technology: .5, visibility: .1, cohesion: .75, machineAutonomy: .2, morphology: '生物共同体', fermiScenario: '大过滤器' },
     { name: '乙', birth: 402, homeNodeIndex: 5, aggression: .25, cooperation: .75, expansionRate: 1.15, resilience: 1, technology: .5, visibility: .1, cohesion: .7, machineAutonomy: .2, morphology: '低可见度文明', fermiScenario: '大过滤器' },
-    { name: '丙', birth: 404, homeNodeIndex: 10, aggression: .3, cooperation: .7, expansionRate: 1.1, resilience: 1, technology: .55, visibility: .1, cohesion: .7, machineAutonomy: .2, morphology: '生物共同体', fermiScenario: '大过滤器' },
+    { name: '丙', birth: 404, homeNodeIndex: 10, aggression: .3, cooperation: .7, expansionRate: 1.1, resilience: 1.2, technology: .9, visibility: .1, cohesion: .78, machineAutonomy: .2, morphology: '生物共同体', fermiScenario: '大过滤器' },
     { name: '丁', birth: 406, homeNodeIndex: 15, aggression: .25, cooperation: .75, expansionRate: 1.1, resilience: 1, technology: .5, visibility: .1, cohesion: .7, machineAutonomy: .2, morphology: '群体意识', fermiScenario: '大过滤器' }
   ];
   const habitatPositions = new Float32Array(24 * 3);

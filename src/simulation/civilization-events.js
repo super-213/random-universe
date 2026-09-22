@@ -6,6 +6,7 @@ import {
 } from '../domain/cosmic-time.js';
 
 const clamp = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, value));
+const TRACKED_CIVILIZATION_EXPOSURE = 1;
 
 const civilizationMorphologies = [
   '生物共同体',
@@ -322,6 +323,76 @@ function chooseSpecies(random, civilizationData, predicate = () => true) {
   return candidates[Math.floor(random() * candidates.length)];
 }
 
+function civilizationEventHazardWeight(type, species) {
+  const technology = species.technology ?? .3;
+  const resilience = species.resilience ?? 1;
+  const expansion = species.expansionRate ?? 1;
+  const cooperation = species.cooperation ?? .5;
+  const aggression = species.aggression ?? .5;
+  const cohesion = species.cohesion ?? .6;
+  const autonomy = species.machineAutonomy ?? .2;
+  const visibility = species.visibility ?? .1;
+
+  const weights = {
+    'first-signal': .35 + visibility * 2.8 + cooperation * .35,
+    'self-replicating-probes': .25 + technology * 1.2 + autonomy * 1.1 + expansion * .25,
+    'stellar-megastructure': .18 + technology * 2.2 + resilience * .2,
+    'civilization-fracture': .16 + (1 - cohesion) * 1.45 + aggression * .38 + expansion * .18,
+    'knowledge-ark': .25 + resilience * .48 + technology * .65,
+    'uplift-experiment': .18 + cooperation * .8 + technology * .8,
+    'satellite-disruption': .28 + expansion * .42 + (1 - resilience / 1.5) * .35,
+    'terraforming-project': .2 + technology * 1.15 + resilience * .38 + expansion * .2,
+    'digital-migration': .16 + technology * 1.25 + autonomy * 1.15,
+    'precursor-ruins': .24 + expansion * .48 + technology * .52,
+    'information-plague': .18 + autonomy * .9 + visibility * 1.2 + (1 - cohesion) * .55,
+    'relativistic-divergence': .16 + expansion * .8 + (1 - cohesion) * .52,
+    'galactic-encounter': .72,
+    'great-filter-crisis': .24 + (1 - resilience / 1.5) * .72 + (1 - cohesion) * .5,
+    'generation-ship': .18 + expansion * .72 + resilience * .38,
+    'stellar-engineering': .12 + technology * 1.65 + resilience * .28,
+    'morphology-transition': .2 + autonomy * .9 + technology * .72 + (1 - cohesion) * .32,
+    'cosmic-archaeology': .2 + expansion * .48 + technology * .78,
+    'intergalactic-diaspora': .1 + expansion * .85 + resilience * .48 + technology * .42,
+    'black-hole-civilization': .1 + technology * 1.55 + resilience * .35,
+    'universe-escape-project': .04 + technology * 1.9 + cohesion * .36
+  };
+  return clamp(weights[type] ?? 1, .08, 2.4);
+}
+
+function chooseEventTarget(random, definition, universe, civilizationData, predicate) {
+  const candidates = civilizationData
+    .map((species, index) => ({
+      species,
+      index,
+      weight: civilizationEventHazardWeight(definition.type, species)
+    }))
+    .filter(({ species, index }) => !species.originType && predicate(species, index));
+  if (candidates.length === 0) return null;
+
+  const meanWeight = candidates.reduce((total, candidate) => total + candidate.weight, 0)
+    / candidates.length;
+  const sourceScale = clamp(Math.sqrt(candidates.length / 6), .34, 1.5);
+  const environmentScale = clamp(
+    .58 + universe.structureEfficiency * .16 + (universe.habitability ?? universe.chemistryStability) * .28,
+    .48,
+    1.42
+  );
+  const referenceHazard = -Math.log(1 - clamp(definition.probability, 0, .98));
+  const occurrenceProbability = 1 - Math.exp(
+    -referenceHazard * sourceScale * meanWeight * environmentScale
+      * TRACKED_CIVILIZATION_EXPOSURE
+  );
+  if (random() >= occurrenceProbability) return null;
+
+  const totalWeight = candidates.reduce((total, candidate) => total + candidate.weight, 0);
+  let roll = random() * totalWeight;
+  for (const candidate of candidates) {
+    roll -= candidate.weight;
+    if (roll <= 0) return candidate;
+  }
+  return candidates.at(-1);
+}
+
 function createSpeciesProfiles(universe, civilizationData) {
   const random = createSeededRandom(universe.seed, 13722);
   const fermiScenario = fermiScenarios[universe.seedValue % fermiScenarios.length];
@@ -494,8 +565,7 @@ export function createCivilizationEventPlan({ universe, civilizationData, habita
 
   eventCatalog.forEach((definition, catalogIndex) => {
     if (definition.type === 'black-hole-civilization' && !universe.hasCentralBlackHole) return;
-    if (random() > definition.probability) return;
-    const targetEntry = chooseSpecies(random, civilizationData, (species) => (
+    const targetEntry = chooseEventTarget(random, definition, universe, civilizationData, (species) => (
       (definition.type !== 'stellar-megastructure' || species.technology >= .24)
       && (definition.type !== 'stellar-engineering' || species.technology >= .28)
       && (definition.type !== 'universe-escape-project' || species.technology >= .3)

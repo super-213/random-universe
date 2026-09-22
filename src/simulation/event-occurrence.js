@@ -14,6 +14,52 @@ function samplePoisson(random, expectedValue, maximum) {
   return Math.min(maximum, Math.max(0, count - 1));
 }
 
+function occurrenceCount(event, activityScale, random) {
+  const maximumOccurrences = Math.max(1, event.maximumOccurrences || 1);
+  const model = event.occurrenceModel || 'legacy';
+
+  if (model === 'deterministic') return 1;
+
+  if (model === 'bernoulli') {
+    const probability = event.occurrenceProbability ?? (
+      1 - Math.exp(-(event.expectedOccurrences || 0) * activityScale)
+    );
+    return random() < clamp(probability, 0, 1) ? 1 : 0;
+  }
+
+  if (model === 'poisson') {
+    return samplePoisson(
+      random,
+      Math.max(0, event.expectedOccurrences || 0) * activityScale,
+      maximumOccurrences
+    );
+  }
+
+  if (model === 'renewal') {
+    const firstProbability = event.occurrenceProbability ?? (
+      1 - Math.exp(-(event.expectedOccurrences || 0) * activityScale)
+    );
+    if (random() >= clamp(firstProbability, 0, 1)) return 0;
+    const repeatProbability = clamp(
+      (event.repeatProbability ?? .35) * Math.sqrt(activityScale),
+      0,
+      .92
+    );
+    let count = 1;
+    while (count < maximumOccurrences && random() < repeatProbability) count++;
+    return count;
+  }
+
+  if (event.occurrenceProbability !== undefined
+    && random() > clamp(event.occurrenceProbability, 0, 1)) return 0;
+  const additional = samplePoisson(
+    random,
+    (event.repeatRate || 0) * activityScale,
+    maximumOccurrences - 1
+  );
+  return 1 + additional;
+}
+
 export function expandEventSchedule(baseEvents, universe, random) {
   const activityScale = clamp(
     .38 + universe.stars * .16 + universe.structureEfficiency * .18,
@@ -22,18 +68,14 @@ export function expandEventSchedule(baseEvents, universe, random) {
   );
 
   return baseEvents.flatMap((event) => {
-    if (event.occurrenceProbability !== undefined
-      && random() > clamp(event.occurrenceProbability, 0, 1)) return [];
-    const maximumOccurrences = event.maximumOccurrences || 1;
-    const additional = samplePoisson(
-      random,
-      (event.repeatRate || 0) * activityScale,
-      maximumOccurrences - 1
-    );
-    const occurrenceCount = 1 + additional;
+    const sampledCount = occurrenceCount(event, activityScale, random);
+    if (sampledCount === 0) return [];
     const repeatSpacing = event.repeatSpacing || Math.max(12, event.duration * .72);
     const {
+      occurrenceModel: ignoredModel,
+      expectedOccurrences: ignoredExpected,
       repeatRate,
+      repeatProbability: ignoredRepeatProbability,
       repeatSpacing: ignoredSpacing,
       maximumOccurrences: ignoredMaximum,
       occurrenceProbability: ignoredProbability,
@@ -45,9 +87,9 @@ export function expandEventSchedule(baseEvents, universe, random) {
     );
     if (eventData.start > maximumStart) return [];
 
-    const occurrences = Array.from({ length: occurrenceCount }, (_, occurrenceIndex) => {
+    const occurrences = Array.from({ length: sampledCount }, (_, occurrenceIndex) => {
       if (occurrenceIndex === 0) {
-        return { ...eventData, occurrenceIndex, occurrenceCount };
+        return { ...eventData, occurrenceIndex, occurrenceCount: sampledCount };
       }
       const spacing = repeatSpacing * occurrenceIndex * (.82 + random() * .36);
       const start = eventData.start + spacing;
@@ -57,7 +99,7 @@ export function expandEventSchedule(baseEvents, universe, random) {
         start,
         label: `${eventData.label}（第 ${occurrenceIndex + 1} 次）`,
         occurrenceIndex,
-        occurrenceCount
+        occurrenceCount: sampledCount
       };
     }).filter(Boolean);
     return occurrences.map((occurrence) => ({
