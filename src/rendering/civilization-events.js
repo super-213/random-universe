@@ -41,6 +41,123 @@ function circlePoints(radius, count = 128) {
   });
 }
 
+function updateGatewaySuction(effect, timeSeconds) {
+  const particlePositions = effect.suctionParticles.geometry.attributes.position.array;
+  const particleColors = effect.suctionParticles.geometry.attributes.color.array;
+  for (let index = 0; index < effect.suctionSeeds.length / 5; index++) {
+    const seedOffset = index * 5;
+    const pointOffset = index * 3;
+    const baseAngle = effect.suctionSeeds[seedOffset];
+    const phase = effect.suctionSeeds[seedOffset + 1];
+    const speed = effect.suctionSeeds[seedOffset + 2];
+    const outerRadius = effect.suctionSeeds[seedOffset + 3];
+    const turns = effect.suctionSeeds[seedOffset + 4];
+    const travel = (timeSeconds * speed + phase) % 1;
+    const radius = .07 + (outerRadius - .07) * Math.pow(1 - travel, .72);
+    const angle = baseAngle - travel * turns * Math.PI * 2;
+    const brightness = Math.pow(Math.sin(travel * Math.PI), .42) * (.58 + index % 7 / 14);
+    particlePositions[pointOffset] = Math.cos(angle) * radius;
+    particlePositions[pointOffset + 1] = Math.sin(angle) * radius;
+    particlePositions[pointOffset + 2] = .018 + Math.sin(angle * 2 + index) * .012;
+    particleColors[pointOffset] = effect.suctionColor.r * brightness;
+    particleColors[pointOffset + 1] = effect.suctionColor.g * brightness;
+    particleColors[pointOffset + 2] = effect.suctionColor.b * brightness;
+  }
+  effect.suctionParticles.geometry.attributes.position.needsUpdate = true;
+  effect.suctionParticles.geometry.attributes.color.needsUpdate = true;
+
+  const trailPositions = effect.suctionTrails.geometry.attributes.position.array;
+  for (let index = 0; index < effect.suctionTrailSeeds.length / 5; index++) {
+    const seedOffset = index * 5;
+    const pointOffset = index * 6;
+    const baseAngle = effect.suctionTrailSeeds[seedOffset];
+    const phase = effect.suctionTrailSeeds[seedOffset + 1];
+    const speed = effect.suctionTrailSeeds[seedOffset + 2];
+    const outerRadius = effect.suctionTrailSeeds[seedOffset + 3];
+    const turns = effect.suctionTrailSeeds[seedOffset + 4];
+    const travel = (timeSeconds * speed + phase) % 1;
+    const tailTravel = Math.min(1, travel + .035);
+    const radius = .08 + (outerRadius - .08) * Math.pow(1 - travel, .72);
+    const tailRadius = .08 + (outerRadius - .08) * Math.pow(1 - tailTravel, .72);
+    const angle = baseAngle - travel * turns * Math.PI * 2;
+    const tailAngle = baseAngle - tailTravel * turns * Math.PI * 2;
+    trailPositions[pointOffset] = Math.cos(angle) * radius;
+    trailPositions[pointOffset + 1] = Math.sin(angle) * radius;
+    trailPositions[pointOffset + 2] = .016;
+    trailPositions[pointOffset + 3] = Math.cos(tailAngle) * tailRadius;
+    trailPositions[pointOffset + 4] = Math.sin(tailAngle) * tailRadius;
+    trailPositions[pointOffset + 5] = .016;
+  }
+  effect.suctionTrails.geometry.attributes.position.needsUpdate = true;
+}
+
+function createGatewaySuction(color) {
+  const suctionField = new THREE.Group();
+  const particleCount = 260;
+  const particlePositions = new Float32Array(particleCount * 3);
+  const particleColors = new Float32Array(particleCount * 3);
+  const suctionSeeds = new Float32Array(particleCount * 5);
+  for (let index = 0; index < particleCount; index++) {
+    const offset = index * 5;
+    suctionSeeds[offset] = index * 2.399963 + Math.sin(index * 1.17) * .3;
+    suctionSeeds[offset + 1] = (index * 67 % particleCount) / particleCount;
+    suctionSeeds[offset + 2] = .0225 + index % 11 * .00105;
+    suctionSeeds[offset + 3] = 2.7 + index % 19 / 19 * .7;
+    suctionSeeds[offset + 4] = 1.15 + index % 13 / 13 * .85;
+  }
+  const particleGeometry = new THREE.BufferGeometry();
+  particleGeometry.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
+  particleGeometry.setAttribute('color', new THREE.BufferAttribute(particleColors, 3));
+  const suctionParticles = new THREE.Points(particleGeometry, new THREE.PointsMaterial({
+    color: 0xffffff,
+    vertexColors: true,
+    size: .052,
+    map: getPointTexture(),
+    alphaTest: .008,
+    transparent: true,
+    opacity: 0,
+    depthTest: false,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+  }));
+  suctionParticles.renderOrder = 4;
+
+  const trailCount = 72;
+  const trailPositions = new Float32Array(trailCount * 6);
+  const suctionTrailSeeds = new Float32Array(trailCount * 5);
+  for (let index = 0; index < trailCount; index++) {
+    const offset = index * 5;
+    suctionTrailSeeds[offset] = index / trailCount * Math.PI * 2 + Math.sin(index * 2.31) * .2;
+    suctionTrailSeeds[offset + 1] = (index * 29 % trailCount) / trailCount;
+    suctionTrailSeeds[offset + 2] = .027 + index % 9 * .00135;
+    suctionTrailSeeds[offset + 3] = 2.85 + index % 7 * .08;
+    suctionTrailSeeds[offset + 4] = 1.2 + index % 8 * .1;
+  }
+  const trailGeometry = new THREE.BufferGeometry();
+  trailGeometry.setAttribute('position', new THREE.BufferAttribute(trailPositions, 3));
+  const suctionTrails = new THREE.LineSegments(trailGeometry, new THREE.LineBasicMaterial({
+    color: new THREE.Color(0xc6b3ff).lerp(color, .22),
+    transparent: true,
+    opacity: 0,
+    depthTest: false,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+  }));
+  suctionTrails.renderOrder = 4;
+  suctionField.add(suctionParticles, suctionTrails);
+
+  const effect = {
+    suctionField,
+    suctionParticles,
+    suctionTrails,
+    suctionSeeds,
+    suctionTrailSeeds,
+    suctionColor: new THREE.Color(0xd6e2ff).lerp(color, .18)
+  };
+  updateGatewaySuction(effect, 0);
+  return effect;
+}
+
 function createInteruniversalGateway(color) {
   const assembly = new THREE.Group();
   const segmentCount = 16;
@@ -185,7 +302,8 @@ function createInteruniversalGateway(color) {
   apertureHalo.scale.setScalar(9.8);
   apertureHalo.renderOrder = 3;
 
-  assembly.add(aperture, portalStars, builders, apertureHalo);
+  const suction = createGatewaySuction(color);
+  assembly.add(aperture, portalStars, suction.suctionField, builders, apertureHalo);
   assembly.rotation.x = -.08;
   assembly.scale.setScalar(1.45);
   return {
@@ -198,7 +316,8 @@ function createInteruniversalGateway(color) {
     builders,
     builderOrigins,
     builderTargets,
-    apertureHalo
+    apertureHalo,
+    ...suction
   };
 }
 
@@ -570,6 +689,9 @@ export function updateCivilizationEventVisual(event, phase, persistence = 0) {
     effect.aperture.material.opacity = portalOpen * .97;
     effect.portalStars.material.opacity = portalOpen * .82;
     effect.portalStars.scale.setScalar(.32 + portalOpen * .68);
+    effect.suctionField.scale.setScalar(.26 + portalOpen * .74);
+    effect.suctionParticles.material.opacity = portalOpen * .46;
+    effect.suctionTrails.material.opacity = portalOpen * .2;
     effect.apertureHalo.material.opacity = portalOpen * .4;
     effect.apertureHalo.scale.setScalar(7.8 + portalOpen * 2.6);
     const builderPositions = effect.builders.geometry.attributes.position.array;
@@ -788,6 +910,7 @@ export function animateCivilizationEventVisual(event, now) {
       energyRing.rotation.z = now * (.00007 + index * .00004) * (index ? -1 : 1);
     });
     effect.portalStars.rotation.z = now * -.000012;
+    updateGatewaySuction(effect, now * .001);
     effect.builders.rotation.z = now * .000035;
     effect.apertureHalo.material.rotation = now * .000025;
   }
