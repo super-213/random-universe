@@ -82,10 +82,10 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
   const expansionEnd = Math.min(declineWindow.energyStart, declineWindow.fateStart);
   simulation.end = 1000;
   const events = cosmicEvents
-    .filter((event) => event.category !== 'civilization')
+    .filter((event) => event.category !== 'civilization' && !event.markerVisual)
     .sort((a, b) => a.impactAt - b.impactAt);
   const civilizationEvents = cosmicEvents
-    .filter((event) => event.category === 'civilization')
+    .filter((event) => event.category === 'civilization' || event.type === 'galaxy-collision')
     .sort((a, b) => a.impactAt - b.impactAt);
   const fermiParadigmAt = civilizationEvents.find((event) => event.type === 'fermi-paradigm')?.impactAt ?? Infinity;
   const eventImpactStats = new Map(events.map((event) => [event, new Map()]));
@@ -281,6 +281,21 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
   const applyCivilizationEvent = (event, time) => {
     const targetIndex = event.targetSpeciesIndex;
     const target = civilizationData[targetIndex];
+    if (event.type === 'galaxy-collision') {
+      let affected = 0;
+      const severity = THREE.MathUtils.clamp(event.tidalStrength * 1.8, .04, .42);
+      civilizationData.forEach((species, speciesIndex) => {
+        if (!seeded[speciesIndex] || territoryCountFor(speciesIndex) === 0) return;
+        affected++;
+        for (let node = 0; node < nodeCount; node++) {
+          if (owners[node] !== speciesIndex || (node + speciesIndex) % 5 !== 0) continue;
+          strength[node] *= 1 - severity;
+        }
+        lastCauses[speciesIndex] = event.label;
+      });
+      event.outcome = `${event.outcome}；${affected} 个当时存续文明的外缘星域经历轨道与供能扰动`;
+      return;
+    }
     if (event.type === 'biosphere-transition') {
       biosphereStages[targetIndex] = 5;
       event.outcome = `${target.name} 的生物圈跨过复杂生命门槛，并最终演化出技术物种`;
@@ -340,6 +355,22 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
     }
     if (!target || !seeded[targetIndex] || territoryCountFor(targetIndex) === 0) {
       event.outcome = `${target?.name || '目标文明'} 已在事件生效前衰亡`;
+      return;
+    }
+
+    if (event.type === 'infrared-waste-heat') {
+      visibility[targetIndex] = Math.min(
+        1,
+        visibility[targetIndex] + event.luminosityFraction * .24
+      );
+      lastCauses[targetIndex] = '恒星工程废热可见';
+      event.outcome = `${target.name} 将约 ${(event.luminosityFraction * 100).toFixed(0)}% 恒星光度以 ${Math.round(event.wasteHeatKelvin)} K 废热重新辐射，技术迹象可信度上升但仍不能排除尘埃模型`;
+      return;
+    }
+    if (event.type === 'civilization-signal-silence') {
+      visibility[targetIndex] *= .18;
+      lastCauses[targetIndex] = '可探测信号静默';
+      event.outcome = `${target.name} 的人工载波降到巡天阈值以下；文明仍存续，因此静默不能被解释为灭绝证据`;
       return;
     }
 

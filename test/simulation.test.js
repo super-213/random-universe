@@ -37,6 +37,7 @@ import {
   selectBlackHoleProgenitors
 } from '../src/simulation/compact-objects.js';
 import { expandEventSchedule } from '../src/simulation/event-occurrence.js';
+import { createRareEventPlan, rareEventTypes } from '../src/simulation/rare-events.js';
 import { blackHoleRecoilKms, createTransientSimulation } from '../src/simulation/transient-events.js';
 import { civilizationHistory, historyExportPayload } from '../src/ui/civilization-chronicle.js';
 import {
@@ -536,6 +537,81 @@ test('optional events can be absent without changing required event behavior', (
   assert.deepEqual(schedule.map((event) => event.type), ['required']);
 });
 
+test('rare observations are seeded and require simulated sources or causal precursors', () => {
+  const seen = new Set();
+  let foundIncompleteUniverse = false;
+  for (let seedIndex = 0; seedIndex < 180; seedIndex++) {
+    const universe = createUniverse(seedFor(seedIndex + 2400));
+    const starCount = 2200;
+    const positions = new Float32Array(starCount * 3);
+    for (let index = 0; index < starCount; index++) {
+      const angle = index * 2.399963;
+      const radius = .1 + 9 * Math.sqrt((index + .5) / starCount);
+      positions[index * 3] = Math.cos(angle) * radius;
+      positions[index * 3 + 1] = Math.sin(index * .17) * .3;
+      positions[index * 3 + 2] = Math.sin(angle) * radius;
+    }
+    const population = createStellarPopulation(universe, positions);
+    const civilizationData = [{
+      name: '测试文明',
+      birth: 400,
+      technology: .5,
+      visibility: .08,
+      fermiScenario: '短暂技术窗口',
+      homeNodeIndex: 0
+    }];
+    const civilizationEvents = [
+      {
+        id: 'stable-engineering', type: 'stellar-engineering', impactAt: 500,
+        targetSpeciesIndex: 0, engineeringStable: true
+      },
+      { id: 'known-signal', type: 'first-signal', impactAt: 490, targetSpeciesIndex: 0 }
+    ];
+    const input = {
+      universe,
+      localGroup: createLocalGalaxyGroup(universe.seed, '测试主星系'),
+      stellarPopulation: population,
+      starPositions: positions,
+      civilizationData,
+      civilizationEvents
+    };
+    const first = createRareEventPlan(input);
+    const second = createRareEventPlan(input);
+    assert.deepEqual(first, second);
+    if (first.length < rareEventTypes.length) foundIncompleteUniverse = true;
+    first.forEach((event) => {
+      seen.add(event.type);
+      assert.equal(event.markerVisual, true);
+      assert.ok(event.start + event.duration < (
+        universe.cosmicFate.type === 'heat-death' ? 1000 : universe.cosmicFate.onsetAt
+      ));
+      if (event.type === 'fast-radio-burst') {
+        assert.equal(population.remnantTypes[event.sourceIndex], 2);
+        assert.ok(population.deathAt[event.sourceIndex] <= event.start);
+      } else if (event.type === 'gravitational-microlensing') {
+        assert.ok(population.remnantTypes[event.sourceIndex] > 0);
+        assert.ok(Number.isInteger(event.backgroundSourceIndex));
+        assert.ok(event.projectedSeparation < .055);
+      } else if (event.type === 'anomalous-transit') {
+        assert.ok(population.planetCounts[event.sourceIndex] >= 3);
+      } else if (event.type === 'infrared-waste-heat') {
+        assert.equal(event.sourceEventId, 'stable-engineering');
+      } else if (event.type === 'civilization-signal-silence') {
+        assert.equal(event.sourceEventId, 'known-signal');
+      } else if (event.type === 'last-star-extinction') {
+        assert.ok(universe.cosmicFate.type === 'heat-death'
+          || 10 ** universe.lastStarDeathExponent < universe.cosmicFate.onsetYears);
+      }
+    });
+  }
+
+  rareEventTypes.filter((type) => type !== 'failed-supernova').forEach((type) => {
+    assert.equal(seen.has(type), true, `${type} should occur for at least one compatible seed`);
+  });
+  assert.equal(foundIncompleteUniverse, true);
+  assert.equal(rareEventTypes.includes('failed-supernova'), true);
+});
+
 test('speculative civilization event plans are seeded, conditional, and cover every event family', () => {
   const habitatPositions = new Float32Array(90 * 3);
   for (let index = 0; index < 90; index++) {
@@ -691,6 +767,14 @@ test('second-wave civilization events persist outcomes and relativistic lineages
     makeEvent('precursor-ruins', 452, 3, { precursorHazard: false }),
     makeEvent('information-plague', 458, 0, { contained: true }),
     makeEvent('relativistic-divergence', 462, 0, { childSpeciesIndex: 4 }),
+    makeEvent('infrared-waste-heat', 464, 0, {
+      luminosityFraction: .5, wasteHeatKelvin: 280
+    }),
+    makeEvent('civilization-signal-silence', 466, 0),
+    makeEvent('galaxy-collision', 468, null, {
+      category: 'observation', markerVisual: true, label: '伴星系潮汐瓦解',
+      tidalStrength: .08, outcome: '伴星系形成潮汐尾'
+    }),
     makeEvent('galactic-encounter', 470, 1, { encounterMode: 'starburst' })
   ];
   buildCivilizationSimulation({
@@ -707,7 +791,9 @@ test('second-wave civilization events persist outcomes and relativistic lineages
   assert.equal(snapshot.contamination[0], -1);
   assert.equal(snapshot.temporalDrift[0], 1);
   assert.equal(snapshot.temporalDrift[4], 1);
+  assert.ok(snapshot.visibility[0] < .1);
   assert.equal(simulation.snapshots.some((item) => item.time >= 462 && item.active[4]), true);
+  assert.match(events.find((event) => event.type === 'galaxy-collision').outcome, /当时存续文明/);
   assert.ok(events.every((event) => event.outcome !== '事件仍在演化'));
 });
 

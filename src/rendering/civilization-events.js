@@ -282,6 +282,79 @@ export function createCivilizationEventVisual(event) {
     group.add(companion, tidalRing);
     effect.companion = companion;
     effect.tidalRing = tidalRing;
+  } else if (event.visual === 'microlensing') {
+    const source = new THREE.Sprite(additiveMaterial({ map: getPointTexture(), color: 0xf7fbff }));
+    const einsteinRing = new THREE.Sprite(additiveMaterial({ map: makeRingTexture(), color }));
+    const imageA = new THREE.Sprite(additiveMaterial({ map: getPointTexture(), color: 0xffffff }));
+    const imageB = new THREE.Sprite(additiveMaterial({ map: getPointTexture(), color: 0xbad8ff }));
+    source.scale.setScalar(.22);
+    imageA.scale.setScalar(.11);
+    imageB.scale.setScalar(.08);
+    group.add(einsteinRing, source, imageA, imageB);
+    effect.lensSource = source;
+    effect.einsteinRing = einsteinRing;
+    effect.lensImages = [imageA, imageB];
+  } else if (event.visual === 'transit-curve') {
+    const points = [];
+    for (let index = 0; index <= 96; index++) {
+      const progress = index / 96;
+      const ingress = Math.exp(-(((progress - .43) / .075) ** 2));
+      const egress = Math.exp(-(((progress - .57) / (.11 + (event.asymmetry || .4) * .05)) ** 2));
+      const depth = Math.min(.58, .16 + (event.transitDepth || .04) * 2.2);
+      points.push(new THREE.Vector3(
+        (progress - .5) * 2.6,
+        .24 - Math.max(ingress, egress * .82) * depth,
+        0
+      ));
+    }
+    const curve = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(points),
+      new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending })
+    );
+    const scanner = new THREE.Sprite(additiveMaterial({ map: getPointTexture(), color: 0xffffff }));
+    scanner.scale.setScalar(.12);
+    group.add(curve, scanner);
+    effect.transitCurve = curve;
+    effect.transitScanner = scanner;
+  } else if (event.visual === 'waste-heat') {
+    const star = new THREE.Sprite(additiveMaterial({ map: getPointTexture(), color: 0xfff2c4 }));
+    const infraredShells = [0, 1, 2].map((index) => {
+      const shell = new THREE.Sprite(additiveMaterial({ map: makeRingTexture(), color }));
+      shell.userData.offset = index / 3;
+      group.add(shell);
+      return shell;
+    });
+    star.scale.setScalar(.2);
+    group.add(star);
+    effect.wasteHeatStar = star;
+    effect.infraredShells = infraredShells;
+  } else if (event.visual === 'signal-silence') {
+    const fadingRings = [0, 1, 2, 3].map((index) => {
+      const echo = new THREE.Sprite(additiveMaterial({ map: makeRingTexture(), color }));
+      echo.userData.offset = index / 4;
+      group.add(echo);
+      return echo;
+    });
+    const breakGeometry = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(-.16, -.42, 0),
+      new THREE.Vector3(.08, -.1, 0),
+      new THREE.Vector3(-.08, .12, 0),
+      new THREE.Vector3(.16, .42, 0)
+    ]);
+    const signalBreak = new THREE.Line(
+      breakGeometry,
+      new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0, depthWrite: false })
+    );
+    group.add(signalBreak);
+    effect.fadingSignalRings = fadingRings;
+    effect.signalBreak = signalBreak;
+  } else if (event.visual === 'last-star') {
+    const finalStar = new THREE.Sprite(additiveMaterial({ map: getPointTexture(), color: 0xffd79a }));
+    const coolingHalo = new THREE.Sprite(additiveMaterial({ map: makeGlowTexture(), color: 0x7790ad }));
+    finalStar.scale.setScalar(.24);
+    group.add(coolingHalo, finalStar);
+    effect.finalStar = finalStar;
+    effect.coolingHalo = coolingHalo;
   }
 
   group.userData.effect = effect;
@@ -405,6 +478,52 @@ export function updateCivilizationEventVisual(event, phase, persistence = 0) {
     effect.tidalRing.scale.setScalar(5 + reveal * 7);
     effect.companion.position.x = 5.2 - phase * 3.8;
   }
+  if (effect.einsteinRing) {
+    const alignment = Math.sin(Math.min(1, phase) * Math.PI);
+    const magnification = Math.min(2.2, event.peakMagnification || 1.4);
+    effect.lensSource.material.opacity = intensity * (.32 + alignment * .68);
+    effect.lensSource.scale.setScalar(.16 + alignment * .12 * magnification);
+    effect.einsteinRing.material.opacity = alignment * intensity * .58;
+    effect.einsteinRing.scale.setScalar(.28 + alignment * (1.15 + magnification * .18));
+    effect.lensImages.forEach((image, index) => {
+      const side = index ? -1 : 1;
+      image.position.x = side * (.14 + alignment * .34);
+      image.material.opacity = alignment * intensity * (index ? .48 : .72);
+    });
+  }
+  if (effect.transitCurve) {
+    effect.transitCurve.material.opacity = intensity * .76;
+    const scan = THREE.MathUtils.clamp(phase, 0, 1);
+    effect.transitScanner.position.x = THREE.MathUtils.lerp(-1.3, 1.3, scan);
+    const dip = Math.exp(-(((scan - .5) / .12) ** 2)) * (.22 + (event.transitDepth || .04));
+    effect.transitScanner.position.y = .24 - dip;
+    effect.transitScanner.material.opacity = intensity;
+  }
+  if (effect.infraredShells) {
+    effect.wasteHeatStar.material.opacity = intensity * .68;
+    effect.infraredShells.forEach((shell, index) => {
+      const travel = (Math.max(0, phase) * .72 + shell.userData.offset) % 1;
+      shell.scale.setScalar(.42 + travel * 2.3);
+      shell.material.opacity = intensity * Math.sin(travel * Math.PI) * (.34 - index * .055);
+    });
+  }
+  if (effect.fadingSignalRings) {
+    const silence = THREE.MathUtils.smoothstep(phase, .28, .78);
+    effect.fadingSignalRings.forEach((echo, index) => {
+      const travel = THREE.MathUtils.clamp(phase * 1.1 - index * .1, 0, 1);
+      echo.scale.setScalar(.25 + travel * 3.4);
+      echo.material.opacity = intensity * (1 - silence) * Math.sin(travel * Math.PI) * .3;
+    });
+    effect.signalBreak.material.opacity = intensity * silence * .68;
+    effect.signalBreak.scale.setScalar(.5 + silence * .5);
+  }
+  if (effect.finalStar) {
+    const extinction = THREE.MathUtils.smoothstep(phase, .3, .82);
+    effect.finalStar.material.opacity = intensity * (1 - extinction);
+    effect.finalStar.scale.setScalar(.2 * (1 - extinction * .82));
+    effect.coolingHalo.material.opacity = intensity * extinction * (1 - phase) * .28;
+    effect.coolingHalo.scale.setScalar(.4 + extinction * 2.4);
+  }
 }
 
 export function animateCivilizationEventVisual(event, now) {
@@ -444,4 +563,10 @@ export function animateCivilizationEventVisual(event, now) {
   });
   if (effect.engineBeams) effect.engineBeams.rotation.z = now * .00018;
   if (effect.tidalRing) effect.tidalRing.material.rotation = now * .00004;
+  if (effect.einsteinRing) effect.einsteinRing.material.rotation = now * .00006;
+  if (effect.infraredShells) {
+    effect.infraredShells.forEach((shell, index) => {
+      shell.material.rotation = now * (.000025 + index * .000012) * (index % 2 ? -1 : 1);
+    });
+  }
 }

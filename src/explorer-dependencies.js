@@ -37,6 +37,7 @@ export {
 } from './simulation/civilization.js';
 export { buildCivilizationSimulationAsync } from './simulation/civilization-worker-client.js';
 export { createCivilizationEventPlan } from './simulation/civilization-events.js';
+export { createRareEventPlan } from './simulation/rare-events.js';
 export { expandEventSchedule } from './simulation/event-occurrence.js';
 export {
   applyTransientImpactScales,

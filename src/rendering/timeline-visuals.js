@@ -634,7 +634,7 @@ export function updateCosmicEvents(position, context) {
       : 0;
     const transientPersistence = transientPersistenceAt(position, event);
     const visualImpactAt = event.visualImpactAt ?? event.impactAt;
-    const civilizationPersistence = event.category === 'civilization'
+    const civilizationPersistence = event.markerVisual
       && position >= visualImpactAt
       && position <= (event.persistentUntil ?? -Infinity) + (event.persistenceFadeDuration ?? 0)
       ? 1 - THREE.MathUtils.smoothstep(
@@ -654,7 +654,7 @@ export function updateCosmicEvents(position, context) {
     event.group.userData.phase = visualPhase;
     const effect = event.group.userData.effect;
 
-    if (event.category === 'civilization') {
+    if (event.markerVisual || event.category === 'civilization') {
       updateCivilizationEventVisual(event, visualPhase, persistence);
       return;
     }
@@ -1019,7 +1019,7 @@ export function animateCosmicEvents(now, context) {
     if (!event.group.visible) return;
     const phase = event.group.userData.phase;
     const effect = event.group.userData.effect;
-    if (event.category === 'civilization') {
+    if (event.markerVisual || event.category === 'civilization') {
       animateCivilizationEventVisual(event, now);
     } else if (event.visual === 'supernova' || event.visual === 'nova' || event.visual === 'kilonova') {
       effect.innerFlash.material.rotation = now * .00007;

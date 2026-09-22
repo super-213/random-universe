@@ -74,6 +74,7 @@ let civilizationSnapshotAt;
 let deriveCivilizationRuntime;
 let findDominantRelationship;
 let createCivilizationEventPlan;
+let createRareEventPlan;
 let expandEventSchedule;
 let applyTransientImpactScales;
 let createTransientGravityField;
@@ -514,6 +515,7 @@ function loadExplorer() {
       deriveCivilizationRuntime,
       findDominantRelationship,
       createCivilizationEventPlan,
+      createRareEventPlan,
       expandEventSchedule,
       applyTransientImpactScales,
       createTransientGravityField,
@@ -1678,9 +1680,15 @@ function buildCosmicEvents(starPositions) {
       start: 552 + random() * 16, duration: 26, color: '#ff6b52', repeatRate: .2, maximumOccurrences: 2
     },
     {
-      type: 'failed-supernova', visual: 'stellar-collapse', label: '失败超新星',
+      type: 'failed-supernova', visual: 'stellar-collapse', label: '恒星无爆发消失',
       message: '冲击波未能掀开恒星外层，亮度短暂上升后整体坍缩为黑洞',
-      start: 586 + random() * 14, duration: 29, color: '#b87958', repeatRate: .38, maximumOccurrences: 2
+      start: 586 + random() * 14, duration: 29, color: '#b87958', repeatRate: .38,
+      maximumOccurrences: 2,
+      occurrenceProbability: THREE.MathUtils.clamp(
+        .12 + universe.structureEfficiency * .13 + universe.gravity * .07,
+        .14,
+        .52
+      )
     },
     {
       type: 'stellar-black-hole-merger', visual: 'black-hole-merger', label: '双黑洞合并',
@@ -2568,11 +2576,26 @@ function buildCosmicEvents(starPositions) {
       galacticCenterSourceIndex = starIndex;
     }
   }
+  const rareEvents = createRareEventPlan({
+    universe,
+    localGroup: localGalaxyGroup,
+    stellarPopulation,
+    starPositions,
+    civilizationData,
+    civilizationEvents
+  });
+  civilizationEvents.push(...rareEvents);
+  civilizationEvents.sort((left, right) => left.start - right.start);
   civilizationEvents.forEach((data) => {
-    const remnantIndex = civilizationSimulation.habitatRemnantIndices[data.targetNodeIndex];
-    const sourceIndex = data.visual === 'galactic-encounter'
-      ? galacticCenterSourceIndex
-      : remnantDynamics.sourceIndices[remnantIndex];
+    const remnantIndex = Number.isInteger(data.targetNodeIndex)
+      ? civilizationSimulation.habitatRemnantIndices[data.targetNodeIndex]
+      : null;
+    const sourceIndex = Number.isInteger(data.sourceIndex)
+      ? data.sourceIndex
+      : data.visual === 'galactic-encounter'
+        ? galacticCenterSourceIndex
+        : remnantDynamics.sourceIndices[remnantIndex];
+    if (!Number.isInteger(sourceIndex)) return;
     const sourceOffset = sourceIndex * 3;
     const group = createCivilizationEventVisual(data);
     group.position.set(
