@@ -26,7 +26,8 @@ export const eras = [
   { until: 650, name: '恒星时代', description: '恒星、星系与重元素持续演化；生命与文明属于未证实的模型层。' },
   { until: 845, name: '简并时代', description: '若质子衰变等标准长期假说成立，恒星残骸绕核运行，并在近遇中逐个逃离或落入黑洞。' },
   { until: 950, name: '黑洞时代', description: '若霍金辐射的标准推断适用，孤立黑洞在极漫长时间中逐个蒸发。' },
-  { until: 1001, name: '暗时代', description: '宇宙继续膨胀，辐射红移与稀释，可用能量梯度趋近于零，而非发生一次全局终结。' }
+  { until: 995, name: '超远未来', description: '黑洞已经蒸发；时间轴继续展开到 10^1200 年，以容纳依赖质子稳定性的高度推测事件。' },
+  { until: 1001, name: '渐近暗时代', description: '时间坐标趋向无限远，辐射持续红移与稀释，可用能量梯度趋近于零。' }
 ];
 
 export function erasForUniverse(universe) {

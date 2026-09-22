@@ -45,7 +45,7 @@ export function renderTimelineScale(universe, viewport) {
   const fate = universe?.cosmicFate;
   const fateOnset = Math.min(999, Math.max(471, fate?.onsetAt || 850));
   const futureSegments = fate?.type === 'heat-death'
-    ? [[470, 570], [570, 650], [650, 680], [680, 845], [845, 950], [950, 1000]]
+    ? [[470, 570], [570, 650], [650, 680], [680, 845], [845, 950], [950, 995], [995, 1000]]
     : [[470, fateOnset], [fateOnset, 1000]];
   const segments = [...timelineSegments, ...futureSegments]
     .filter(([start, end]) => end > start);

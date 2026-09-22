@@ -1,10 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  cosmicLogYearsToTimelinePosition,
   cosmicTimeLabel,
   cosmicYearsToTimelinePosition,
   referenceFutureYearsAtTimelinePosition,
   selectTimelineNarrative,
+  timelinePositionToCosmicLogYears,
   timelinePositionToCosmicYears
 } from '../src/domain/cosmic-time.js';
 import { erasForUniverse } from '../src/domain/catalog.js';
@@ -348,6 +350,23 @@ test('physical milestones and their timeline positions round-trip across the ear
       assert.ok(Math.abs(roundTrip - position) < 1e-5, `${position} round-tripped to ${roundTrip}`);
     });
   }
+});
+
+test('the heat-death timeline expands beyond black-hole evaporation in log-year space', () => {
+  const universe = Array.from({ length: 200 }, (_, index) => createUniverse(seedFor(index)))
+    .find((candidate) => candidate.cosmicFate.type === 'heat-death');
+  assert.ok(universe);
+  assert.equal(timelinePositionToCosmicLogYears(950, universe), universe.blackHoleEvaporationExponent);
+  assert.equal(timelinePositionToCosmicLogYears(995, universe), 1200);
+  assert.equal(timelinePositionToCosmicLogYears(1000, universe), Infinity);
+
+  [100, 308, 1100, 1200, 1600, 5000].forEach((exponent) => {
+    const position = cosmicLogYearsToTimelinePosition(exponent, universe);
+    const roundTrip = timelinePositionToCosmicLogYears(position, universe);
+    assert.ok(Math.abs(roundTrip - exponent) < 1e-7, `${exponent} round-tripped to ${roundTrip}`);
+  });
+  assert.match(cosmicTimeLabel(cosmicLogYearsToTimelinePosition(1100, universe), universe), /10\^1100 yr/);
+  assert.equal(cosmicTimeLabel(1000, universe), 'T→∞ · 渐近热寂');
 });
 
 test('stellar entities share formation, lifetime, spectrum, planets, and remnants', () => {
@@ -721,8 +740,12 @@ test('rare observations are seeded and require simulated sources or causal precu
         assert.equal(event.targetSpeciesIndex, 0);
       } else if (event.type === 'biosignature-loss') {
         assert.match(event.sourceEventId, /^rare-(runaway-greenhouse|snowball-climate-cycle)-/);
-      } else if (['proton-decay-era', 'galactic-evaporation', 'hawking-final-burst', 'last-observable-signal'].includes(event.type)) {
+      } else if (['proton-decay-era', 'galactic-evaporation', 'hawking-final-burst', 'black-dwarf-supernova', 'last-observable-signal'].includes(event.type)) {
         assert.equal(universe.cosmicFate.type, 'heat-death');
+        if (event.type === 'black-dwarf-supernova') {
+          assert.ok(event.physicalStartLogYears >= 1080);
+          assert.ok(event.physicalStartLogYears <= 1120);
+        }
       } else if (['agn-jet-reorientation', 'black-hole-state-transition', 'black-hole-photon-ring-flare'].includes(event.type)) {
         assert.equal(universe.hasCentralBlackHole, true);
       } else if (event.type === 'last-star-extinction') {

@@ -1,4 +1,5 @@
 import {
+  cosmicLogYearsToTimelinePosition,
   cosmicYearsToTimelinePosition,
   referenceFutureYearsAtTimelinePosition,
   timelinePositionToCosmicYears
@@ -931,18 +932,44 @@ export function createRareEventPlan({
       outcome: `在约 10^${universe.blackHoleEvaporationExponent} 年附近出现最后的局域高能瞬变，随后不再有黑洞可提供可用能量梯度`
     }));
 
+    if (whiteDwarfSource !== null) {
+      const blackDwarfExponent = randomBetween(random, 1080, 1120);
+      const blackDwarfImpactAt = cosmicLogYearsToTimelinePosition(blackDwarfExponent, universe);
+      add(createMarker({
+        universe,
+        type: 'black-dwarf-supernova',
+        label: '黑矮星超新星',
+        visual: 'orbital-debris',
+        color: '#b7c7e8',
+        start: blackDwarfImpactAt - 1.4,
+        duration: 2.8,
+        physicalDurationYears: randomBetween(random, .2, 3),
+        physicalStartYears: Number.MAX_VALUE,
+        physicalStartLogYears: blackDwarfExponent,
+        impactAt: blackDwarfImpactAt,
+        visualImpactAt: blackDwarfImpactAt - .25,
+        sourceIndex: whiteDwarfSource,
+        confidence: 'astrophysical-model',
+        message: '若质子长期稳定，量子隧穿可能让极冷黑矮星在超远未来重新点燃核反应并发生爆炸',
+        outcome: `事件被安排在约 10^${blackDwarfExponent.toFixed(0)} 年；其发生机制和时间尺度高度推测，不代表标准宇宙学的确定预言`
+      }));
+    }
+
+    const lastSignalExponent = 1600;
+    const lastSignalImpactAt = cosmicLogYearsToTimelinePosition(lastSignalExponent, universe);
     add(createMarker({
       universe,
       type: 'last-observable-signal',
       label: '最后一个可探测信号离开观测视界',
       visual: 'signal-silence',
       color: '#68788f',
-      start: 966,
-      duration: 24,
+      start: lastSignalImpactAt - 1.2,
+      duration: 2.1,
       physicalDurationYears: 10 ** 6,
-      physicalStartYears: 10 ** universe.blackHoleEvaporationExponent,
-      impactAt: 982,
-      visualImpactAt: 978,
+      physicalStartYears: Number.MAX_VALUE,
+      physicalStartLogYears: lastSignalExponent,
+      impactAt: lastSignalImpactAt,
+      visualImpactAt: lastSignalImpactAt - .25,
       sourceIndex: galacticCenterIndex,
       message: '加速膨胀与持续红移让最后一束外来信息降到任何有限探测器的能量分辨率以下',
       outcome: '信号不是在某个绝对边界处熄灭，而是其波长与到达率渐近超出可观测范围'
@@ -1013,6 +1040,7 @@ export const rareEventTypes = [
   'galactic-evaporation',
   'rogue-black-hole-flyby',
   'hawking-final-burst',
+  'black-dwarf-supernova',
   'last-observable-signal',
   'last-star-extinction'
 ];
