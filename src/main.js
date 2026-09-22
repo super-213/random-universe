@@ -1126,10 +1126,11 @@ function applyCosmicWebOpacity() {
   });
   cosmicWebVisual.locator.material.opacity = opacity * .92;
   if (cosmicCivilizationVisual) {
-    cosmicCivilizationVisual.travelers.material.opacity = opacity;
-    cosmicCivilizationVisual.settlements.material.opacity = opacity * .82;
+    const activityOpacity = cosmicCivilizationVisual.activityOpacity ?? 1;
+    cosmicCivilizationVisual.travelers.material.opacity = opacity * activityOpacity;
+    cosmicCivilizationVisual.settlements.material.opacity = opacity * activityOpacity * .82;
     cosmicCivilizationVisual.travelPulses.forEach((pulse) => {
-      pulse.material.opacity = (pulse.userData.baseOpacity || 0) * opacity;
+      pulse.material.opacity = (pulse.userData.baseOpacity || 0) * opacity * activityOpacity;
     });
   }
 }
@@ -1180,15 +1181,20 @@ function positionAlongCosmicRoute(route, progress, target) {
   return target;
 }
 
-function updateCosmicCivilizationVisuals(position, updateReadout = true) {
+function updateCosmicCivilizationVisuals(
+  position,
+  updateReadout = true,
+  civilizationsActive = activeSpeciesCount > 0
+) {
   if (!cosmicCivilizationPlan || !cosmicCivilizationVisual) return;
   const state = cosmicCivilizationStateAt(cosmicCivilizationPlan, position);
-  const operational = position < cosmicCivilizationPlan.fateBoundary;
-  const active = operational ? state.active : [];
-  const arrived = operational ? state.arrived : [];
-  const traffic = operational ? state.traffic : [];
+  const renderActivity = state.operational && civilizationsActive;
+  const active = renderActivity ? state.active : [];
+  const arrived = renderActivity ? state.arrived : [];
+  const traffic = renderActivity ? state.traffic : [];
   const visibleTravel = [...active, ...traffic];
   const travelPosition = [0, 0, 0];
+  cosmicCivilizationVisual.activityOpacity = renderActivity ? state.activityOpacity : 0;
 
   visibleTravel.forEach(({ route, progress }, index) => {
     const offset = index * 3;
@@ -1211,7 +1217,7 @@ function updateCosmicCivilizationVisuals(position, updateReadout = true) {
   cosmicCivilizationVisual.settlements.geometry.attributes.color.needsUpdate = true;
 
   cosmicCivilizationVisual.travelPulses.forEach((pulse, index) => {
-    const data = operational ? state.pulses[index] : null;
+    const data = renderActivity ? state.pulses[index] : null;
     if (!data) {
       pulse.visible = false;
       pulse.userData.baseOpacity = 0;
@@ -1245,12 +1251,12 @@ function updateCosmicCivilizationVisuals(position, updateReadout = true) {
     $('#universe-scale-event').textContent = '';
     return;
   }
-  if (!operational) {
-    $('#universe-scale-activity').textContent = '宇宙结局已终止全部星系际航行';
+  if (!renderActivity || (visibleTravel.length === 0 && state.latestEvent)) {
+    $('#universe-scale-activity').textContent = '星系际文明活动已终止 · 无在途航行器';
     $('#universe-scale-event').textContent = '';
     return;
   }
-  $('#universe-scale-activity').textContent = `${active.length} 支首航舰队在途 · ${arrived.length} 条星系际航路持续通航 · ${state.failed.length} 次失联`;
+  $('#universe-scale-activity').textContent = `${visibleTravel.length} 艘星系际航行器在途 · ${arrived.length} 条航路持续通航 · ${state.failed.length} 次失联`;
   const event = state.latestEvent;
   if (!event) {
     $('#universe-scale-event').textContent = '等待第一批跨星系文明完成启航条件';
@@ -4810,7 +4816,6 @@ function updateCosmicTime(value, force = false) {
   if (!clickableStars || galaxyHydratedForSeed !== universe.seed) return;
 
   updateEpochVisuals(cosmicPosition, timelineVisualContext());
-  updateCosmicWebVisuals(cosmicPosition);
   const simulationState = civilizationSnapshotAt(civilizationSimulation, cosmicPosition);
   const civilizationSnapshotChanged = force || simulationState !== lastCivilizationSnapshot;
   if (civilizationSnapshotChanged) {
@@ -4844,6 +4849,7 @@ function updateCosmicTime(value, force = false) {
     if (selectedChronicleIndex !== null) openCivilizationChronicle(selectedChronicleIndex);
     if (observerSpeciesIndex !== null) updateObserverMarkers();
   }
+  updateCosmicWebVisuals(cosmicPosition);
   syncCivilizationHosts({
     clickableStars,
     stellarRemnants,

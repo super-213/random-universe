@@ -155,15 +155,19 @@ test('observable-universe civilizations always produce deterministic intergalact
   assert.equal(first.routes.length, 44);
   assert.ok(first.routes.every((route) => route.sourceIndex !== route.targetIndex));
   assert.ok(first.routes.every((route) => route.arrivalAt >= route.departureAt));
+  assert.ok(first.routes.every((route) => route.trafficEndAt <= first.civilizationEndAt));
+  assert.ok(first.civilizationDeclineAt < first.civilizationEndAt);
   const firstDeparture = Math.min(...first.routes.map((route) => route.departureAt));
   const initialActivity = cosmicCivilizationStateAt(first, firstDeparture + .5);
   assert.ok(initialActivity.active.length + initialActivity.arrived.length > 0);
+  assert.equal(initialActivity.operational, true);
   const finalActivity = cosmicCivilizationStateAt(first, 1000);
-  assert.equal(
-    finalActivity.arrived.length + finalActivity.failed.length,
-    first.routes.length
-  );
-  assert.equal(finalActivity.traffic.length, finalActivity.arrived.length);
+  assert.equal(finalActivity.active.length, 0);
+  assert.equal(finalActivity.arrived.length, 0);
+  assert.equal(finalActivity.traffic.length, 0);
+  assert.equal(finalActivity.pulses.length, 0);
+  assert.equal(finalActivity.activityOpacity, 0);
+  assert.equal(finalActivity.operational, false);
 });
 
 test('time speed uses a logarithmic range with deliberate snap points', () => {

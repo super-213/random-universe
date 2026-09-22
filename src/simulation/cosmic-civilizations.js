@@ -4,6 +4,7 @@ import {
 } from '../domain/cosmic-time.js';
 import { createSeededRandom, randomBetween } from '../domain/random.js';
 import { stellarEndTimelinePosition } from '../domain/universe.js';
+import { civilizationDeclineWindow } from './civilization.js';
 
 const travelModes = [
   { id: 'generation-fleet', label: '世代舰队', speed: [.12, .62], color: 0xffd27d },
@@ -73,6 +74,15 @@ export function createCosmicCivilizationPlan(universe, cosmicWebModel, {
   const fateBoundary = universe.cosmicFate.type === 'heat-death'
     ? 1000
     : universe.cosmicFate.onsetAt;
+  const declineWindow = civilizationDeclineWindow(universe);
+  const civilizationDeclineAt = Math.min(
+    declineWindow.energyStart,
+    declineWindow.fateStart
+  );
+  const civilizationEndAt = Math.min(
+    declineWindow.energyEnd,
+    declineWindow.fateEnd
+  );
   const departureEndAt = Math.max(
     civilizationStartAt + 28,
     Math.min(760, stellarEnd - 12, fateBoundary - 36)
@@ -97,6 +107,11 @@ export function createCosmicCivilizationPlan(universe, cosmicWebModel, {
     const failureAt = failed
       ? departureAt + (arrivalAt - departureAt) * randomBetween(random, .28, .88)
       : Infinity;
+    const shutdownStartAt = Math.max(arrivalAt + 4, civilizationDeclineAt);
+    const trafficEndAt = shutdownStartAt >= civilizationEndAt
+      ? civilizationEndAt
+      : shutdownStartAt
+        + (civilizationEndAt - shutdownStartAt) * randomBetween(random, .08, .96);
     return {
       id: `cosmic-route-${index}`,
       sourceIndex,
@@ -109,6 +124,7 @@ export function createCosmicCivilizationPlan(universe, cosmicWebModel, {
       departureAt,
       arrivalAt,
       failureAt,
+      trafficEndAt,
       distanceSceneUnits,
       distanceLightYears,
       speedFractionC,
@@ -120,6 +136,8 @@ export function createCosmicCivilizationPlan(universe, cosmicWebModel, {
   });
   return {
     civilizationStartAt,
+    civilizationDeclineAt,
+    civilizationEndAt,
     fateBoundary,
     routes
   };
@@ -132,6 +150,31 @@ export function cosmicCivilizationStateAt(plan, position) {
   const failed = [];
   const pulses = [];
   let latestEvent = null;
+  const fadeRange = Math.max(1e-6, plan.civilizationEndAt - plan.civilizationDeclineAt);
+  const fadeProgress = Math.max(0, Math.min(1,
+    (position - plan.civilizationDeclineAt) / fadeRange
+  ));
+  const smoothFade = fadeProgress * fadeProgress * (3 - 2 * fadeProgress);
+  const activityOpacity = 1 - smoothFade;
+  const operational = position < plan.civilizationEndAt;
+
+  if (!operational) {
+    plan.routes.forEach((route) => {
+      if (Number.isFinite(route.failureAt)
+        && route.failureAt < plan.civilizationEndAt
+        && position >= route.failureAt) failed.push(route);
+    });
+    return {
+      active,
+      arrived,
+      traffic,
+      failed,
+      pulses,
+      latestEvent,
+      activityOpacity: 0,
+      operational: false
+    };
+  }
 
   plan.routes.forEach((route) => {
     if (position < route.departureAt) return;
@@ -154,6 +197,7 @@ export function cosmicCivilizationStateAt(plan, position) {
       return;
     }
     if (position >= route.arrivalAt) {
+      if (position >= route.trafficEndAt) return;
       arrived.push(route);
       const cycle = ((position * route.trafficSpeed + route.trafficPhase) % 2 + 2) % 2;
       const outbound = cycle < 1;
@@ -175,5 +219,14 @@ export function cosmicCivilizationStateAt(plan, position) {
     });
   });
 
-  return { active, arrived, traffic, failed, pulses, latestEvent };
+  return {
+    active,
+    arrived,
+    traffic,
+    failed,
+    pulses,
+    latestEvent,
+    activityOpacity,
+    operational
+  };
 }
