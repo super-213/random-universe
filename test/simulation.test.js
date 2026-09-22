@@ -69,6 +69,10 @@ import {
   stableRouteAssignments,
   visibleShipCountForRoutes
 } from '../src/simulation/intergalactic-travel.js';
+import {
+  cosmicCivilizationStateAt,
+  createCosmicCivilizationPlan
+} from '../src/simulation/cosmic-civilizations.js';
 import { obstacleAvoidingPathPoints } from '../src/simulation/ship-navigation.js';
 import { applyCivilizationSnapshot } from '../src/rendering/civilizations.js';
 import {
@@ -106,6 +110,27 @@ test('cosmic web deterministically fills the observable volume with clusters and
     assert.ok(first.formationAt[index] > 0);
     assert.ok(first.formationAt[index] < 1000);
   }
+});
+
+test('observable-universe civilizations always produce deterministic intergalactic travel', () => {
+  const universe = createUniverse(seedFor(73));
+  const web = createCosmicWebModel(universe, { galaxyCount: 720, clusterCount: 16 });
+  const first = createCosmicCivilizationPlan(universe, web, { routeCount: 44 });
+  const second = createCosmicCivilizationPlan(universe, web, { routeCount: 44 });
+
+  assert.deepEqual(first, second);
+  assert.equal(first.routes.length, 44);
+  assert.ok(first.routes.every((route) => route.sourceIndex !== route.targetIndex));
+  assert.ok(first.routes.every((route) => route.arrivalAt >= route.departureAt));
+  const firstDeparture = Math.min(...first.routes.map((route) => route.departureAt));
+  const initialActivity = cosmicCivilizationStateAt(first, firstDeparture + .5);
+  assert.ok(initialActivity.active.length + initialActivity.arrived.length > 0);
+  const finalActivity = cosmicCivilizationStateAt(first, 1000);
+  assert.equal(
+    finalActivity.arrived.length + finalActivity.failed.length,
+    first.routes.length
+  );
+  assert.equal(finalActivity.traffic.length, finalActivity.arrived.length);
 });
 
 test('time speed uses a logarithmic range with deliberate snap points', () => {

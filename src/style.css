@@ -469,6 +469,8 @@ h1 strong {
 .universe-scale-readout span { color: var(--muted); font: 8px "Space Mono", monospace; }
 .universe-scale-readout b { font: 400 13px var(--display-font); }
 .universe-scale-readout small { color: var(--muted); font-size: 8px; }
+.universe-scale-readout #universe-scale-activity { margin-top: 3px; color: rgba(216,255,95,.78); }
+.universe-scale-readout #universe-scale-event { max-width: 320px; line-height: 1.55; color: rgba(241,238,231,.7); }
 .universe-scale-readout .universe-scale-structure { max-width: 310px; margin-top: 3px; line-height: 1.55; opacity: .68; }
 
 .coordinates {

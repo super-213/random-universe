@@ -19,6 +19,10 @@ import {
   shuttleTrafficAt,
   stableRouteAssignments
 } from './simulation/intergalactic-travel.js';
+import {
+  cosmicCivilizationStateAt,
+  createCosmicCivilizationPlan
+} from './simulation/cosmic-civilizations.js';
 import { obstacleAvoidingPathPoints } from './simulation/ship-navigation.js';
 import {
   historyExportPayload,
@@ -210,6 +214,8 @@ let localGroupGalaxies = [];
 let universeScaleView = false;
 let cosmicWebModel = null;
 let cosmicWebVisual = null;
+let cosmicCivilizationPlan = null;
+let cosmicCivilizationVisual = null;
 let shipHighlightEnabled = false;
 let immersiveMode = false;
 let immersiveUiTimer = null;
@@ -964,25 +970,6 @@ function buildCosmicWebMap() {
   const galaxies = new THREE.Points(galaxyGeometry, galaxyMaterial);
   cosmicWebGroup.add(galaxies);
 
-  const filamentPositions = new Float32Array(cosmicWebModel.filamentCount * 6);
-  cosmicWebModel.filaments.forEach((filament, index) => {
-    const start = cosmicWebModel.clusters[filament.startIndex].position;
-    const end = cosmicWebModel.clusters[filament.endIndex].position;
-    filamentPositions.set(start, index * 6);
-    filamentPositions.set(end, index * 6 + 3);
-  });
-  const filamentGeometry = new THREE.BufferGeometry();
-  filamentGeometry.setAttribute('position', new THREE.BufferAttribute(filamentPositions, 3));
-  const filamentMaterial = new THREE.LineBasicMaterial({
-    color: 0x8ab8c9,
-    transparent: true,
-    opacity: 0,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending
-  });
-  const filaments = new THREE.LineSegments(filamentGeometry, filamentMaterial);
-  cosmicWebGroup.add(filaments);
-
   const clusterGlows = cosmicWebModel.clusters
     .slice()
     .sort((left, right) => right.mass - left.mass)
@@ -1003,17 +990,6 @@ function buildCosmicWebMap() {
       return glow;
     });
 
-  const boundary = new THREE.LineSegments(
-    new THREE.WireframeGeometry(new THREE.IcosahedronGeometry(cosmicWebModel.radius, 2)),
-    new THREE.LineBasicMaterial({
-      color: 0x9eb4bd,
-      transparent: true,
-      opacity: 0,
-      depthWrite: false
-    })
-  );
-  cosmicWebGroup.add(boundary);
-
   const locatorMaterial = new THREE.SpriteMaterial({
     map: makeRingTexture(),
     color: 0xd8ff5f,
@@ -1028,29 +1004,197 @@ function buildCosmicWebMap() {
   locator.renderOrder = 8;
   cosmicWebGroup.add(locator);
 
+  cosmicCivilizationPlan = createCosmicCivilizationPlan(universe, cosmicWebModel);
+  const routeCapacity = cosmicCivilizationPlan.routes.length;
+  const travelerPositions = new Float32Array(routeCapacity * 3);
+  const travelerColors = new Float32Array(routeCapacity * 3);
+  const travelerGeometry = new THREE.BufferGeometry();
+  travelerGeometry.setAttribute('position', new THREE.BufferAttribute(travelerPositions, 3));
+  travelerGeometry.setAttribute('color', new THREE.BufferAttribute(travelerColors, 3));
+  travelerGeometry.setDrawRange(0, 0);
+  const travelers = new THREE.Points(travelerGeometry, new THREE.PointsMaterial({
+    size: compactCivilizationLayout.matches ? 5.2 : 4.1,
+    sizeAttenuation: false,
+    map: getPointTexture(),
+    alphaTest: .008,
+    vertexColors: true,
+    transparent: true,
+    opacity: 0,
+    depthTest: false,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+  }));
+  travelers.renderOrder = 7;
+  cosmicWebGroup.add(travelers);
+
+  const settlementPositions = new Float32Array(routeCapacity * 3);
+  const settlementColors = new Float32Array(routeCapacity * 3);
+  const settlementGeometry = new THREE.BufferGeometry();
+  settlementGeometry.setAttribute('position', new THREE.BufferAttribute(settlementPositions, 3));
+  settlementGeometry.setAttribute('color', new THREE.BufferAttribute(settlementColors, 3));
+  settlementGeometry.setDrawRange(0, 0);
+  const settlements = new THREE.Points(settlementGeometry, new THREE.PointsMaterial({
+    size: compactCivilizationLayout.matches ? 3.4 : 2.6,
+    sizeAttenuation: false,
+    map: getPointTexture(),
+    alphaTest: .01,
+    vertexColors: true,
+    transparent: true,
+    opacity: 0,
+    depthTest: false,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+  }));
+  settlements.renderOrder = 6;
+  cosmicWebGroup.add(settlements);
+
+  const travelPulses = Array.from({ length: 12 }, () => {
+    const pulse = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: makeRingTexture(),
+      color: 0xd8ff5f,
+      transparent: true,
+      opacity: 0,
+      depthTest: false,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending
+    }));
+    pulse.visible = false;
+    pulse.renderOrder = 9;
+    cosmicWebGroup.add(pulse);
+    return pulse;
+  });
+
   cosmicWebVisual = {
     galaxies,
-    filaments,
     clusterGlows,
-    boundary,
     locator,
     baseColors,
     reveal: 0
   };
+  cosmicCivilizationVisual = {
+    travelers,
+    settlements,
+    travelPulses,
+    travelerPositions,
+    travelerColors,
+    settlementPositions,
+    settlementColors
+  };
   cosmicWebGroup.visible = false;
-  $('#universe-scale-structure').textContent = `${cosmicWebModel.clusterCount} 个超星系团节点 · ${cosmicWebModel.filamentCount} 条宇宙网主纤维 · 当前星系已标记`;
+  $('#universe-scale-structure').textContent = `${cosmicWebModel.clusterCount} 个超星系团节点 · 星系密度自然形成纤维与空洞 · 当前星系已标记`;
 }
 
 function applyCosmicWebOpacity() {
   if (!cosmicWebVisual) return;
   const opacity = cosmicWebVisual.reveal * cosmicWebVisual.epochOpacity * cosmicWebVisual.fateOpacity;
   cosmicWebVisual.galaxies.material.opacity = opacity * .96;
-  cosmicWebVisual.filaments.material.opacity = opacity * .115;
   cosmicWebVisual.clusterGlows.forEach((glow) => {
     glow.material.opacity = opacity * .1;
   });
-  cosmicWebVisual.boundary.material.opacity = cosmicWebVisual.reveal * .026;
   cosmicWebVisual.locator.material.opacity = opacity * .92;
+  if (cosmicCivilizationVisual) {
+    cosmicCivilizationVisual.travelers.material.opacity = opacity;
+    cosmicCivilizationVisual.settlements.material.opacity = opacity * .82;
+    cosmicCivilizationVisual.travelPulses.forEach((pulse) => {
+      pulse.material.opacity = (pulse.userData.baseOpacity || 0) * opacity;
+    });
+  }
+}
+
+function writeRouteColor(array, offset, color, brightness = 1) {
+  array[offset] = ((color >> 16) & 255) / 255 * brightness;
+  array[offset + 1] = ((color >> 8) & 255) / 255 * brightness;
+  array[offset + 2] = (color & 255) / 255 * brightness;
+}
+
+function positionAlongCosmicRoute(route, progress, target) {
+  const arc = Math.sin(progress * Math.PI) * route.arcHeight;
+  target[0] = THREE.MathUtils.lerp(route.source[0], route.target[0], progress)
+    + route.arcDirection[0] * arc;
+  target[1] = THREE.MathUtils.lerp(route.source[1], route.target[1], progress)
+    + route.arcDirection[1] * arc;
+  target[2] = THREE.MathUtils.lerp(route.source[2], route.target[2], progress)
+    + route.arcDirection[2] * arc;
+  return target;
+}
+
+function updateCosmicCivilizationVisuals(position) {
+  if (!cosmicCivilizationPlan || !cosmicCivilizationVisual) return;
+  const state = cosmicCivilizationStateAt(cosmicCivilizationPlan, position);
+  const operational = position < cosmicCivilizationPlan.fateBoundary;
+  const active = operational ? state.active : [];
+  const arrived = operational ? state.arrived : [];
+  const traffic = operational ? state.traffic : [];
+  const visibleTravel = [...active, ...traffic];
+  const travelPosition = [0, 0, 0];
+
+  visibleTravel.forEach(({ route, progress }, index) => {
+    const offset = index * 3;
+    positionAlongCosmicRoute(route, progress, travelPosition);
+    cosmicCivilizationVisual.travelerPositions.set(travelPosition, offset);
+    writeRouteColor(cosmicCivilizationVisual.travelerColors, offset, route.color, 1.28);
+  });
+  cosmicCivilizationVisual.travelers.geometry.setDrawRange(0, visibleTravel.length);
+  cosmicCivilizationVisual.travelers.geometry.attributes.position.needsUpdate = true;
+  cosmicCivilizationVisual.travelers.geometry.attributes.color.needsUpdate = true;
+
+  arrived.forEach((route, index) => {
+    const offset = index * 3;
+    cosmicCivilizationVisual.settlementPositions.set(route.target, offset);
+    writeRouteColor(cosmicCivilizationVisual.settlementColors, offset, route.color, .9);
+  });
+  cosmicCivilizationVisual.settlements.geometry.setDrawRange(0, arrived.length);
+  cosmicCivilizationVisual.settlements.geometry.attributes.position.needsUpdate = true;
+  cosmicCivilizationVisual.settlements.geometry.attributes.color.needsUpdate = true;
+
+  cosmicCivilizationVisual.travelPulses.forEach((pulse, index) => {
+    const data = operational ? state.pulses[index] : null;
+    if (!data) {
+      pulse.visible = false;
+      pulse.userData.baseOpacity = 0;
+      return;
+    }
+    const { route, type, strength } = data;
+    pulse.visible = true;
+    pulse.material.color.setHex(type === 'failure' ? 0xff705c : route.color);
+    if (type === 'departure') {
+      pulse.position.fromArray(route.source);
+    } else if (type === 'arrival') {
+      pulse.position.fromArray(route.target);
+    } else {
+      const failureProgress = (route.failureAt - route.departureAt)
+        / Math.max(1e-6, route.arrivalAt - route.departureAt);
+      positionAlongCosmicRoute(route, failureProgress, travelPosition);
+      pulse.position.fromArray(travelPosition);
+    }
+    pulse.userData.baseScale = .8 + (1 - strength) * 2.8;
+    pulse.scale.setScalar(pulse.userData.baseScale);
+    pulse.userData.baseOpacity = strength * .72;
+  });
+  applyCosmicWebOpacity();
+
+  if (position < cosmicCivilizationPlan.civilizationStartAt) {
+    $('#universe-scale-activity').textContent = '全宇宙文明航行尚未出现';
+    $('#universe-scale-event').textContent = '';
+    return;
+  }
+  if (!operational) {
+    $('#universe-scale-activity').textContent = '宇宙结局已终止全部星系际航行';
+    $('#universe-scale-event').textContent = '';
+    return;
+  }
+  $('#universe-scale-activity').textContent = `${active.length} 支首航舰队在途 · ${arrived.length} 条星系际航路持续通航 · ${state.failed.length} 次失联`;
+  const event = state.latestEvent;
+  if (!event) {
+    $('#universe-scale-event').textContent = '等待第一批跨星系文明完成启航条件';
+    return;
+  }
+  const source = `G-${String(event.route.sourceIndex).padStart(5, '0')}`;
+  const target = `G-${String(event.route.targetIndex).padStart(5, '0')}`;
+  const eventLabel = event.type === 'departure'
+    ? '启航'
+    : event.type === 'arrival' ? '抵达' : '失联';
+  $('#universe-scale-event').textContent = `最近事件 · ${event.route.modeLabel} ${eventLabel} · ${source} → ${target}`;
 }
 
 function updateCosmicWebVisuals(position) {
@@ -1106,6 +1250,7 @@ function updateCosmicWebVisuals(position) {
   if (stellarLight < .08) eraLabel = '恒星时代结束 · 星系只剩致密残骸';
   if (finiteOutcome && fatePhase > 0) eraLabel = `${fate.label}正在改变整个可观测尺度`;
   $('#universe-scale-era').textContent = eraLabel;
+  updateCosmicCivilizationVisuals(position);
 }
 
 function buildUniverseObject() {
@@ -1211,6 +1356,8 @@ function buildGalaxyPreview() {
   localGroupGalaxies = [];
   cosmicWebModel = null;
   cosmicWebVisual = null;
+  cosmicCivilizationPlan = null;
+  cosmicCivilizationVisual = null;
   currentEras = erasForUniverse(universe);
   cachedTimelineVisualContext = null;
   lastCivilizationSnapshot = null;
@@ -4610,6 +4757,12 @@ function animate(now) {
       cosmicWebGroup.rotation.y += .000055;
       const locatorPulse = 3.2 + Math.sin(now * .0016) * .28;
       cosmicWebVisual?.locator.scale.setScalar(locatorPulse);
+      cosmicCivilizationVisual?.travelPulses.forEach((pulse, index) => {
+        if (!pulse.visible) return;
+        const breath = 1 + Math.sin(now * .004 + index * .7) * .07;
+        pulse.scale.setScalar((pulse.userData.baseScale || 1) * breath);
+        pulse.material.rotation = now * .00018 * (index % 2 ? -1 : 1);
+      });
     }
     if (now - lastCoordinateUpdateAt >= coordinateUpdateIntervalMs) {
       lastCoordinateUpdateAt = now;
@@ -4818,7 +4971,8 @@ $('#export-universe-history').addEventListener('click', () => {
     civilizationData,
     cosmicEvents,
     runtimeState: civilizationRuntimeState,
-    localGroup: localGalaxyGroup
+    localGroup: localGalaxyGroup,
+    cosmicCivilizations: cosmicCivilizationPlan
   });
   const blobUrl = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }));
   const link = document.createElement('a');

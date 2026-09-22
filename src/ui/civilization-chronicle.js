@@ -156,12 +156,36 @@ export function renderCivilizationChronicle({
   panel.classList.add('is-open');
 }
 
-export function historyExportPayload({ universe, civilizationData, cosmicEvents, runtimeState = [], localGroup = null }) {
+export function historyExportPayload({
+  universe,
+  civilizationData,
+  cosmicEvents,
+  runtimeState = [],
+  localGroup = null,
+  cosmicCivilizations = null
+}) {
   return {
     format: 'random-universe-history-v1',
     seed: universe.seed,
     fate: universe.cosmicFate,
     localGroup,
+    cosmicCivilizations: cosmicCivilizations ? {
+      civilizationStartAt: cosmicCivilizations.civilizationStartAt,
+      fateBoundary: cosmicCivilizations.fateBoundary,
+      routes: cosmicCivilizations.routes.map((route) => ({
+        id: route.id,
+        sourceIndex: route.sourceIndex,
+        targetIndex: route.targetIndex,
+        mode: route.mode,
+        departureAt: route.departureAt,
+        arrivalAt: route.arrivalAt,
+        failureAt: Number.isFinite(route.failureAt) ? route.failureAt : null,
+        distanceLightYears: route.distanceLightYears,
+        speedFractionC: route.speedFractionC,
+        trafficPhase: route.trafficPhase,
+        trafficSpeed: route.trafficSpeed
+      }))
+    } : null,
     civilizations: civilizationData.map((species, speciesIndex) => ({
       name: species.name,
       morphology: species.morphology,
