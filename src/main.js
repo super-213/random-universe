@@ -1573,6 +1573,7 @@ function buildEpochEffects(starPositions) {
 function buildCosmicEvents(starPositions) {
   const random = createSeededRandom(universe.seed, 1447);
   cosmicEvents = [];
+  const centralBlackHole = blackHoleRemnants.find((hole) => hole.userData.isCentral) || null;
   const stellarEnd = stellarEndTimelinePosition(universe);
   const finiteOutcome = universe.cosmicFate.type !== 'heat-death';
   const eventBoundary = finiteOutcome ? universe.cosmicFate.onsetAt : 1000;
@@ -1662,7 +1663,9 @@ function buildCosmicEvents(starPositions) {
       type: 'tidal-disruption-event', visual: 'tidal-disruption', label: '潮汐瓦解事件',
       message: '恒星掠过中央黑洞的潮汐半径，被拉成长流并逐步吸积', preferCenter: true,
       requiresCentralBlackHole: true,
-      start: 502 + random() * 10, duration: 30, color: '#72e4ff', repeatRate: .28, maximumOccurrences: 2
+      hostBlackHoleId: 'central',
+      start: 502 + random() * 10, duration: 30, color: '#72e4ff', repeatRate: .28,
+      repeatSpacing: 40, maximumOccurrences: 2
     },
     {
       type: 'core-collapse-supernova', visual: 'supernova', label: '核坍缩超新星',
@@ -2121,6 +2124,7 @@ function buildCosmicEvents(starPositions) {
       data.recoilKms = data.simulation.recoilKms;
     }
     const group = new THREE.Group();
+    const sourceLocation = mergerPair ? null : pickPosition(data);
     const location = mergerPair
       ? {
           index: mergerAnchors.indices[0],
@@ -2132,9 +2136,14 @@ function buildCosmicEvents(starPositions) {
               mergerPair.right.massSolar / (mergerPair.left.massSolar + mergerPair.right.massSolar)
             )
         }
-      : pickPosition(data);
+      : sourceLocation;
     if (!location) return;
-    group.position.copy(location.position);
+    if (data.hostBlackHoleId === 'central' && centralBlackHole) {
+      data.tidalApproachOffset = stellarPositionAt(location.index, data.start).toArray();
+      group.position.copy(blackHolePositionAt(centralBlackHole, data.start));
+    } else {
+      group.position.copy(location.position);
+    }
     group.visible = false;
     cosmicEventGroup.add(group);
     const profile = impactProfiles[data.type];
@@ -2226,8 +2235,6 @@ function buildCosmicEvents(starPositions) {
       if (gravityWave) group.add(gravityWave);
       group.userData.effect = { innerFlash, photosphere, remnant, ejecta, ejectaDirections, ejectaVelocity, ejectaDelay, shell, shellDirections, shellNoise, polarJets, gravityWave };
     } else if (data.visual === 'tidal-disruption') {
-      const hole = createBlackHoleVisual({ color: 0x85ddff, tilt: .22, phase: random() * Math.PI * 2, visualScale: .86 });
-      hole.userData.spinDirection = 1;
       const starCore = new THREE.Sprite(new THREE.SpriteMaterial({ map: getPointTexture(), color: 0xfff1c9, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
       starCore.scale.set(.28, .28, 1);
       const flare = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeGlowTexture(), color: 0x8eeaff, transparent: true, opacity: 0, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending }));
@@ -2253,8 +2260,8 @@ function buildCosmicEvents(starPositions) {
       debrisGeometry.setAttribute('color', new THREE.BufferAttribute(debrisColors, 3));
       const debris = new THREE.Points(debrisGeometry, new THREE.PointsMaterial({ size: .075, map: getPointTexture(), alphaTest: .008, vertexColors: true, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
 
-      group.add(flare, disk, debris, starCore, hole);
-      group.userData.effect = { hole, starCore, flare, disk, debris, debrisOffsets, debrisNoise };
+      group.add(flare, disk, debris, starCore);
+      group.userData.effect = { starCore, flare, disk, debris, debrisOffsets, debrisNoise };
     } else if (data.visual === 'stellar-flare') {
       const starCore = new THREE.Sprite(new THREE.SpriteMaterial({ map: getPointTexture(), color: 0xffb75a, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
       const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeGlowTexture(), color: 0xff7a32, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));

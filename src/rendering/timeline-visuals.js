@@ -10,7 +10,11 @@ import {
 import { STELLAR_DAWN_END, STELLAR_DAWN_START } from '../domain/stellar-dawn.js';
 import { orbitalAngleAt } from '../domain/orbital-motion.js';
 import { applyMergerGravity, applyStellarGravity, mergerPersistenceAt } from '../simulation/black-hole-gravity.js';
-import { applyTransientGravity, transientPersistenceAt } from '../simulation/transient-events.js';
+import {
+  applyTransientGravity,
+  tidalDisruptionVisualState,
+  transientPersistenceAt
+} from '../simulation/transient-events.js';
 import { animateBlackHoleVisual, setBlackHoleIntensity } from './black-hole.js';
 import {
   animateCivilizationEventVisual,
@@ -32,8 +36,13 @@ const pulsarBeamAxis = new THREE.Vector3();
 const pulsarViewDirection = new THREE.Vector3();
 const mergerOrbitAxis = new THREE.Vector3(0, 1, 0);
 const mergerTrailPoint = new THREE.Vector3();
+const tidalApproachStart = new THREE.Vector3();
+const tidalApproachDirection = new THREE.Vector3();
+const tidalApproachTangent = new THREE.Vector3();
+const tidalPeriapsis = new THREE.Vector3();
 
 function eventCenterFromStars(event, positionArray) {
+  if (event.hostBlackHoleId === 'central') return { x: 0, y: 0, z: 0 };
   const indices = event.mergerAnchorSourceIndices;
   const weights = event.mergerAnchorWeights;
   if (indices?.length) {
@@ -621,9 +630,12 @@ export function updateEpochVisuals(position, context) {
 }
 
 export function updateCosmicEvents(position, context) {
-  const { mode, cosmicEvents, cosmicEventGroup, universe } = context;
+  const { mode, cosmicEvents, cosmicEventGroup, universe, blackHoleRemnants } = context;
   const fateStarted = universe.cosmicFate.type !== 'heat-death'
     && position >= universe.cosmicFate.onsetAt;
+  const centralBlackHole = blackHoleRemnants.find((hole) => hole.userData.isCentral);
+  const centralBlackHoleBaseline = centralBlackHole?.userData.blackHoleVisual?.intensity || 0;
+  let centralAccretionBoost = 0;
   let activeCosmicEvent = null;
   let anyVisible = false;
   cosmicEvents.forEach((event) => {
@@ -772,25 +784,31 @@ export function updateCosmicEvents(position, context) {
       }
     } else if (event.visual === 'tidal-disruption') {
       const phase = visualPhase;
-      const approach = THREE.MathUtils.smoothstep(phase, 0, .42);
-      const disrupted = THREE.MathUtils.smoothstep(phase, .3, .62);
-      const accretion = THREE.MathUtils.smoothstep(phase, .4, .72);
-      const fallbackStart = event.simulation?.pulsePhases?.[0] || .58;
-      const fallbackProgress = Math.max(0, (phase - fallbackStart) / Math.max(.001, 1 - fallbackStart));
-      const fallbackLuminosity = THREE.MathUtils.smoothstep(phase, .4, fallbackStart)
-        * Math.pow(1 + fallbackProgress * 6, event.simulation?.fallbackExponent || -5 / 3);
-      effect.starCore.position.set(
-        THREE.MathUtils.lerp(2.5, .48, approach),
-        Math.sin(approach * Math.PI) * .34,
-        THREE.MathUtils.lerp(.34, 0, approach)
+      const state = tidalDisruptionVisualState(phase, event.simulation);
+      const approachOffset = event.tidalApproachOffset || [2.5, 0, .34];
+      tidalApproachStart.fromArray(approachOffset);
+      if (tidalApproachStart.lengthSq() < .01) tidalApproachStart.set(2.5, 0, .34);
+      tidalApproachDirection.copy(tidalApproachStart).normalize();
+      tidalApproachTangent.set(-tidalApproachDirection.z, 0, tidalApproachDirection.x);
+      if (tidalApproachTangent.lengthSq() < .01) tidalApproachTangent.set(0, 0, 1);
+      tidalApproachTangent.normalize();
+      tidalPeriapsis.copy(tidalApproachDirection).multiplyScalar(.48);
+      effect.starCore.position.copy(tidalApproachStart).lerp(tidalPeriapsis, state.approach);
+      effect.starCore.position.addScaledVector(
+        tidalApproachTangent,
+        Math.sin(state.approach * Math.PI) * .34
       );
-      effect.starCore.material.opacity = (1 - disrupted) * .96;
-      effect.starCore.scale.set(.28 + disrupted * .68, Math.max(.035, .28 * (1 - disrupted * .88)), 1);
-      effect.disk.material.opacity = fallbackLuminosity * .5;
-      effect.flare.material.opacity = fallbackLuminosity * .62;
-      const flareScale = .24 + Math.sqrt(fallbackLuminosity) * 2.5;
+      effect.starCore.material.opacity = state.onset * (1 - state.disrupted) * .96;
+      effect.starCore.scale.set(
+        .28 + state.disrupted * .68,
+        Math.max(.035, .28 * (1 - state.disrupted * .88)),
+        1
+      );
+      effect.disk.material.opacity = state.fallbackLuminosity * state.fade * .5;
+      effect.flare.material.opacity = state.fallbackLuminosity * state.fade * .62;
+      const flareScale = .24 + Math.sqrt(state.fallbackLuminosity) * 2.5;
       effect.flare.scale.set(flareScale, flareScale, 1);
-      setBlackHoleIntensity(effect.hole, .62 + accretion * .38);
+      centralAccretionBoost = Math.max(centralAccretionBoost, state.centralAccretionBoost);
 
       const debrisArray = effect.debris.geometry.attributes.position.array;
       for (let i = 0; i < effect.debrisOffsets.length; i++) {
@@ -798,16 +816,17 @@ export function updateCosmicEvents(position, context) {
         const stream = effect.debrisOffsets[i];
         const bound = stream < 0;
         const radius = bound
-          ? .34 + Math.abs(stream) * (1.15 - accretion * .72)
-          : .42 + stream * (.65 + accretion * 3.4);
-        const angle = stream * 1.8 + accretion * (bound ? 6.4 : 1.25);
-        const thickness = Math.sin(effect.debrisNoise[i] + accretion * 5) * .045 * (1 - accretion * .45);
+          ? .34 + Math.abs(stream) * (1.15 - state.accretion * .72)
+          : .42 + stream * (.65 + state.accretion * 3.4);
+        const angle = stream * 1.8 + state.accretion * (bound ? 6.4 : 1.25);
+        const thickness = Math.sin(effect.debrisNoise[i] + state.accretion * 5)
+          * .045 * (1 - state.accretion * .45);
         debrisArray[offset] = Math.cos(angle) * radius;
         debrisArray[offset + 1] = Math.sin(angle) * radius * .38 + thickness;
         debrisArray[offset + 2] = Math.sin(angle * .5 + effect.debrisNoise[i]) * .075;
       }
       effect.debris.geometry.attributes.position.needsUpdate = true;
-      effect.debris.material.opacity = disrupted * (1 - THREE.MathUtils.smoothstep(phase, .9, 1)) * .82;
+      effect.debris.material.opacity = state.disrupted * state.fade * .82;
     } else if (event.visual === 'stellar-flare') {
       const phase = visualPhase;
       const stormPulse = event.simulation?.pulsePhases?.reduce((strongest, pulsePhase, pulseIndex) => {
@@ -1001,6 +1020,12 @@ export function updateCosmicEvents(position, context) {
       effect.recoilTrail.material.opacity = merged ? (1 - postMerge * .72) * .28 * persistence : 0;
     }
   });
+  if (centralBlackHole?.visible && centralAccretionBoost > 0) {
+    setBlackHoleIntensity(
+      centralBlackHole,
+      Math.min(1.3, centralBlackHoleBaseline + centralAccretionBoost)
+    );
+  }
   cosmicEventGroup.visible = anyVisible;
   return activeCosmicEvent;
 }
@@ -1028,7 +1053,6 @@ export function animateCosmicEvents(now, context) {
     } else if (event.visual === 'tidal-disruption') {
       effect.disk.material.rotation = now * .0014;
       effect.debris.rotation.y = Math.sin(now * .00017) * .08;
-      animateBlackHoleVisual(effect.hole, now, effect.hole.userData.spinDirection);
     } else if (event.visual === 'stellar-flare') {
       effect.loops.forEach((loop, index) => {
         loop.rotation.z = Math.sin(now * .0009 + index) * .16;

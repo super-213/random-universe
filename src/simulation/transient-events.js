@@ -542,6 +542,36 @@ export function transientPersistenceAt(position, event) {
   return 1 - smoothstep(position, persistenceEnd, persistenceEnd + fadeDuration);
 }
 
+export function tidalDisruptionVisualState(phase, simulation = null) {
+  const normalizedPhase = clamp(phase, 0, 1);
+  const onset = smoothstep(normalizedPhase, 0, .1);
+  const approach = smoothstep(normalizedPhase, 0, .42);
+  const disrupted = smoothstep(normalizedPhase, .3, .62);
+  const accretion = smoothstep(normalizedPhase, .4, .72);
+  const fallbackStart = simulation?.pulsePhases?.[0] || .58;
+  const fallbackProgress = Math.max(
+    0,
+    (normalizedPhase - fallbackStart) / Math.max(.001, 1 - fallbackStart)
+  );
+  const fallbackLuminosity = smoothstep(normalizedPhase, .4, fallbackStart)
+    * Math.pow(1 + fallbackProgress * 6, simulation?.fallbackExponent || -5 / 3);
+  const fade = 1 - smoothstep(normalizedPhase, .9, 1);
+  const centralAccretionBoost = onset * fade * (
+    approach * .08
+    + accretion * .12
+    + fallbackLuminosity * .52
+  );
+  return {
+    onset,
+    approach,
+    disrupted,
+    accretion,
+    fallbackLuminosity,
+    fade,
+    centralAccretionBoost
+  };
+}
+
 function hashUnit(index, salt) {
   let value = (index + 1) ^ salt;
   value = Math.imul(value ^ value >>> 16, 0x21f0aaad);

@@ -38,7 +38,11 @@ import {
 } from '../src/simulation/compact-objects.js';
 import { expandEventSchedule } from '../src/simulation/event-occurrence.js';
 import { createRareEventPlan, rareEventTypes } from '../src/simulation/rare-events.js';
-import { blackHoleRecoilKms, createTransientSimulation } from '../src/simulation/transient-events.js';
+import {
+  blackHoleRecoilKms,
+  createTransientSimulation,
+  tidalDisruptionVisualState
+} from '../src/simulation/transient-events.js';
 import { civilizationHistory, historyExportPayload } from '../src/ui/civilization-chronicle.js';
 import {
   clusterTimelineEvents,
@@ -991,6 +995,38 @@ test('event repeats respect a universe-specific latest start boundary', () => {
   ], universe, createSeededRandom(universe.seed, 1001));
   assert.ok(schedule.length >= 1);
   assert.ok(schedule.every((event) => event.start <= 605));
+});
+
+test('repeated tidal disruptions can be scheduled without visual overlap', () => {
+  const universe = createUniverse('TIDALSPACING0001');
+  const schedule = expandEventSchedule([{
+    type: 'tidal-disruption-event',
+    label: '潮汐瓦解事件',
+    start: 500,
+    duration: 30,
+    repeatRate: 100,
+    repeatSpacing: 40,
+    maximumOccurrences: 2
+  }], universe, createSeededRandom(universe.seed, 1447));
+
+  assert.equal(schedule.length, 2);
+  assert.ok(schedule[1].start >= schedule[0].start + schedule[0].duration);
+});
+
+test('tidal disruption visuals enter continuously before accretion peaks', () => {
+  const simulation = { pulsePhases: [.58, .74], fallbackExponent: -5 / 3 };
+  const start = tidalDisruptionVisualState(0, simulation);
+  const entering = tidalDisruptionVisualState(.05, simulation);
+  const active = tidalDisruptionVisualState(.58, simulation);
+  const ended = tidalDisruptionVisualState(1, simulation);
+
+  assert.equal(start.onset, 0);
+  assert.equal(start.centralAccretionBoost, 0);
+  assert.ok(entering.onset > 0 && entering.onset < 1);
+  assert.ok(active.fallbackLuminosity > 0);
+  assert.ok(active.centralAccretionBoost > entering.centralAccretionBoost);
+  assert.equal(ended.fade, 0);
+  assert.equal(ended.centralAccretionBoost, 0);
 });
 
 test('transient stellar models conserve their declared mass budget', () => {
