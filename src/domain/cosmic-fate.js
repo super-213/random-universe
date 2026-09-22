@@ -199,9 +199,14 @@ function selectDarkEnergyModel(random) {
   };
 }
 
+export function darkEnergyModelForSeed(seed) {
+  return selectDarkEnergyModel(createSeededRandom(seed, 6029));
+}
+
 export function createCosmicFate(seed, cosmology) {
   const random = createSeededRandom(seed, 6029);
-  const darkEnergy = selectDarkEnergyModel(random);
+  const generatedDarkEnergy = selectDarkEnergyModel(random);
+  const darkEnergy = cosmology.darkEnergy || generatedDarkEnergy;
   const expansion = integrateExpansion({
     ...darkEnergy,
     expansionRate: cosmology.expansionRate,

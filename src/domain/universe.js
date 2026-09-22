@@ -1,6 +1,10 @@
 import * as THREE from 'three';
 import { galaxyTypes } from './catalog.js';
-import { createCosmicFate } from './cosmic-fate.js';
+import {
+  createCosmicFate,
+  darkEnergyEquationOfState,
+  darkEnergyModelForSeed
+} from './cosmic-fate.js';
 import { cosmicYearsToTimelinePosition } from './cosmic-time.js';
 import { createSeededRandom, generateSeedCode, normalizeSeedCode, randomBetween, seedToUint32 } from './random.js';
 
@@ -8,14 +12,49 @@ const REFERENCE_AGE_YEARS = 1.38e10;
 const REFERENCE_CMB_TEMPERATURE = 2.725;
 const REFERENCE_MATTER_DENSITY = .315;
 
-export function estimatePresentAgeYears(expansionRate, darkEnergyDensity) {
+function dimensionlessAge(omegaMatter, darkEnergyDensity, darkEnergy) {
+  const logStep = .004;
+  let scaleFactor = 1;
+  let darkEnergyEvolution = 1;
+  let age = 0;
+
+  while (scaleFactor > 1e-8) {
+    const nextScaleFactor = scaleFactor * Math.exp(-logStep);
+    const midpointScaleFactor = Math.sqrt(scaleFactor * nextScaleFactor);
+    const midpointW = darkEnergyEquationOfState(
+      midpointScaleFactor,
+      darkEnergy.w0,
+      darkEnergy.wa
+    );
+    const nextDarkEnergyEvolution = darkEnergyEvolution
+      * Math.exp(3 * (1 + midpointW) * logStep);
+    const midpointDarkEnergyEvolution = Math.sqrt(
+      darkEnergyEvolution * nextDarkEnergyEvolution
+    );
+    const rateSquared = omegaMatter / midpointScaleFactor ** 3
+      + darkEnergyDensity * midpointDarkEnergyEvolution;
+    age += logStep / Math.sqrt(Math.max(1e-18, rateSquared));
+    scaleFactor = nextScaleFactor;
+    darkEnergyEvolution = nextDarkEnergyEvolution;
+  }
+
+  return age;
+}
+
+const REFERENCE_DIMENSIONLESS_AGE = dimensionlessAge(
+  REFERENCE_MATTER_DENSITY,
+  1 - REFERENCE_MATTER_DENSITY,
+  { w0: -1, wa: 0 }
+);
+
+export function estimatePresentAgeYears(
+  expansionRate,
+  darkEnergyDensity,
+  darkEnergy = { w0: -1, wa: 0 }
+) {
   const omegaMatter = Math.max(.06, 1 - darkEnergyDensity);
-  const omegaLambda = Math.max(1e-6, darkEnergyDensity);
-  const dimensionlessAge = 2 / (3 * Math.sqrt(omegaLambda))
-    * Math.asinh(Math.sqrt(omegaLambda / omegaMatter));
-  const referenceDimensionlessAge = 2 / (3 * Math.sqrt(1 - REFERENCE_MATTER_DENSITY))
-    * Math.asinh(Math.sqrt((1 - REFERENCE_MATTER_DENSITY) / REFERENCE_MATTER_DENSITY));
-  return REFERENCE_AGE_YEARS * dimensionlessAge / referenceDimensionlessAge / expansionRate;
+  const age = dimensionlessAge(omegaMatter, darkEnergyDensity, darkEnergy);
+  return REFERENCE_AGE_YEARS * age / REFERENCE_DIMENSIONLESS_AGE / expansionRate;
 }
 
 export function deriveCosmicMilestones({
@@ -26,7 +65,8 @@ export function deriveCosmicMilestones({
   darkEnergyDensity,
   primordialFluctuation,
   cmbTemperature,
-  structureEfficiency
+  structureEfficiency,
+  darkEnergy
 }) {
   const omegaMatter = Math.max(.06, 1 - darkEnergyDensity);
   const atomicBindingScale = fineStructure ** 2 * speed ** 2 / massRatio;
@@ -52,7 +92,7 @@ export function deriveCosmicMilestones({
     recombinationYears,
     firstStarsYears,
     matureGalaxiesYears,
-    presentAgeYears: estimatePresentAgeYears(expansionRate, darkEnergyDensity)
+    presentAgeYears: estimatePresentAgeYears(expansionRate, darkEnergyDensity, darkEnergy)
   };
 }
 
@@ -129,8 +169,13 @@ export function createUniverse(seed = generateSeedCode()) {
   const blackHoleProbability = [.96, .92, .72, .99, .34][galaxyType];
   const hasCentralBlackHole = random() < blackHoleProbability;
   const activeNucleus = hasCentralBlackHole && random() < [.1, .07, .05, .045, .025][galaxyType];
-  const blackHoleEvaporationExponent = Math.floor(randomBetween(random, 97, 103));
+  const blackHoleEvaporationExponent = Math.floor(randomBetween(
+    random,
+    hasCentralBlackHole ? 97 : 67,
+    hasCentralBlackHole ? 101 : 71
+  ));
   const hue = randomBetween(random, 0.48, 0.76);
+  const darkEnergy = darkEnergyModelForSeed(seedCode);
   const cosmicMilestones = deriveCosmicMilestones({
     speed,
     fineStructure,
@@ -139,12 +184,14 @@ export function createUniverse(seed = generateSeedCode()) {
     darkEnergyDensity,
     primordialFluctuation,
     cmbTemperature,
-    structureEfficiency
+    structureEfficiency,
+    darkEnergy
   });
   const cosmicFate = createCosmicFate(seedCode, {
     expansionRate,
     darkEnergyDensity,
-    presentAgeYears: cosmicMilestones.presentAgeYears
+    presentAgeYears: cosmicMilestones.presentAgeYears,
+    darkEnergy
   });
   return {
     seed: seedCode, seedValue, speed, gravity, fineStructure, massRatio, expansionRate, darkEnergyDensity,

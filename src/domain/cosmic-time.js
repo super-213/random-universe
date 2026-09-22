@@ -65,10 +65,10 @@ export function cosmicLogYearsToTimelinePosition(exponent, universe) {
   if (targetExponent < 12) return 470 + (targetExponent - presentExponent) / (12 - presentExponent) * 100;
   if (targetExponent < 14) return 570 + (targetExponent - 12) / 2 * 80;
   if (targetExponent < 15) return 650 + (targetExponent - 14) * 30;
-  if (targetExponent < 38) return 680 + (targetExponent - 15) / 23 * 165;
+  if (targetExponent < 40) return 680 + (targetExponent - 15) / 25 * 165;
   const evaporationExponent = universe?.blackHoleEvaporationExponent || 100;
   if (targetExponent < evaporationExponent) {
-    return 845 + (targetExponent - 38) / (evaporationExponent - 38) * 105;
+    return 845 + (targetExponent - 40) / (evaporationExponent - 40) * 105;
   }
   if (targetExponent < ULTRA_FUTURE_END_EXPONENT) {
     return ULTRA_FUTURE_START
@@ -119,10 +119,10 @@ export function timelinePositionToCosmicLogYears(position, universe) {
   if (target < 570) return interpolateExponent(presentAgeYears, 1e12, (target - 470) / 100);
   if (target < 650) return 12 + (target - 570) / 80 * 2;
   if (target < 680) return 14 + (target - 650) / 30;
-  if (target < 845) return 15 + (target - 680) / 165 * 23;
+  if (target < 845) return 15 + (target - 680) / 165 * 25;
   const evaporationExponent = universe?.blackHoleEvaporationExponent || 100;
   if (target < ULTRA_FUTURE_START) {
-    return 38 + (target - 845) / 105 * (evaporationExponent - 38);
+    return 40 + (target - 845) / 105 * (evaporationExponent - 40);
   }
   if (target < ASYMPTOTIC_FUTURE_START) {
     return evaporationExponent
@@ -299,8 +299,8 @@ export function cosmicTimeLabel(position, universe) {
   if (position < 570) return `T+${formatYears(logLerp(presentAgeYears, 1e12, (position - 470) / 100))}`;
   if (position < 650) return `T+10^${(12 + (position - 570) / 80 * 2).toFixed(1)} yr`;
   if (position < 680) return `T+10^${(14 + (position - 650) / 30).toFixed(1)} yr`;
-  if (position < 845) return `T+10^${Math.round(15 + (position - 680) / 165 * 23)} yr`;
-  if (position < 950) return `T+10^${Math.round(38 + (position - 845) / 105 * (universe.blackHoleEvaporationExponent - 38))} yr`;
+  if (position < 845) return `T+10^${Math.round(15 + (position - 680) / 165 * 25)} yr`;
+  if (position < 950) return `T+10^${Math.round(40 + (position - 845) / 105 * (universe.blackHoleEvaporationExponent - 40))} yr`;
   if (position >= 1000) return 'T→∞ · 渐近热寂';
   const exponent = timelinePositionToCosmicLogYears(position, universe);
   const exponentLabel = exponent < 1000 ? exponent.toFixed(0) : String(Math.round(exponent));

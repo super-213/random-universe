@@ -865,7 +865,7 @@ export function createRareEventPlan({
       }));
     }
 
-    const protonDecayStart = cosmicYearsToTimelinePosition(10 ** randomBetween(random, 33.5, 36), universe);
+    const protonDecayStart = cosmicYearsToTimelinePosition(10 ** randomBetween(random, 34.5, 36), universe);
     add(createMarker({
       universe,
       type: 'proton-decay-era',
@@ -915,22 +915,27 @@ export function createRareEventPlan({
     }
 
     const hawkingImpactAt = clamp(942 + random() * 6, 942, 948);
-    add(createMarker({
-      universe,
-      type: 'hawking-final-burst',
-      label: '黑洞霍金辐射末期爆发',
-      visual: 'waste-heat',
-      color: '#d4e9ff',
-      start: hawkingImpactAt - 12,
-      duration: 16,
-      physicalDurationYears: 1 / 31557600,
-      physicalStartYears: 10 ** universe.blackHoleEvaporationExponent,
-      impactAt: hawkingImpactAt,
-      visualImpactAt: hawkingImpactAt - 2,
-      sourceIndex: galacticCenterIndex,
-      message: '最后一批长寿黑洞进入温度急剧上升阶段，剩余质量在极短时间内转化为高能粒子',
-      outcome: `在约 10^${universe.blackHoleEvaporationExponent} 年附近出现最后的局域高能瞬变，随后不再有黑洞可提供可用能量梯度`
-    }));
+    const hawkingSource = universe.hasCentralBlackHole
+      ? galacticCenterIndex
+      : firstCompatibleSource(stellarPopulation, random, hawkingImpactAt, [3]);
+    if (hawkingSource !== null) {
+      add(createMarker({
+        universe,
+        type: 'hawking-final-burst',
+        label: '黑洞霍金辐射末期爆发',
+        visual: 'waste-heat',
+        color: '#d4e9ff',
+        start: hawkingImpactAt - 12,
+        duration: 16,
+        physicalDurationYears: 1 / 31557600,
+        physicalStartYears: 10 ** universe.blackHoleEvaporationExponent,
+        impactAt: hawkingImpactAt,
+        visualImpactAt: hawkingImpactAt - 2,
+        sourceIndex: hawkingSource,
+        message: '最后一批长寿黑洞进入温度急剧上升阶段，剩余质量在极短时间内转化为高能粒子',
+        outcome: `在约 10^${universe.blackHoleEvaporationExponent} 年附近出现最后的局域高能瞬变，随后不再有黑洞可提供可用能量梯度`
+      }));
+    }
 
     if (whiteDwarfSource !== null) {
       const blackDwarfExponent = randomBetween(random, 1080, 1120);

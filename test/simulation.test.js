@@ -12,6 +12,7 @@ import {
 import { erasForUniverse } from '../src/domain/catalog.js';
 import {
   createUniverse,
+  estimatePresentAgeYears,
   stellarEndTimelinePosition,
   stellarFormationEndTimelinePosition
 } from '../src/domain/universe.js';
@@ -356,6 +357,7 @@ test('the heat-death timeline expands beyond black-hole evaporation in log-year 
   const universe = Array.from({ length: 200 }, (_, index) => createUniverse(seedFor(index)))
     .find((candidate) => candidate.cosmicFate.type === 'heat-death');
   assert.ok(universe);
+  assert.equal(timelinePositionToCosmicLogYears(845, universe), 40);
   assert.equal(timelinePositionToCosmicLogYears(950, universe), universe.blackHoleEvaporationExponent);
   assert.equal(timelinePositionToCosmicLogYears(995, universe), 1200);
   assert.equal(timelinePositionToCosmicLogYears(1000, universe), Infinity);
@@ -381,6 +383,7 @@ test('stellar entities share formation, lifetime, spectrum, planets, and remnant
   }
   const first = createStellarPopulation(universe, positions);
   const second = createStellarPopulation(universe, positions);
+  const stellarEraDeadline = 10 ** universe.lastStarDeathExponent;
 
   assert.deepEqual(first.birthAt, second.birthAt);
   assert.deepEqual(first.massSolar, second.massSolar);
@@ -388,12 +391,53 @@ test('stellar entities share formation, lifetime, spectrum, planets, and remnant
   assert.ok(Math.max(...first.birthAt) > 322);
   for (let index = 0; index < first.birthAt.length; index++) {
     assert.ok(first.deathYears[index] > first.birthYears[index]);
+    assert.ok(first.deathYears[index] <= stellarEraDeadline * (1 + Number.EPSILON * 4));
     assert.ok(first.deathAt[index] >= first.birthAt[index]);
     assert.ok(first.temperatureK[index] >= 2300 && first.temperatureK[index] <= 42000);
     assert.ok(first.planetCounts[index] > 0 || first.lifeSignals[index] === 0);
     const expectedRemnant = first.massSolar[index] < 8 ? 1 : first.massSolar[index] < 25 ? 2 : 3;
     assert.equal(first.remnantTypes[index], expectedRemnant);
   }
+});
+
+test('dynamic dark energy participates in the calculated present age', () => {
+  const lambdaAge = estimatePresentAgeYears(1, .685, { w0: -1, wa: 0 });
+  const quintessenceAge = estimatePresentAgeYears(1, .685, { w0: -.8, wa: 0 });
+  const phantomAge = estimatePresentAgeYears(1, .685, { w0: -1.2, wa: 0 });
+  assert.ok(Math.abs(lambdaAge - 1.38e10) < 1e6);
+  assert.ok(quintessenceAge < lambdaAge);
+  assert.ok(phantomAge > lambdaAge);
+});
+
+test('black-hole era duration reflects whether a central black hole exists', () => {
+  let foundCentral = false;
+  let foundStellarOnly = false;
+  for (let index = 0; index < 500 && (!foundCentral || !foundStellarOnly); index++) {
+    const universe = createUniverse(seedFor(index));
+    if (universe.hasCentralBlackHole) {
+      foundCentral = true;
+      assert.ok(universe.blackHoleEvaporationExponent >= 97);
+      assert.ok(universe.blackHoleEvaporationExponent <= 100);
+    } else {
+      foundStellarOnly = true;
+      assert.ok(universe.blackHoleEvaporationExponent >= 67);
+      assert.ok(universe.blackHoleEvaporationExponent <= 70);
+    }
+  }
+  assert.equal(foundCentral, true);
+  assert.equal(foundStellarOnly, true);
+});
+
+test('early-era descriptions use each universe physical milestones', () => {
+  const first = createUniverse(seedFor(1));
+  const second = Array.from({ length: 100 }, (_, index) => createUniverse(seedFor(index + 2)))
+    .find((candidate) => Math.abs(
+      candidate.cosmicMilestones.recombinationYears
+        - first.cosmicMilestones.recombinationYears
+    ) > 1e5);
+  assert.ok(second);
+  assert.notEqual(erasForUniverse(first)[2].description, erasForUniverse(second)[2].description);
+  assert.notEqual(erasForUniverse(first)[3].description, erasForUniverse(second)[3].description);
 });
 
 test('stellar dawn ignites deterministically from staggered local sites', () => {
@@ -742,7 +786,11 @@ test('rare observations are seeded and require simulated sources or causal precu
         assert.match(event.sourceEventId, /^rare-(runaway-greenhouse|snowball-climate-cycle)-/);
       } else if (['proton-decay-era', 'galactic-evaporation', 'hawking-final-burst', 'black-dwarf-supernova', 'last-observable-signal'].includes(event.type)) {
         assert.equal(universe.cosmicFate.type, 'heat-death');
-        if (event.type === 'black-dwarf-supernova') {
+        if (event.type === 'proton-decay-era') {
+          assert.ok(event.physicalStartYears >= 10 ** 34.5);
+        } else if (event.type === 'hawking-final-burst' && !universe.hasCentralBlackHole) {
+          assert.equal(population.remnantTypes[event.sourceIndex], 3);
+        } else if (event.type === 'black-dwarf-supernova') {
           assert.ok(event.physicalStartLogYears >= 1080);
           assert.ok(event.physicalStartLogYears <= 1120);
         }

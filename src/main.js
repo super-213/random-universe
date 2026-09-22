@@ -3974,7 +3974,7 @@ function updateLocalGroupVisuals(simulationState) {
   let epochLabel = '原星系云';
   if (cosmicPosition < STELLAR_DAWN_START) epochLabel = '原星系云';
   else if (cosmicPosition < STELLAR_DAWN_END) epochLabel = '恒星形成中';
-  else if (cosmicPosition < stellarEnd - 75) epochLabel = '恒星时代';
+  else if (cosmicPosition < stellarEnd - 75) epochLabel = '成熟恒星时代';
   else if (cosmicPosition < stellarEnd + 10) epochLabel = '恒星逐渐熄灭';
   else if (cosmicPosition < remnantFadeEnd) epochLabel = '致密残骸时代';
   else epochLabel = '暗星系遗迹';

@@ -39,10 +39,14 @@ export function sampleStellarBirthYears(random, universe) {
   );
 }
 
-export function stellarLifetimeYears(massSolar, universe) {
+export function stellarLifetimeYears(massSolar, universe, bornYears = 0) {
   const exponent = massSolar < .5 ? 3 : massSolar < 2 ? 2.7 : 2.5;
   const lifetime = 1e10 * massSolar ** -exponent;
-  return clamp(lifetime, 3e6, 10 ** universe.lastStarDeathExponent);
+  const remainingStellarEra = Math.max(
+    1,
+    10 ** universe.lastStarDeathExponent - Math.max(0, bornYears)
+  );
+  return clamp(lifetime, Math.min(3e6, remainingStellarEra), remainingStellarEra);
 }
 
 function stellarLuminosity(massSolar) {
@@ -139,7 +143,7 @@ export function createStellarPopulation(universe, positions, {
     const bornYears = suppliedBirthYears?.[index]
       || sampleStellarBirthYears(random, universe);
     const mass = sampleStellarMass(random);
-    const lifetime = stellarLifetimeYears(mass, universe);
+    const lifetime = stellarLifetimeYears(mass, universe, bornYears);
     const diedYears = bornYears + lifetime;
     const temperature = stellarTemperatureK(mass);
     const enrichment = clamp(
