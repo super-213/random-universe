@@ -19,6 +19,23 @@ export function mergerPersistenceAt(position, event) {
   return 1 - smoothstep(position, persistenceEnd, persistenceEnd + releaseDuration);
 }
 
+export function blackHoleMergerVisualState(phase, persistence = 1) {
+  const normalizedPhase = clamp(phase, 0, 1);
+  const mergePoint = .68;
+  const handoffReveal = smoothstep(normalizedPhase, 0, .08);
+  const remnantReveal = smoothstep(normalizedPhase, mergePoint - .025, mergePoint + .045);
+  const retainedVisibility = clamp(persistence, 0, 1);
+  return {
+    mergePoint,
+    inspiral: Math.min(1, normalizedPhase / mergePoint),
+    postMerge: clamp((normalizedPhase - mergePoint) / (1 - mergePoint), 0, 1),
+    handoffReveal,
+    remnantReveal,
+    progenitorVisibility: handoffReveal * (1 - remnantReveal),
+    remnantVisibility: remnantReveal * retainedVisibility
+  };
+}
+
 function hashUnit(index, salt) {
   let value = (index + 1) ^ salt;
   value = Math.imul(value ^ value >>> 16, 0x21f0aaad);

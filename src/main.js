@@ -2302,7 +2302,13 @@ function buildCosmicEvents(starPositions) {
     } else if (data.visual === 'stellar-collapse') {
       const starCore = new THREE.Sprite(new THREE.SpriteMaterial({ map: getPointTexture(), color: 0xffa45b, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
       const shroud = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeGlowTexture(), color: 0x9a5538, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
-      const remnantHole = createBlackHoleVisual({ color: 0x9d6b58, tilt: -.18, phase: random() * Math.PI * 2, visualScale: .72 });
+      const remnantHole = createBlackHoleVisual({
+        color: 0x9d6b58,
+        tilt: -.18,
+        phase: random() * Math.PI * 2,
+        visualScale: .72,
+        intensity: 0
+      });
       remnantHole.userData.spinDirection = -1;
       remnantHole.visible = false;
 
@@ -2387,7 +2393,8 @@ function buildCosmicEvents(starPositions) {
           color,
           tilt: randomBetween(random, -.28, .28),
           phase: random() * Math.PI * 2,
-          visualScale: 1
+          visualScale: 1,
+          intensity: 0
         });
         hole.userData.spinDirection = direction;
         return hole;
@@ -2498,7 +2505,8 @@ function buildCosmicEvents(starPositions) {
     const blackHoleMass = blackHoleMassFromSimulation(data.simulation);
     if (mergerPair) {
       [mergerPair.left.hole, mergerPair.right.hole].forEach((hole) => {
-        hole.userData.handoffAt = data.start;
+        hole.userData.handoffStartAt = data.start;
+        hole.userData.handoffAt = data.start + data.duration * .08;
         hole.userData.consumedAt = consequences.impactAt;
         hole.userData.mergerEventId = id;
       });
@@ -2547,9 +2555,9 @@ function buildCosmicEvents(starPositions) {
         massSolar: blackHoleMass,
         birthAt: consequences.impactAt,
         visibleAt: mergerPair
-          ? data.start + data.duration + data.persistenceFadeDuration
+          ? data.start + data.duration
           : consequences.visualImpactAt,
-        formationDuration: mergerPair ? 0 : 8,
+        formationDuration: mergerPair ? data.persistenceFadeDuration : 8,
         sourceIndex: mergerPair ? null : location.index,
         anchorSourceIndices: mergerPair ? mergerAnchors.indices : null,
         anchorWeights: mergerPair ? mergerAnchors.weights : null,

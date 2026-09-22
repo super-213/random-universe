@@ -572,6 +572,19 @@ export function tidalDisruptionVisualState(phase, simulation = null) {
   };
 }
 
+export function stellarCollapseVisualState(phase) {
+  const normalizedPhase = clamp(phase, 0, 1);
+  const onset = smoothstep(normalizedPhase, 0, .08);
+  const collapse = smoothstep(normalizedPhase, .32, .68);
+  const remnantReveal = smoothstep(normalizedPhase, .52, .68);
+  return {
+    onset,
+    collapse,
+    remnantReveal,
+    remnantIntensity: .58 + collapse * .34
+  };
+}
+
 function hashUnit(index, salt) {
   let value = (index + 1) ^ salt;
   value = Math.imul(value ^ value >>> 16, 0x21f0aaad);

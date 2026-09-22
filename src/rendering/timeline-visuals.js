@@ -9,9 +9,15 @@ import {
 } from '../domain/cosmic-time.js';
 import { STELLAR_DAWN_END, STELLAR_DAWN_START } from '../domain/stellar-dawn.js';
 import { orbitalAngleAt } from '../domain/orbital-motion.js';
-import { applyMergerGravity, applyStellarGravity, mergerPersistenceAt } from '../simulation/black-hole-gravity.js';
+import {
+  applyMergerGravity,
+  applyStellarGravity,
+  blackHoleMergerVisualState,
+  mergerPersistenceAt
+} from '../simulation/black-hole-gravity.js';
 import {
   applyTransientGravity,
+  stellarCollapseVisualState,
   tidalDisruptionVisualState,
   transientPersistenceAt
 } from '../simulation/transient-events.js';
@@ -235,8 +241,9 @@ export function updateEpochVisuals(position, context) {
     front.material.opacity = Math.sin(Math.min(.995, phase) * Math.PI) * .075 * fade;
     front.material.rotation = phaseOffset + phase * .18;
     const ignition = 1 - THREE.MathUtils.smoothstep(phase, .03, .24);
+    const sourceReveal = THREE.MathUtils.smoothstep(phase, 0, .035);
     sourceGlow.scale.setScalar(.35 + phase * .95);
-    sourceGlow.material.opacity = ignition * .72 * fade;
+    sourceGlow.material.opacity = sourceReveal * ignition * .72 * fade;
   });
 
   const positionArray = clickableStars.geometry.attributes.position.array;
@@ -561,6 +568,13 @@ export function updateEpochVisuals(position, context) {
       && position >= (data.visibleAt ?? data.birthAt)
       && position < (data.handoffAt ?? Infinity)
       && position <= data.evaporationAt + pulseWindow;
+    const handoffVisibility = data.handoffStartAt === undefined
+      ? 1
+      : 1 - THREE.MathUtils.smoothstep(
+          position,
+          data.handoffStartAt,
+          data.handoffAt
+        );
     const dawnMaturity = data.isCentral
       ? THREE.MathUtils.smoothstep(position, data.birthAt, STELLAR_DAWN_END + 18)
       : 1;
@@ -574,13 +588,14 @@ export function updateEpochVisuals(position, context) {
       * dawnMaturity
       * THREE.MathUtils.lerp(data.accretionStrength, .24, isolated)
       * Math.sqrt(Math.max(0, remaining));
-    setBlackHoleIntensity(hole, accretionIntensity, outcomeVisibility);
+    setBlackHoleIntensity(hole, accretionIntensity, outcomeVisibility * handoffVisibility);
     data.hawkingGlow.material.opacity = born
       * hawkingEra
       * (.06 + lateEvaporation * .62)
       * Math.sqrt(Math.max(0, remaining))
-      * outcomeVisibility;
-    data.finalPulse.material.opacity = pulse * .84 * outcomeVisibility;
+      * outcomeVisibility
+      * handoffVisibility;
+    data.finalPulse.material.opacity = pulse * .84 * outcomeVisibility * handoffVisibility;
     const pulseScale = (.22 + pulse * 2.1) / Math.max(.035, massScale);
     data.finalPulse.scale.set(pulseScale, pulseScale, 1);
   });
@@ -608,12 +623,14 @@ export function updateEpochVisuals(position, context) {
   cosmicFateGroup.visible = finiteOutcome && fatePhase > 0 && mode === 'explorer';
   if (cosmicFateGroup.visible && fateBubble && fateGlow) {
     if (fate.type === 'vacuum-decay') {
+      const nucleation = THREE.MathUtils.smoothstep(fatePhase, 0, .025);
       const radius = .18 + Math.pow(fatePhase, .58) * 36;
       fateBubble.visible = true;
       fateBubble.scale.setScalar(radius);
-      fateBubble.material.opacity = Math.sin(Math.min(.98, fatePhase) * Math.PI) * .18 + .035;
+      fateBubble.material.opacity = nucleation
+        * (Math.sin(Math.min(.98, fatePhase) * Math.PI) * .18 + .035);
       fateGlow.position.copy(fateBubble.position);
-      fateGlow.material.opacity = (1 - fatePhase) * .42;
+      fateGlow.material.opacity = nucleation * (1 - fatePhase) * .42;
       fateGlow.scale.setScalar(1.2 + fatePhase * 5.5);
     } else {
       fateBubble.visible = false;
@@ -685,7 +702,16 @@ export function updateCosmicEvents(position, context) {
         effect.shroud.material.opacity = 0;
         effect.dust.material.opacity = 0;
         effect.remnantHole.visible = true;
-        setBlackHoleIntensity(effect.remnantHole, .8, transientPersistence);
+        setBlackHoleIntensity(effect.remnantHole, .92, transientPersistence);
+      } else if (event.visual === 'black-hole-merger') {
+        effect.holeA.visible = false;
+        effect.holeB.visible = false;
+        effect.remnantHole.visible = transientPersistence > .001;
+        setBlackHoleIntensity(effect.remnantHole, .74, transientPersistence);
+        effect.mergerGlow.material.opacity = 0;
+        effect.gasEcho.material.opacity = 0;
+        effect.waveDust.material.opacity = 0;
+        effect.recoilTrail.material.opacity = .08 * transientPersistence;
       } else if (event.visual === 'supernova') {
         effect.innerFlash.material.opacity = 0;
         effect.photosphere.material.opacity = 0;
@@ -829,6 +855,7 @@ export function updateCosmicEvents(position, context) {
       effect.debris.material.opacity = state.disrupted * state.fade * .82;
     } else if (event.visual === 'stellar-flare') {
       const phase = visualPhase;
+      const onset = THREE.MathUtils.smoothstep(phase, 0, .08);
       const stormPulse = event.simulation?.pulsePhases?.reduce((strongest, pulsePhase, pulseIndex) => {
         const weight = event.simulation.pulseWeights?.[pulseIndex] ?? 1;
         const distance = Math.abs(phase - pulsePhase);
@@ -836,7 +863,7 @@ export function updateCosmicEvents(position, context) {
       }, 0) || 0;
       const envelope = Math.max(Math.pow(Math.sin(phase * Math.PI), .5) * .22, stormPulse);
       const pulse = .72 + stormPulse * .28;
-      effect.starCore.material.opacity = .48 + envelope * .5;
+      effect.starCore.material.opacity = onset * (.48 + envelope * .5);
       effect.halo.material.opacity = envelope * pulse * .32;
       const haloScale = .45 + envelope * 1.25;
       effect.halo.scale.set(haloScale, haloScale, 1);
@@ -860,10 +887,13 @@ export function updateCosmicEvents(position, context) {
       effect.particles.material.opacity = envelope * .64;
     } else if (event.visual === 'stellar-collapse') {
       const phase = visualPhase;
-      const collapse = THREE.MathUtils.smoothstep(phase, .32, .68);
+      const state = stellarCollapseVisualState(phase);
+      const { collapse } = state;
       const briefBrightening = THREE.MathUtils.smoothstep(phase, .04, .2)
         * (1 - THREE.MathUtils.smoothstep(phase, .3, .52));
-      effect.starCore.material.opacity = (1 - collapse) * (.58 + briefBrightening * .42);
+      effect.starCore.material.opacity = state.onset
+        * (1 - collapse)
+        * (.58 + briefBrightening * .42);
       const coreScale = Math.max(.025, .34 * (1 - collapse * .94) + briefBrightening * .24);
       effect.starCore.scale.set(coreScale, coreScale, 1);
       const dustOpacity = THREE.MathUtils.clamp((event.simulation?.dustOpticalDepth || 2) / 8, .16, .68);
@@ -884,8 +914,14 @@ export function updateCosmicEvents(position, context) {
       effect.dust.geometry.attributes.position.needsUpdate = true;
       effect.dust.material.opacity = THREE.MathUtils.smoothstep(phase, .22, .48)
         * (1 - THREE.MathUtils.smoothstep(phase, .82, 1)) * .46;
-      effect.remnantHole.visible = collapse > .72;
-      if (effect.remnantHole.visible) setBlackHoleIntensity(effect.remnantHole, .58 + collapse * .34);
+      effect.remnantHole.visible = state.remnantReveal > .001;
+      if (effect.remnantHole.visible) {
+        setBlackHoleIntensity(
+          effect.remnantHole,
+          state.remnantIntensity,
+          state.remnantReveal
+        );
+      }
     } else if (event.visual === 'pulsar') {
       const phase = visualPhase;
       const simulatedPulse = event.simulation?.pulsePhases?.reduce((strongest, pulsePhase, pulseIndex) => {
@@ -908,12 +944,11 @@ export function updateCosmicEvents(position, context) {
       event.group.userData.intensity = envelope;
     } else if (event.visual === 'black-hole-merger') {
       const phase = visualPhase;
-      const mergePoint = .68;
-      const merged = phase >= mergePoint;
-      effect.holeA.visible = !merged;
-      effect.holeB.visible = !merged;
-      effect.remnantHole.visible = merged && persistence > 0;
-      const inspiral = Math.min(1, phase / mergePoint);
+      const state = blackHoleMergerVisualState(phase, persistence);
+      const { mergePoint, inspiral, postMerge } = state;
+      effect.holeA.visible = state.progenitorVisibility > .001;
+      effect.holeB.visible = state.progenitorVisibility > .001;
+      effect.remnantHole.visible = state.remnantVisibility > .001;
       const angleFor = (value) => Math.PI * 2 * (1.15 * value + 4.1 * Math.pow(value, 3));
       const radiusFor = (value) => .12 + 2.45 * Math.pow(1 - value, .72);
       const positionFor = (side, value, target) => {
@@ -946,12 +981,13 @@ export function updateCosmicEvents(position, context) {
           array[i * 3 + 2] = mergerTrailPoint.z;
         }
         trail.geometry.attributes.position.needsUpdate = true;
-        trail.material.opacity = merged ? 0 : THREE.MathUtils.smoothstep(phase, .02, .22) * .34;
+        trail.material.opacity = THREE.MathUtils.smoothstep(phase, .02, .22)
+          * .34
+          * state.progenitorVisibility;
       };
       updateTrail(effect.trailA, 1);
       updateTrail(effect.trailB, -1);
 
-      const postMerge = THREE.MathUtils.clamp((phase - mergePoint) / (1 - mergePoint), 0, 1);
       const ringdown = Math.exp(-postMerge * 7) * Math.sin(postMerge * 38);
       const remnantScale = effect.remnantScale ?? 1;
       effect.remnantHole.scale.set(
@@ -959,10 +995,14 @@ export function updateCosmicEvents(position, context) {
         remnantScale * (1 - ringdown * .036),
         remnantScale
       );
-      setBlackHoleIntensity(effect.holeA, .62 + inspiral * .38);
-      setBlackHoleIntensity(effect.holeB, .62 + inspiral * .38);
-      setBlackHoleIntensity(effect.remnantHole, .74 + Math.exp(-postMerge * 4) * .34, persistence);
-      const mergerFlash = merged ? Math.exp(-postMerge * 18) : 0;
+      setBlackHoleIntensity(effect.holeA, .62 + inspiral * .38, state.progenitorVisibility);
+      setBlackHoleIntensity(effect.holeB, .62 + inspiral * .38, state.progenitorVisibility);
+      setBlackHoleIntensity(
+        effect.remnantHole,
+        .74 + Math.exp(-postMerge * 4) * .34,
+        state.remnantVisibility
+      );
+      const mergerFlash = state.remnantReveal * Math.exp(-postMerge * 18);
       // Vacuum mergers have no supernova-like flash. Gas-rich systems can have
       // a short electromagnetic afterglow, shown separately in warm light.
       effect.mergerGlow.material.opacity = mergerFlash * (effect.gasRich ? .48 : .13);
@@ -976,7 +1016,7 @@ export function updateCosmicEvents(position, context) {
       effect.waveHalos.forEach((halo, haloIndex) => {
         const delay = haloIndex * .12;
         const local = THREE.MathUtils.clamp((postMerge - delay) / (1 - delay), 0, 1);
-        halo.visible = merged && local > 0;
+        halo.visible = state.remnantReveal > .001 && local > 0;
         const scale = .38 + Math.pow(local, .7) * (8.8 + haloIndex * .6);
         halo.scale.set(scale, scale, 1);
         halo.material.opacity = Math.pow(Math.sin(local * Math.PI), .78) * (.29 - haloIndex * .045);
@@ -984,7 +1024,7 @@ export function updateCosmicEvents(position, context) {
       effect.wavefronts.forEach((wave, waveIndex) => {
         const delay = waveIndex * .075;
         const local = THREE.MathUtils.clamp((postMerge - delay) / (1 - delay), 0, 1);
-        wave.visible = merged && local > 0;
+        wave.visible = state.remnantReveal > .001 && local > 0;
         wave.scale.setScalar(.28 + Math.pow(local, .72) * (7.4 + waveIndex * .34));
         wave.material.opacity = Math.pow(Math.sin(local * Math.PI), .72) * .19 * (1 - waveIndex * .08);
       });
@@ -1002,7 +1042,9 @@ export function updateCosmicEvents(position, context) {
         waveArray[offset + 2] = dz * waveRadius * quadrupole;
       }
       effect.waveDust.geometry.attributes.position.needsUpdate = true;
-      effect.waveDust.material.opacity = merged ? Math.pow(Math.sin(postMerge * Math.PI), .62) * .5 : 0;
+      effect.waveDust.material.opacity = state.remnantReveal
+        * Math.pow(Math.sin(postMerge * Math.PI), .62)
+        * .5;
 
       const recoilProgress = THREE.MathUtils.smoothstep(postMerge, .08, 1);
       const recoilDistance = recoilProgress * THREE.MathUtils.clamp(
@@ -1017,7 +1059,10 @@ export function updateCosmicEvents(position, context) {
       recoilArray[4] = effect.remnantHole.position.y;
       recoilArray[5] = effect.remnantHole.position.z;
       effect.recoilTrail.geometry.attributes.position.needsUpdate = true;
-      effect.recoilTrail.material.opacity = merged ? (1 - postMerge * .72) * .28 * persistence : 0;
+      effect.recoilTrail.material.opacity = state.remnantReveal
+        * (1 - postMerge * .72)
+        * .28
+        * persistence;
     }
   });
   if (centralBlackHole?.visible && centralAccretionBoost > 0) {

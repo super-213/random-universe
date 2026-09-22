@@ -41,8 +41,10 @@ import { createRareEventPlan, rareEventTypes } from '../src/simulation/rare-even
 import {
   blackHoleRecoilKms,
   createTransientSimulation,
+  stellarCollapseVisualState,
   tidalDisruptionVisualState
 } from '../src/simulation/transient-events.js';
+import { blackHoleMergerVisualState } from '../src/simulation/black-hole-gravity.js';
 import { civilizationHistory, historyExportPayload } from '../src/ui/civilization-chronicle.js';
 import {
   clusterTimelineEvents,
@@ -1027,6 +1029,29 @@ test('tidal disruption visuals enter continuously before accretion peaks', () =>
   assert.ok(active.centralAccretionBoost > entering.centralAccretionBoost);
   assert.equal(ended.fade, 0);
   assert.equal(ended.centralAccretionBoost, 0);
+});
+
+test('stellar-collapse remnants fade in instead of crossing a bright visibility threshold', () => {
+  const hidden = stellarCollapseVisualState(.5);
+  const entering = stellarCollapseVisualState(.6);
+  const formed = stellarCollapseVisualState(.68);
+
+  assert.equal(hidden.remnantReveal, 0);
+  assert.ok(entering.remnantReveal > 0 && entering.remnantReveal < 1);
+  assert.equal(formed.remnantReveal, 1);
+  assert.ok(entering.remnantIntensity > 0);
+});
+
+test('black-hole merger visuals cross-fade at acquisition and coalescence', () => {
+  const acquired = blackHoleMergerVisualState(.04);
+  const coalescing = blackHoleMergerVisualState(.68);
+  const remnant = blackHoleMergerVisualState(1, .35);
+
+  assert.ok(acquired.handoffReveal > 0 && acquired.handoffReveal < 1);
+  assert.ok(coalescing.progenitorVisibility > 0);
+  assert.ok(coalescing.remnantVisibility > 0);
+  assert.equal(remnant.progenitorVisibility, 0);
+  assert.equal(remnant.remnantVisibility, .35);
 });
 
 test('transient stellar models conserve their declared mass budget', () => {
