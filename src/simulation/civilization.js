@@ -127,6 +127,7 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
   const diasporaModes = new Int8Array(speciesCount);
   const blackHoleHabitats = new Int8Array(speciesCount);
   const escapeProjects = new Int8Array(speciesCount);
+  const dimensionalGateways = new Uint8Array(speciesCount);
   const technologyMasks = new Uint16Array(speciesCount);
   const internalPopulation = new Float32Array(speciesCount);
   const resources = new Float32Array(speciesCount);
@@ -357,6 +358,22 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       event.outcome = event.encounterMode === 'starburst'
         ? `近掠压缩星际介质，${affected} 个文明获得短期能源与殖民窗口`
         : `核区反馈加热气体，${affected} 个文明的部分疆域供能下降`;
+      return;
+    }
+    if (event.type === 'interuniversal-gateway') {
+      const ascended = target?.highDimensional && time >= target.ascensionAt;
+      if (!ascended) {
+        event.outcome = `${target?.name || '目标文明'} 未能维持高维形态，泽利宇宙环在闭合前失稳`;
+        return;
+      }
+      dimensionalGateways[targetIndex] = 1;
+      visibility[targetIndex] = 0;
+      technology[targetIndex] = 1;
+      lastCauses[targetIndex] = '泽利宇宙环贯通其他宇宙';
+      const diameter = event.gatewayDiameterLightYears >= 1e6
+        ? `${(event.gatewayDiameterLightYears / 1e6).toFixed(2)} 百万光年`
+        : `${Math.round(event.gatewayDiameterLightYears / 1e3)} 千光年`;
+      event.outcome = `${target.name} 完成直径约 ${diameter} 的泽利宇宙环；中央孔洞已成为通往其他宇宙的单向通道`;
       return;
     }
     if (!target || !seeded[targetIndex] || territoryCountFor(targetIndex) === 0) {
@@ -1331,6 +1348,7 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       diasporaModes: diasporaModes.slice(),
       blackHoleHabitats: blackHoleHabitats.slice(),
       escapeProjects: escapeProjects.slice(),
+      dimensionalGateways: dimensionalGateways.slice(),
       technologyMasks: technologyMasks.slice(),
       externalGalaxyIndices: externalGalaxyIndices.slice(),
       externalPopulations: externalPopulations.slice(),
@@ -1464,10 +1482,12 @@ export function deriveCivilizationRuntime(position, simulationState, civilizatio
     if (simulationState?.blackHoleHabitats[index] < 0) statuses.push('黑洞设施失稳');
     if (simulationState?.escapeProjects[index] > 0) statuses.push('母宇宙外存续');
     if (simulationState?.escapeProjects[index] < 0) statuses.push('逃逸工程失败');
+    if (simulationState?.dimensionalGateways?.[index]) statuses.push('泽利宇宙环');
     return {
       alive,
       ascended,
       escaped: simulationState?.escapeProjects[index] > 0,
+      dimensionalGateway: Boolean(simulationState?.dimensionalGateways?.[index]),
       count: simulationState?.counts[index] || 0,
       trend: simulationState?.trends[index] || 0,
       technology: simulationState?.technology[index] || 0,

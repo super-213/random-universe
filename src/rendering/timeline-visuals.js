@@ -49,6 +49,14 @@ const tidalPeriapsis = new THREE.Vector3();
 
 function eventCenterFromStars(event, positionArray) {
   if (event.hostBlackHoleId === 'central') return { x: 0, y: 0, z: 0 };
+  if (event.visual === 'interuniversal-gateway') {
+    const sourceOffset = event.sourceIndex * 3;
+    return {
+      x: positionArray[sourceOffset] * .28,
+      y: positionArray[sourceOffset + 1] * .28,
+      z: positionArray[sourceOffset + 2] * .28
+    };
+  }
   const indices = event.mergerAnchorSourceIndices;
   const weights = event.mergerAnchorWeights;
   if (indices?.length) {
@@ -674,7 +682,10 @@ export function updateCosmicEvents(position, context) {
       : 0;
     const persistence = Math.max(mergerPersistence, transientPersistence, civilizationPersistence);
     const persistentRemnant = position >= visualImpactAt && persistence > 0;
-    const visible = !fateStarted && (active || persistentRemnant) && mode === 'explorer';
+    const survivesCosmicFate = event.visual === 'interuniversal-gateway';
+    const visible = (!fateStarted || survivesCosmicFate)
+      && (active || persistentRemnant)
+      && mode === 'explorer';
     event.group.visible = visible;
     if (!visible) return;
     anyVisible = true;

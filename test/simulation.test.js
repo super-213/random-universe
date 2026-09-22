@@ -717,6 +717,7 @@ test('speculative civilization event plans are seeded, conditional, and cover ev
   }
   const seen = new Set();
   const fleetOutcomes = new Set();
+  let gatewayEvents = 0;
   let foundConditionalAbsence = false;
   let totalPlannedEvents = 0;
   for (let seedIndex = 0; seedIndex < 300; seedIndex++) {
@@ -732,7 +733,9 @@ test('speculative civilization event plans are seeded, conditional, and cover ev
       technology: .3 + index * .02,
       visibility: .08,
       cohesion: .62,
-      machineAutonomy: .2
+      machineAutonomy: .2,
+      highDimensional: index === 0,
+      ascensionAt: index === 0 ? 520 : Infinity
     }));
     const first = createCivilizationEventPlan({ universe, civilizationData, habitatPositions });
     const second = createCivilizationEventPlan({ universe, civilizationData, habitatPositions });
@@ -749,6 +752,15 @@ test('speculative civilization event plans are seeded, conditional, and cover ev
         assert.ok(event.fleetSpeed > 0 && event.fleetSpeed < 1);
         assert.ok(event.fleetPopulation > 0);
         assert.ok(event.fleetSupplies > 0 && event.fleetSupplies <= 1);
+      } else if (event.type === 'interuniversal-gateway') {
+        gatewayEvents++;
+        const declineWindow = civilizationDeclineWindow(universe);
+        const declineStart = Math.min(declineWindow.energyStart, declineWindow.fateStart);
+        assert.equal(civilizationData[event.targetSpeciesIndex].highDimensional, true);
+        assert.ok(event.start >= civilizationData[event.targetSpeciesIndex].ascensionAt);
+        assert.ok(event.start >= declineStart);
+        assert.equal(event.markerVisual, true);
+        assert.equal(event.persistentUntil, 1000);
       }
     });
     if (first.events.length < civilizationEventTypes().length) foundConditionalAbsence = true;
@@ -760,6 +772,7 @@ test('speculative civilization event plans are seeded, conditional, and cover ev
   assert.deepEqual([...seen].sort(), civilizationEventTypes().sort());
   assert.deepEqual([...fleetOutcomes].sort(), ['arrived', 'divided', 'lost', 'returned']);
   assert.equal(foundConditionalAbsence, true);
+  assert.ok(gatewayEvents / 300 > .18 && gatewayEvents / 300 < .32);
   assert.ok(totalPlannedEvents / 300 > 10 && totalPlannedEvents / 300 < 18);
 });
 
@@ -821,6 +834,55 @@ test('civilization events change snapshots and create active successor cultures'
   assert.equal(simulation.snapshots.some((item) => item.time >= 448 && item.active[4]), true);
   assert.equal(simulation.snapshots.some((item) => item.time >= 458 && item.active[5]), true);
   assert.ok(events.every((event) => event.outcome !== '事件仍在演化'));
+});
+
+test('an ascended civilization completes its interuniversal gateway', () => {
+  const universe = createUniverse('0000-0000-0000-0001');
+  const civilizationData = [{
+    name: '高维测试文明',
+    birth: 400,
+    homeNodeIndex: 0,
+    aggression: 0,
+    cooperation: 1,
+    expansionRate: 1,
+    resilience: 1,
+    technology: .8,
+    visibility: .1,
+    cohesion: .9,
+    machineAutonomy: .2,
+    highDimensional: true,
+    ascensionAt: 410
+  }];
+  const simulation = {
+    start: 400,
+    end: 430,
+    step: 1,
+    habitatRemnantIndices: Uint16Array.from([0]),
+    habitatPositions: new Float32Array([0, 0, 0]),
+    adjacency: [],
+    snapshots: []
+  };
+  const gateway = {
+    id: 'gateway-test',
+    type: 'interuniversal-gateway',
+    label: '泽利宇宙环建造',
+    category: 'civilization',
+    impactAt: 420,
+    targetSpeciesIndex: 0,
+    gatewayDiameterLightYears: 2.4e6,
+    civilizationImpacts: [],
+    outcome: '事件仍在演化'
+  };
+  buildCivilizationSimulation({
+    universe,
+    civilizationData,
+    civilizationSimulation: simulation,
+    cosmicEvents: [gateway]
+  });
+
+  const snapshot = simulation.snapshots.find((item) => item.time === 421);
+  assert.equal(snapshot.dimensionalGateways[0], 1);
+  assert.match(gateway.outcome, /通往其他宇宙/);
 });
 
 test('second-wave civilization events persist outcomes and relativistic lineages', () => {

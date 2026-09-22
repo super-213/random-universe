@@ -34,6 +34,174 @@ function createProbeSwarm(color) {
   return { swarm, directions };
 }
 
+function circlePoints(radius, count = 128) {
+  return Array.from({ length: count + 1 }, (_, index) => {
+    const angle = index / count * Math.PI * 2;
+    return new THREE.Vector3(Math.cos(angle) * radius, Math.sin(angle) * radius, 0);
+  });
+}
+
+function createInteruniversalGateway(color) {
+  const assembly = new THREE.Group();
+  const segmentCount = 16;
+  const segmentArc = Math.PI * 2 / segmentCount * .76;
+  const segmentGeometry = new THREE.TorusGeometry(4.15, .095, 6, 18, segmentArc);
+  const segments = Array.from({ length: segmentCount }, (_, index) => {
+    const segment = new THREE.Mesh(segmentGeometry, new THREE.MeshBasicMaterial({
+      color: index % 3 === 0 ? 0xf5efff : color,
+      wireframe: true,
+      transparent: true,
+      opacity: 0,
+      depthTest: false,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending
+    }));
+    segment.rotation.z = index / segmentCount * Math.PI * 2;
+    segment.userData.assemblyIndex = index;
+    segment.renderOrder = 5;
+    assembly.add(segment);
+    return segment;
+  });
+
+  const railMaterial = new THREE.LineBasicMaterial({
+    color,
+    transparent: true,
+    opacity: 0,
+    depthTest: false,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+  });
+  const rails = [3.86, 4.44].map((radius) => {
+    const rail = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(circlePoints(radius)),
+      railMaterial.clone()
+    );
+    rail.geometry.setDrawRange(0, 0);
+    rail.renderOrder = 4;
+    assembly.add(rail);
+    return rail;
+  });
+
+  const aperture = new THREE.Mesh(
+    new THREE.CircleGeometry(3.72, 96),
+    new THREE.MeshBasicMaterial({
+      color: 0x010008,
+      transparent: true,
+      opacity: 0,
+      depthTest: false,
+      depthWrite: false,
+      side: THREE.DoubleSide
+    })
+  );
+  aperture.position.z = -.035;
+  aperture.renderOrder = 1;
+
+  const starCount = 220;
+  const starPositions = new Float32Array(starCount * 3);
+  for (let index = 0; index < starCount; index++) {
+    const angle = index * 2.399963 + Math.sin(index * 1.71) * .18;
+    const radius = Math.sqrt((index + .5) / starCount) * 3.48;
+    starPositions.set([
+      Math.cos(angle) * radius,
+      Math.sin(angle) * radius,
+      .012 + index % 5 * .004
+    ], index * 3);
+  }
+  const starGeometry = new THREE.BufferGeometry();
+  starGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+  const portalStars = new THREE.Points(starGeometry, new THREE.PointsMaterial({
+    color: 0xc9d8ff,
+    size: .035,
+    map: getPointTexture(),
+    alphaTest: .008,
+    transparent: true,
+    opacity: 0,
+    depthTest: false,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+  }));
+  portalStars.renderOrder = 2;
+
+  const energyRings = [4.02, 4.28].map((radius, index) => {
+    const energyRing = new THREE.LineLoop(
+      new THREE.BufferGeometry().setFromPoints(circlePoints(radius, 160).slice(0, -1)),
+      new THREE.LineBasicMaterial({
+        color: index ? 0x9ddcff : 0xf2dcff,
+        transparent: true,
+        opacity: 0,
+        depthTest: false,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending
+      })
+    );
+    energyRing.position.z = .04 + index * .018;
+    energyRing.renderOrder = 6;
+    assembly.add(energyRing);
+    return energyRing;
+  });
+
+  const builderCount = 180;
+  const builderPositions = new Float32Array(builderCount * 3);
+  const builderOrigins = new Float32Array(builderCount * 3);
+  const builderTargets = new Float32Array(builderCount * 3);
+  for (let index = 0; index < builderCount; index++) {
+    const angle = index * 2.399963;
+    const originRadius = 5.8 + index % 17 * .15;
+    const targetRadius = 4.15 + Math.sin(index * 1.37) * .13;
+    const origin = [
+      Math.cos(angle) * originRadius,
+      Math.sin(angle) * originRadius,
+      Math.sin(index * .73) * 1.7
+    ];
+    const target = [
+      Math.cos(angle) * targetRadius,
+      Math.sin(angle) * targetRadius,
+      Math.sin(index * .73) * .08
+    ];
+    builderOrigins.set(origin, index * 3);
+    builderTargets.set(target, index * 3);
+    builderPositions.set(origin, index * 3);
+  }
+  const builderGeometry = new THREE.BufferGeometry();
+  builderGeometry.setAttribute('position', new THREE.BufferAttribute(builderPositions, 3));
+  const builders = new THREE.Points(builderGeometry, new THREE.PointsMaterial({
+    color: 0xe8f4ff,
+    size: .065,
+    map: getPointTexture(),
+    alphaTest: .008,
+    transparent: true,
+    opacity: 0,
+    depthTest: false,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+  }));
+  builders.renderOrder = 7;
+
+  const apertureHalo = new THREE.Sprite(additiveMaterial({
+    map: makeRingTexture(),
+    color: 0xc8a8ff,
+    depthTest: false
+  }));
+  apertureHalo.scale.setScalar(9.8);
+  apertureHalo.renderOrder = 3;
+
+  assembly.add(aperture, portalStars, builders, apertureHalo);
+  assembly.rotation.x = -.08;
+  assembly.scale.setScalar(1.45);
+  return {
+    assembly,
+    segments,
+    rails,
+    aperture,
+    portalStars,
+    energyRings,
+    builders,
+    builderOrigins,
+    builderTargets,
+    apertureHalo
+  };
+}
+
 export function createCivilizationEventVisual(event) {
   const group = new THREE.Group();
   const color = new THREE.Color(event.color);
@@ -42,7 +210,10 @@ export function createCivilizationEventVisual(event) {
   group.add(glow, ring);
   const effect = { glow, ring };
 
-  if (event.visual === 'signal-wave') {
+  if (event.visual === 'interuniversal-gateway') {
+    Object.assign(effect, createInteruniversalGateway(color));
+    group.add(effect.assembly);
+  } else if (event.visual === 'signal-wave') {
     const echoRings = [0, 1, 2].map((index) => {
       const echo = new THREE.Sprite(additiveMaterial({ map: makeRingTexture(), color }));
       echo.userData.offset = index / 3;
@@ -371,6 +542,48 @@ export function updateCivilizationEventVisual(event, phase, persistence = 0) {
   effect.ring.material.opacity = intensity * .32;
   effect.ring.scale.setScalar(.34 + Math.pow(Math.max(0, phase), .7) * 2.2);
 
+  if (effect.segments) {
+    const construction = THREE.MathUtils.smoothstep(phase, 0, .92);
+    const portalOpen = Math.max(persistence, THREE.MathUtils.smoothstep(phase, .58, 1));
+    const builderFade = 1 - THREE.MathUtils.smoothstep(phase, .74, 1);
+    effect.ring.material.opacity = 0;
+    effect.glow.material.opacity = (.08 + portalOpen * .2) * Math.max(reveal, persistence);
+    effect.glow.scale.setScalar(7.6 + portalOpen * 3.2);
+    effect.segments.forEach((segment, index) => {
+      const delay = index / effect.segments.length * .7;
+      const segmentReveal = Math.max(
+        persistence,
+        THREE.MathUtils.smoothstep(phase, delay, Math.min(1, delay + .22))
+      );
+      segment.material.opacity = segmentReveal * (.5 + (index % 3 === 0 ? .24 : 0));
+      segment.scale.setScalar(.82 + segmentReveal * .18);
+    });
+    effect.rails.forEach((rail, index) => {
+      const points = rail.geometry.attributes.position.count;
+      rail.geometry.setDrawRange(0, Math.max(2, Math.floor(points * construction)));
+      rail.material.opacity = Math.max(persistence * .42, construction * (.34 - index * .06));
+    });
+    effect.energyRings.forEach((energyRing, index) => {
+      energyRing.material.opacity = portalOpen * (.44 - index * .12);
+      energyRing.scale.setScalar(.94 + portalOpen * .06);
+    });
+    effect.aperture.material.opacity = portalOpen * .97;
+    effect.portalStars.material.opacity = portalOpen * .82;
+    effect.portalStars.scale.setScalar(.32 + portalOpen * .68);
+    effect.apertureHalo.material.opacity = portalOpen * .4;
+    effect.apertureHalo.scale.setScalar(7.8 + portalOpen * 2.6);
+    const builderPositions = effect.builders.geometry.attributes.position.array;
+    for (let index = 0; index < builderPositions.length; index++) {
+      builderPositions[index] = THREE.MathUtils.lerp(
+        effect.builderOrigins[index],
+        effect.builderTargets[index],
+        construction
+      );
+    }
+    effect.builders.geometry.attributes.position.needsUpdate = true;
+    effect.builders.material.opacity = reveal * builderFade * .86;
+  }
+
   if (effect.echoRings) {
     effect.echoRings.forEach((ring, index) => {
       const travel = Math.max(0, Math.min(1, phase * 1.45 - index * .16));
@@ -568,5 +781,14 @@ export function animateCivilizationEventVisual(event, now) {
     effect.infraredShells.forEach((shell, index) => {
       shell.material.rotation = now * (.000025 + index * .000012) * (index % 2 ? -1 : 1);
     });
+  }
+  if (effect.segments) {
+    effect.assembly.rotation.y = Math.sin(now * .00008) * .045;
+    effect.energyRings.forEach((energyRing, index) => {
+      energyRing.rotation.z = now * (.00007 + index * .00004) * (index ? -1 : 1);
+    });
+    effect.portalStars.rotation.z = now * -.000012;
+    effect.builders.rotation.z = now * .000035;
+    effect.apertureHalo.material.rotation = now * .000025;
   }
 }

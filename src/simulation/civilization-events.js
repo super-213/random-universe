@@ -111,6 +111,16 @@ function timelineBeforeYears(position, years, universe) {
   );
 }
 
+function civilizationDyingStageStart(universe) {
+  const stellarEnd = stellarEndTimelinePosition(universe);
+  const finiteOutcome = universe.cosmicFate?.type !== 'heat-death';
+  const stellarEndReached = !finiteOutcome
+    || universe.cosmicFate.outcomeExponent > universe.lastStarDeathExponent;
+  const energyStart = stellarEndReached ? Math.max(470, stellarEnd - 22) : Infinity;
+  const fateStart = finiteOutcome ? universe.cosmicFate.onsetAt : Infinity;
+  return Math.min(energyStart, fateStart);
+}
+
 function eventTiming(type, start, visualDuration, universe) {
   const physicalStartYears = timelinePositionToCosmicYears(start, universe);
   const physicalDurationYears = eventCausalDurationYears[type] || 1e4;
@@ -845,6 +855,50 @@ export function createCivilizationEventPlan({ universe, civilizationData, habita
     });
   }
 
+  const dyingStageStart = civilizationDyingStageStart(universe);
+  civilizationData.forEach((species, speciesIndex) => {
+    if (!species.highDimensional || !Number.isFinite(species.ascensionAt)) return;
+    const gatewayRandom = createSeededRandom(universe.seed, 28471 + speciesIndex * 131);
+    if (gatewayRandom() >= .25) return;
+
+    const start = Math.max(dyingStageStart, species.ascensionAt);
+    if (!Number.isFinite(start) || start >= 999) return;
+    const duration = Math.max(1.5, Math.min(44, (1000 - start) * .72));
+    const impactAt = start + duration;
+    const galaxyDiameterLightYears = (8 + universe.stars * 4.7) * 1e4;
+    const gatewayDiameterLightYears = galaxyDiameterLightYears
+      * randomBetween(gatewayRandom, .46, .88);
+    events.push({
+      id: `civilization-interuniversal-gateway-${speciesIndex}-${universe.seed}`,
+      type: 'interuniversal-gateway',
+      label: '泽利宇宙环建造',
+      visual: 'interuniversal-gateway',
+      color: '#d9c7ff',
+      start,
+      duration,
+      impactAt,
+      visualImpactAt: impactAt,
+      physicalStartYears: timelinePositionToCosmicYears(start, universe),
+      physicalDurationYears: Math.max(
+        0,
+        timelinePositionToCosmicYears(impactAt, universe)
+          - timelinePositionToCosmicYears(start, universe)
+      ),
+      category: 'civilization',
+      confidence: 'science-fiction',
+      markerVisual: true,
+      persistentUntil: 1000,
+      persistenceFadeDuration: 1,
+      targetSpeciesIndex: speciesIndex,
+      secondarySpeciesIndex: null,
+      targetNodeIndex: species.homeNodeIndex,
+      gatewayDiameterLightYears,
+      civilizationImpacts: [],
+      message: `${species.name} 在宇宙开始衰亡时汇聚高维物质，建造横跨星系尺度的泽利宇宙环`,
+      outcome: '环体仍在建造；中央孔洞尚未与其他宇宙建立稳定连接'
+    });
+  });
+
   events.sort((a, b) => a.start - b.start);
   return { events, childSpecies, speciesProfiles, fermiScenario };
 }
@@ -856,6 +910,7 @@ export function civilizationEventTypes() {
     'fermi-paradigm',
     'ghost-signal',
     'exposure-response',
-    'galactic-aftermath'
+    'galactic-aftermath',
+    'interuniversal-gateway'
   ];
 }
