@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import './style.css';
 import { createSeededRandom } from './domain/random.js';
 import { createUniverse } from './domain/universe.js';
-import { createCosmicWebModel } from './domain/cosmic-web.js';
+import { cosmicGalaxyPositionAt, createCosmicWebModel } from './domain/cosmic-web.js';
 import { galaxyTypes as galaxyTypeLabels } from './domain/catalog.js';
 import { createLocalGalaxyGroup } from './domain/local-group.js';
 import { disposeSharedTextures, getPointTexture } from './rendering/textures.js';
@@ -216,6 +216,8 @@ let cosmicWebModel = null;
 let cosmicWebVisual = null;
 let cosmicCivilizationPlan = null;
 let cosmicCivilizationVisual = null;
+let cosmicFlowTime = 0;
+let lastCosmicFlowUpdateAt = 0;
 let galaxyViewPose = null;
 let universeScaleShadersWarmed = false;
 let shipHighlightEnabled = false;
@@ -938,10 +940,12 @@ function buildLocalGroupMap() {
 }
 
 function buildCosmicWebMap() {
+  restoreDetailGroupToScene();
   disposeGroup(cosmicWebGroup);
   cosmicWebGroup.rotation.set(.12, -.22, .04);
   cosmicWebModel = createCosmicWebModel(universe);
   const { positions, luminosity, colorMix } = cosmicWebModel;
+  const galaxyPositions = positions.slice();
   const colors = new Float32Array(positions.length);
   const baseColors = new Float32Array(positions.length);
   const cool = new THREE.Color().setHSL(universe.hue, .58, .69);
@@ -956,7 +960,7 @@ function buildCosmicWebMap() {
   }
 
   const galaxyGeometry = new THREE.BufferGeometry();
-  galaxyGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  galaxyGeometry.setAttribute('position', new THREE.BufferAttribute(galaxyPositions, 3));
   galaxyGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   const galaxyMaterial = new THREE.PointsMaterial({
     size: compactCivilizationLayout.matches ? 1.65 : 1.25,
@@ -1002,9 +1006,17 @@ function buildCosmicWebMap() {
     blending: THREE.AdditiveBlending
   });
   const locator = new THREE.Sprite(locatorMaterial);
+  const initialLocatorPosition = cosmicGalaxyPositionAt(
+    cosmicWebModel,
+    cosmicWebModel.currentGalaxyIndex,
+    0
+  );
+  const currentGalaxyAnchor = new THREE.Group();
+  currentGalaxyAnchor.position.fromArray(initialLocatorPosition);
   locator.scale.setScalar(3.2);
   locator.renderOrder = 8;
-  cosmicWebGroup.add(locator);
+  currentGalaxyAnchor.add(locator);
+  cosmicWebGroup.add(currentGalaxyAnchor);
 
   cosmicCivilizationPlan = createCosmicCivilizationPlan(universe, cosmicWebModel);
   const routeCapacity = cosmicCivilizationPlan.routes.length;
@@ -1069,8 +1081,10 @@ function buildCosmicWebMap() {
   cosmicWebVisual = {
     galaxies,
     clusterGlows,
+    currentGalaxyAnchor,
     locator,
     baseColors,
+    galaxyPositions,
     reveal: 0
   };
   cosmicCivilizationVisual = {
@@ -1083,8 +1097,10 @@ function buildCosmicWebMap() {
     settlementColors
   };
   cosmicWebGroup.visible = false;
+  cosmicFlowTime = 0;
+  lastCosmicFlowUpdateAt = 0;
   universeScaleShadersWarmed = false;
-  $('#universe-scale-structure').textContent = `${cosmicWebModel.clusterCount} 个超星系团节点 · 星系密度自然形成纤维与空洞 · 当前星系已标记`;
+  $('#universe-scale-structure').textContent = `${cosmicWebModel.morphologyLabel} · ${cosmicWebModel.clusterCount} 个超星系团节点 · 当前星系已标记`;
 }
 
 async function warmUniverseScaleShaders() {
@@ -1124,18 +1140,47 @@ function writeRouteColor(array, offset, color, brightness = 1) {
   array[offset + 2] = (color & 255) / 255 * brightness;
 }
 
+const cosmicRouteSourcePosition = [0, 0, 0];
+const cosmicRouteTargetPosition = [0, 0, 0];
+
+function movingCosmicRouteEndpoint(route, endpoint, target) {
+  if (!cosmicWebModel) {
+    const position = route[endpoint === 'sourceIndex' ? 'source' : 'target'];
+    target[0] = position[0];
+    target[1] = position[1];
+    target[2] = position[2];
+    return target;
+  }
+  return cosmicGalaxyPositionAt(
+    cosmicWebModel,
+    route[endpoint],
+    cosmicFlowTime,
+    target
+  );
+}
+
 function positionAlongCosmicRoute(route, progress, target) {
+  const source = movingCosmicRouteEndpoint(
+    route,
+    'sourceIndex',
+    cosmicRouteSourcePosition
+  );
+  const destination = movingCosmicRouteEndpoint(
+    route,
+    'targetIndex',
+    cosmicRouteTargetPosition
+  );
   const arc = Math.sin(progress * Math.PI) * route.arcHeight;
-  target[0] = THREE.MathUtils.lerp(route.source[0], route.target[0], progress)
+  target[0] = THREE.MathUtils.lerp(source[0], destination[0], progress)
     + route.arcDirection[0] * arc;
-  target[1] = THREE.MathUtils.lerp(route.source[1], route.target[1], progress)
+  target[1] = THREE.MathUtils.lerp(source[1], destination[1], progress)
     + route.arcDirection[1] * arc;
-  target[2] = THREE.MathUtils.lerp(route.source[2], route.target[2], progress)
+  target[2] = THREE.MathUtils.lerp(source[2], destination[2], progress)
     + route.arcDirection[2] * arc;
   return target;
 }
 
-function updateCosmicCivilizationVisuals(position) {
+function updateCosmicCivilizationVisuals(position, updateReadout = true) {
   if (!cosmicCivilizationPlan || !cosmicCivilizationVisual) return;
   const state = cosmicCivilizationStateAt(cosmicCivilizationPlan, position);
   const operational = position < cosmicCivilizationPlan.fateBoundary;
@@ -1157,7 +1202,8 @@ function updateCosmicCivilizationVisuals(position) {
 
   arrived.forEach((route, index) => {
     const offset = index * 3;
-    cosmicCivilizationVisual.settlementPositions.set(route.target, offset);
+    movingCosmicRouteEndpoint(route, 'targetIndex', travelPosition);
+    cosmicCivilizationVisual.settlementPositions.set(travelPosition, offset);
     writeRouteColor(cosmicCivilizationVisual.settlementColors, offset, route.color, .9);
   });
   cosmicCivilizationVisual.settlements.geometry.setDrawRange(0, arrived.length);
@@ -1175,9 +1221,11 @@ function updateCosmicCivilizationVisuals(position) {
     pulse.visible = true;
     pulse.material.color.setHex(type === 'failure' ? 0xff705c : route.color);
     if (type === 'departure') {
-      pulse.position.fromArray(route.source);
+      movingCosmicRouteEndpoint(route, 'sourceIndex', travelPosition);
+      pulse.position.fromArray(travelPosition);
     } else if (type === 'arrival') {
-      pulse.position.fromArray(route.target);
+      movingCosmicRouteEndpoint(route, 'targetIndex', travelPosition);
+      pulse.position.fromArray(travelPosition);
     } else {
       const failureProgress = (route.failureAt - route.departureAt)
         / Math.max(1e-6, route.arrivalAt - route.departureAt);
@@ -1189,6 +1237,8 @@ function updateCosmicCivilizationVisuals(position) {
     pulse.userData.baseOpacity = strength * .72;
   });
   applyCosmicWebOpacity();
+
+  if (!updateReadout) return;
 
   if (position < cosmicCivilizationPlan.civilizationStartAt) {
     $('#universe-scale-activity').textContent = '全宇宙文明航行尚未出现';
@@ -1212,6 +1262,31 @@ function updateCosmicCivilizationVisuals(position) {
     ? '启航'
     : event.type === 'arrival' ? '抵达' : '失联';
   $('#universe-scale-event').textContent = `最近事件 · ${event.route.modeLabel} ${eventLabel} · ${source} → ${target}`;
+}
+
+function updateCosmicWebMotion(now, force = false) {
+  if (!cosmicWebModel || !cosmicWebVisual) return;
+  if (!force && now - lastCosmicFlowUpdateAt < 50) return;
+  const elapsed = lastCosmicFlowUpdateAt > 0 ? now - lastCosmicFlowUpdateAt : 0;
+  lastCosmicFlowUpdateAt = now;
+  if (!prefersReducedMotion) cosmicFlowTime += Math.min(.12, elapsed * .001);
+  for (let index = 0; index < cosmicWebModel.galaxyCount; index++) {
+    cosmicGalaxyPositionAt(
+      cosmicWebModel,
+      index,
+      cosmicFlowTime,
+      cosmicWebVisual.galaxyPositions,
+      index * 3
+    );
+  }
+  cosmicWebVisual.galaxies.geometry.attributes.position.needsUpdate = true;
+  const locatorPosition = cosmicGalaxyPositionAt(
+    cosmicWebModel,
+    cosmicWebModel.currentGalaxyIndex,
+    cosmicFlowTime
+  );
+  cosmicWebVisual.currentGalaxyAnchor.position.fromArray(locatorPosition);
+  updateCosmicCivilizationVisuals(cosmicPosition, false);
 }
 
 function updateCosmicWebVisuals(position) {
@@ -1332,6 +1407,7 @@ function buildUniverseObject() {
 }
 
 function buildGalaxyPreview() {
+  restoreDetailGroupToScene();
   disposeGroup(galaxyGroup);
   disposeGroup(localGroupGroup);
   disposeGroup(epochEffectsGroup);
@@ -1375,6 +1451,8 @@ function buildGalaxyPreview() {
   cosmicWebVisual = null;
   cosmicCivilizationPlan = null;
   cosmicCivilizationVisual = null;
+  cosmicFlowTime = 0;
+  lastCosmicFlowUpdateAt = 0;
   galaxyViewPose = null;
   universeScaleShadersWarmed = false;
   currentEras = erasForUniverse(universe);
@@ -3675,7 +3753,10 @@ async function enterUniverse() {
   $('#civilization-legend').setAttribute('aria-hidden', 'true');
   galaxyGroup.visible = true;
   localGroupGroup.visible = alreadyHydrated;
+  restoreDetailGroupToScene();
   detailGroup.visible = true;
+  detailGroup.position.set(0, 0, 0);
+  detailGroup.quaternion.identity();
   detailGroup.scale.setScalar(0.02);
   cosmicWebGroup.visible = false;
   cosmicWebGroup.position.set(0, 0, 0);
@@ -3743,6 +3824,10 @@ function leaveUniverse() {
   $('#toggle-time').textContent = '▶';
   $('#toggle-time').setAttribute('aria-label', '播放时间');
   controls.enabled = false;
+  restoreDetailGroupToScene();
+  detailGroup.position.set(0, 0, 0);
+  detailGroup.quaternion.identity();
+  detailGroup.scale.setScalar(1);
   epochEffectsGroup.visible = false;
   remnantGroup.visible = false;
   heatDeathGroup.visible = false;
@@ -3761,14 +3846,26 @@ function isUniverseScaleTransition(candidate = transition) {
 }
 
 function cosmicWebAlignedPosition(target = new THREE.Vector3()) {
-  if (!cosmicWebVisual?.locator) return target.set(0, 0, 0);
+  if (!cosmicWebVisual?.currentGalaxyAnchor) return target.set(0, 0, 0);
   const previousPosition = cosmicWebGroup.position.clone();
   cosmicWebGroup.position.set(0, 0, 0);
   cosmicWebGroup.updateMatrixWorld(true);
-  cosmicWebVisual.locator.getWorldPosition(target);
+  cosmicWebVisual.currentGalaxyAnchor.getWorldPosition(target);
   cosmicWebGroup.position.copy(previousPosition);
   cosmicWebGroup.updateMatrixWorld(true);
   return target.multiplyScalar(-1);
+}
+
+function attachDetailGroupToCurrentGalaxy() {
+  const anchor = cosmicWebVisual?.currentGalaxyAnchor;
+  if (!anchor || detailGroup.parent === anchor) return;
+  anchor.attach(detailGroup);
+  detailGroup.position.set(0, 0, 0);
+}
+
+function restoreDetailGroupToScene() {
+  if (detailGroup.parent === scene) return;
+  scene.attach(detailGroup);
 }
 
 function hideScaleIncompatibleMarkers() {
@@ -3839,8 +3936,11 @@ function updateTransition(now) {
     if (transition.type === 'enter') universeGroup.visible = false;
     if (transition.type === 'leave') { detailGroup.visible = false; galaxyGroup.visible = false; localGroupGroup.visible = false; universeGroup.visible = true; universeGroup.scale.setScalar(1); }
     if (transition.type === 'universe-in') {
+      restoreDetailGroupToScene();
       cosmicWebGroup.visible = false;
       cosmicWebGroup.position.set(0, 0, 0);
+      detailGroup.position.set(0, 0, 0);
+      detailGroup.quaternion.copy(galaxyViewPose?.detailQuaternion || new THREE.Quaternion());
       detailGroup.scale.setScalar(1);
       scene.fog.density = .008;
       camera.far = 200;
@@ -4044,16 +4144,21 @@ function toggleUniverseScaleView() {
   if (universeScaleView && mixStart <= .001) {
     galaxyViewPose = {
       camera: cameraStart.clone(),
-      target: targetStart.clone()
+      target: targetStart.clone(),
+      detailQuaternion: detailGroup.quaternion.clone()
     };
   }
   galaxyViewPose ||= {
     camera: new THREE.Vector3(0, 5.6, 23.3),
-    target: new THREE.Vector3()
+    target: new THREE.Vector3(),
+    detailQuaternion: detailGroup.quaternion.clone()
   };
+  updateCosmicWebMotion(performance.now(), true);
   const alignedCosmicPosition = cosmicWebAlignedPosition();
   if (universeScaleView && mixStart <= .001) {
     cosmicWebGroup.position.copy(alignedCosmicPosition);
+    cosmicWebGroup.updateMatrixWorld(true);
+    attachDetailGroupToCurrentGalaxy();
   }
   cosmicWebGroup.visible = true;
   controls.enabled = false;
@@ -4858,6 +4963,12 @@ function animate(now) {
       && cosmicWebGroup.visible
       && !isUniverseScaleTransition()
       && !prefersReducedMotion) {
+      updateCosmicWebMotion(now);
+    }
+    if (universeScaleView
+      && cosmicWebGroup.visible
+      && !isUniverseScaleTransition()
+      && !prefersReducedMotion) {
       cosmicWebGroup.rotation.y += .000055;
       const locatorPulse = 3.2 + Math.sin(now * .0016) * .28;
       cosmicWebVisual?.locator.scale.setScalar(locatorPulse);
@@ -4906,6 +5017,7 @@ function disposePageResources() {
   }
   controls?.dispose();
   clearImmersiveUiTimer();
+  restoreDetailGroupToScene();
   [
     universeGroup,
     galaxyGroup,

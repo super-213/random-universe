@@ -18,7 +18,10 @@ import {
 } from '../src/domain/universe.js';
 import { createSeededRandom } from '../src/domain/random.js';
 import { createLocalGalaxyGroup } from '../src/domain/local-group.js';
-import { createCosmicWebModel } from '../src/domain/cosmic-web.js';
+import {
+  cosmicGalaxyPositionAt,
+  createCosmicWebModel
+} from '../src/domain/cosmic-web.js';
 import {
   createStellarDawnModel,
   STELLAR_DAWN_END,
@@ -96,6 +99,9 @@ test('cosmic web deterministically fills the observable volume with clusters and
 
   assert.deepEqual(first.positions, second.positions);
   assert.deepEqual(first.formationAt, second.formationAt);
+  assert.deepEqual(first.flowVectors, second.flowVectors);
+  assert.equal(first.morphology, second.morphology);
+  assert.equal(first.currentGalaxyIndex, second.currentGalaxyIndex);
   assert.equal(first.galaxyCount, 480);
   assert.equal(first.clusterCount, 14);
   assert.ok(first.filamentCount >= first.clusterCount - 1);
@@ -110,6 +116,33 @@ test('cosmic web deterministically fills the observable volume with clusters and
     assert.ok(first.formationAt[index] > 0);
     assert.ok(first.formationAt[index] < 1000);
   }
+  const currentRadius = Math.hypot(...first.currentGalaxyPosition);
+  const currentTransverseRadius = Math.hypot(
+    first.currentGalaxyPosition[0],
+    first.currentGalaxyPosition[1]
+  );
+  assert.ok(currentRadius >= first.radius * .26);
+  assert.ok(currentRadius <= first.radius * .72);
+  assert.ok(currentTransverseRadius >= first.radius * .32);
+  const initialPosition = cosmicGalaxyPositionAt(first, first.currentGalaxyIndex, 0);
+  const laterPosition = cosmicGalaxyPositionAt(first, first.currentGalaxyIndex, 18);
+  assert.notDeepEqual(initialPosition, laterPosition);
+  assert.deepEqual(
+    laterPosition,
+    cosmicGalaxyPositionAt(second, second.currentGalaxyIndex, 18)
+  );
+});
+
+test('cosmic web seeds produce multiple deterministic large-scale morphologies', () => {
+  const morphologies = new Set();
+  for (let index = 0; index < 18; index++) {
+    const universe = createUniverse(seedFor(200 + index));
+    morphologies.add(createCosmicWebModel(universe, {
+      galaxyCount: 120,
+      clusterCount: 10
+    }).morphology);
+  }
+  assert.ok(morphologies.size >= 3);
 });
 
 test('observable-universe civilizations always produce deterministic intergalactic travel', () => {
