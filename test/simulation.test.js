@@ -452,6 +452,64 @@ test('stellar exhaustion does not run before an earlier finite outcome', () => {
   assert.ok(Number.isFinite(window.fateStart));
 });
 
+test('finite cosmic decline overcomes recovery before the final timeline frame', () => {
+  const universe = createUniverse('0000-0000-0000-000E');
+  assert.equal(universe.cosmicFate.type, 'big-crunch');
+  const habitatCount = 48;
+  const habitatPositions = new Float32Array(habitatCount * 3);
+  for (let index = 0; index < habitatCount; index++) {
+    habitatPositions[index * 3] = Math.cos(index / habitatCount * Math.PI * 2) * 4;
+    habitatPositions[index * 3 + 2] = Math.sin(index / habitatCount * Math.PI * 2) * 4;
+  }
+  const simulation = {
+    start: 390,
+    end: 1000,
+    step: 1,
+    habitatRemnantIndices: Uint16Array.from(
+      { length: habitatCount },
+      (_, index) => index
+    ),
+    habitatPositions,
+    adjacency: [],
+    snapshots: []
+  };
+  buildCivilizationSimulation({
+    universe,
+    civilizationData: [
+      {
+        name: '脆弱文明', birth: 400, homeNodeIndex: 0,
+        aggression: 0, cooperation: 1, expansionRate: 1, resilience: .68,
+        technology: .4, visibility: .1, cohesion: .8, machineAutonomy: .2,
+        morphology: '生物共同体'
+      },
+      {
+        name: '韧性文明', birth: 400, homeNodeIndex: 24,
+        aggression: 0, cooperation: 1, expansionRate: 1, resilience: 1.32,
+        technology: .4, visibility: .1, cohesion: .8, machineAutonomy: .2,
+        morphology: '生物共同体'
+      }
+    ],
+    civilizationSimulation: simulation,
+    cosmicEvents: []
+  });
+
+  const declineWindow = civilizationDeclineWindow(universe);
+  const onset = simulation.snapshots.find((snapshot) => (
+    snapshot.time === Math.ceil(declineWindow.fateStart)
+  ));
+  const declining = simulation.snapshots.find((snapshot) => snapshot.time === 925);
+  const fragileLastActive = simulation.snapshots.filter((snapshot) => snapshot.active[0]).at(-1);
+  const resilientLastActive = simulation.snapshots.filter((snapshot) => snapshot.active[1]).at(-1);
+  assert.equal(onset.active[0], 1);
+  assert.ok(declining.infrastructureCapacity[0] < onset.infrastructureCapacity[0]);
+  assert.ok(declining.energyReserves[0] < onset.energyReserves[0]);
+  assert.ok(fragileLastActive.time > declineWindow.fateStart);
+  assert.ok(resilientLastActive.time > fragileLastActive.time);
+  assert.ok(resilientLastActive.time < 1000);
+  assert.equal(simulation.snapshots.at(-2).active[0], 0);
+  assert.equal(simulation.snapshots.at(-2).active[1], 0);
+});
+
 test('a colony is removed when its host star reaches the shared death time', () => {
   const universe = Array.from({ length: 200 }, (_, index) => createUniverse(seedFor(index)))
     .find((candidate) => candidate.cosmicFate.type === 'heat-death');

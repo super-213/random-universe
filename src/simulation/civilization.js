@@ -37,6 +37,12 @@ export function civilizationDeclineWindow(universe) {
   };
 }
 
+function declineProgressAt(time, start, end) {
+  return Number.isFinite(start)
+    ? THREE.MathUtils.smoothstep(time, start, end)
+    : 0;
+}
+
 export function buildCivilizationSimulation({ universe, civilizationData, civilizationSimulation, cosmicEvents }) {
   if (!civilizationSimulation || civilizationData.length === 0) return;
   const simulation = civilizationSimulation;
@@ -823,6 +829,18 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
     const elapsedMillionYears = Math.max(.01, (timeYears - previousYears) / 1e6);
     const evolutionStep = THREE.MathUtils.clamp(elapsedMillionYears / 50, .02, 24);
     const relaxation = (rate) => 1 - (1 - rate) ** evolutionStep;
+    const energyDecline = declineProgressAt(
+      time,
+      declineWindow.energyStart,
+      declineWindow.energyEnd
+    );
+    const fateDecline = declineProgressAt(
+      time,
+      declineWindow.fateStart,
+      declineWindow.fateEnd
+    );
+    const environmentalDecline = Math.max(energyDecline, fateDecline);
+    const recoveryAvailability = (1 - environmentalDecline) ** 2;
     if (simulation.habitatDeathAt) {
       for (let node = 0; node < nodeCount; node++) {
         if (expiredHostNodes[node] || time < simulation.habitatDeathAt[node]) continue;
@@ -961,7 +979,7 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
         * (.74 + stability[owner] * .26)
         * (contamination[owner] > 0 ? .72 : 1) * (filterStates[owner] < 0 ? .78 : 1);
       strength[node] += relaxation(.032 + species.resilience * .018)
-        * support * (1 - strength[node]);
+        * support * recoveryAvailability * (1 - strength[node]);
       strength[node] = THREE.MathUtils.clamp(strength[node], 0, 1.35);
     }
 
@@ -1109,32 +1127,31 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
     });
 
     if (time >= Math.min(declineWindow.energyStart, declineWindow.fateStart)) {
-      const energyDecline = THREE.MathUtils.smoothstep(
-        time,
-        declineWindow.energyStart,
-        declineWindow.energyEnd
-      );
-      const fateDecline = Number.isFinite(declineWindow.fateStart)
-        ? THREE.MathUtils.smoothstep(time, declineWindow.fateStart, declineWindow.fateEnd)
-        : 0;
-      const decline = Math.max(energyDecline, fateDecline);
-      const declineFinished = time >= declineWindow.energyEnd || time >= declineWindow.fateEnd;
       const declineCause = fateDecline > energyDecline
         ? universe.cosmicFate.label
         : '恒星能源枯竭';
+      const terminalShock = THREE.MathUtils.smoothstep(environmentalDecline, .9, 1);
+      const abruptFateFinished = universe.cosmicFate.type === 'vacuum-decay'
+        && time >= declineWindow.fateEnd;
       for (let node = 0; node < nodeCount; node++) {
         const owner = owners[node];
         if (owner < 0 || civilizationData[owner].highDimensional && time >= civilizationData[owner].ascensionAt) continue;
         if (escapeProjects[owner] > 0) continue;
-        const lateEnergyRefuge = (substrateModes[owner] || engineeringModes[owner] > 0) && fateDecline === 0;
         const refugeFactor = substrateModes[owner] && engineeringModes[owner] > 0
           ? .28
           : substrateModes[owner] ? .38 : engineeringModes[owner] > 0 ? .62 : 1;
-        const declineLoss = (.004 + decline * .052) * refugeFactor;
-        const ownerDeclineFinished = declineFinished && (!lateEnergyRefuge
-          || time >= Math.min(1000, declineWindow.energyEnd + 70));
+        const resilienceFactor = THREE.MathUtils.clamp(
+          1.1 / Math.max(.45, civilizationData[owner].resilience || 1),
+          .72,
+          1.45
+        );
+        const morphologyFactor = morphologyModes[owner] === 2 || morphologyModes[owner] === 4
+          ? .82
+          : morphologyModes[owner] === 3 ? .9 : 1;
+        const declineLoss = (.004 + environmentalDecline * .052 + terminalShock * .08)
+          * refugeFactor * resilienceFactor * morphologyFactor;
         strength[node] -= declineLoss;
-        if (strength[node] <= .035 || ownerDeclineFinished) {
+        if (strength[node] <= .035 || abruptFateFinished) {
           owners[node] = -1;
           strength[node] = 0;
           lastCauses[owner] = declineCause;
@@ -1168,21 +1185,33 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
 
       if (active[speciesIndex]) {
         const species = civilizationData[speciesIndex];
+        const ascendedBeyondMatter = civilizationData[speciesIndex].highDimensional
+          && time >= civilizationData[speciesIndex].ascensionAt;
+        const escapedMotherUniverse = escapeProjects[speciesIndex] > 0;
+        const refugeFloor = substrateModes[speciesIndex] && engineeringModes[speciesIndex] > 0
+          ? .24
+          : substrateModes[speciesIndex] ? .16
+            : engineeringModes[speciesIndex] > 0 || blackHoleHabitats[speciesIndex] > 0 ? .1 : 0;
+        const environmentalAvailability = ascendedBeyondMatter || escapedMotherUniverse
+          ? 1
+          : 1 - environmentalDecline * (1 - refugeFloor);
         const conflictPressure = conflictCounts[speciesIndex] / Math.max(1, speciesCount - 1);
         const capacity = Math.max(1.2, infrastructureCapacity[speciesIndex] * 2.4
           * (terraforming[speciesIndex] > 0 ? 1.24 : 1)
           * (substrateModes[speciesIndex] ? 1.34 : 1));
-        const targetEnergy = THREE.MathUtils.clamp(
+        const targetEnergy = THREE.MathUtils.clamp(environmentalAvailability * (
           .26 + technology[speciesIndex] * .28 + energyTiers[speciesIndex] * .14
-            + megastructures[speciesIndex] * .1 - counts[speciesIndex] * .0007,
-          .1,
+            + megastructures[speciesIndex] * .1 - counts[speciesIndex] * .0007
+        ),
+          .01,
           1
         );
         energyReserves[speciesIndex] += (targetEnergy - energyReserves[speciesIndex]) * relaxation(.075);
-        const targetMaterials = THREE.MathUtils.clamp(
+        const targetMaterials = THREE.MathUtils.clamp(environmentalAvailability * (
           .32 + Math.min(.34, counts[speciesIndex] / 150) + terraforming[speciesIndex] * .08
-            - internalPopulation[speciesIndex] / capacity * .12 - conflictPressure * .16,
-          .08,
+            - internalPopulation[speciesIndex] / capacity * .12 - conflictPressure * .16
+        ),
+          .01,
           1
         );
         materials[speciesIndex] += (targetMaterials - materials[speciesIndex]) * relaxation(.055);
@@ -1193,10 +1222,11 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
           1
         );
         compute[speciesIndex] += (targetCompute - compute[speciesIndex]) * relaxation(.052);
-        const targetBiosphere = THREE.MathUtils.clamp(
+        const targetBiosphere = THREE.MathUtils.clamp(environmentalAvailability * (
           .3 + terraforming[speciesIndex] * .22 + biosphereStages[speciesIndex] * .035
-            - internalPopulation[speciesIndex] / capacity * .15 - conflictPressure * .12,
-          .06,
+            - internalPopulation[speciesIndex] / capacity * .15 - conflictPressure * .12
+        ),
+          .01,
           1
         );
         biosphereCapacity[speciesIndex] += (targetBiosphere - biosphereCapacity[speciesIndex]) * relaxation(.048);
@@ -1223,16 +1253,19 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
           1
         );
         research[speciesIndex] += (targetResearch - research[speciesIndex]) * relaxation(.05);
-        const targetStability = THREE.MathUtils.clamp(
+        const targetStability = THREE.MathUtils.clamp(environmentalAvailability * (
           .16 + cohesion[speciesIndex] * .42 + governance[speciesIndex] * .2
             + resources[speciesIndex] * .16 + energyReserves[speciesIndex] * .1
-            - conflictPressure * .22 - Math.max(0, contamination[speciesIndex]) * .16,
-          .04,
+            - conflictPressure * .22 - Math.max(0, contamination[speciesIndex]) * .16
+        ),
+          .01,
           1
         );
         stability[speciesIndex] += (targetStability - stability[speciesIndex]) * relaxation(.07);
         const growth = .018 * resources[speciesIndex] * energyReserves[speciesIndex]
-          * stability[speciesIndex] * (1 - internalPopulation[speciesIndex] / capacity);
+          * stability[speciesIndex] * (1 - internalPopulation[speciesIndex] / capacity)
+          * environmentalAvailability
+          - environmentalDecline * (1 - refugeFloor) * .012;
         internalPopulation[speciesIndex] = Math.max(
           .02,
           internalPopulation[speciesIndex] * Math.exp(growth * evolutionStep)
