@@ -299,7 +299,7 @@
   right: 3.4vw;
   bottom: 17vh;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
   width: min(310px, 36vw);
   opacity: 0;
@@ -307,10 +307,10 @@
   transition: opacity .5s ease, transform .5s ease;
 }
 .event-feed.is-visible { opacity: .72; transform: translateY(0); }
-.event-signal { flex: 0 0 auto; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px var(--accent); }
-.event-feed p { display: flex; min-width: 0; gap: 10px; margin: 0; font-size: 9px; }
+.event-signal { flex: 0 0 auto; width: 5px; height: 5px; margin-top: 5px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px var(--accent); }
+.event-feed p { display: grid; min-width: 0; grid-template-columns: max-content minmax(0, 1fr); gap: 10px; margin: 0; font-size: 9px; }
 .event-feed b { flex: 0 0 auto; color: var(--accent); font: 400 8px "Space Mono", monospace; }
-.event-feed span:last-child { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.event-feed span:last-child { color: var(--muted); line-height: 1.6; overflow-wrap: anywhere; }
 
 .star-inspector {
   position: absolute;
@@ -325,4 +325,3 @@
   transition: .45s cubic-bezier(.2,.8,.2,1);
   pointer-events: auto;
 }
-
