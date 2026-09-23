@@ -1,8 +1,10 @@
 import * as THREE from 'three';
 import './style.css';
 import { createExplorer } from './app/create-explorer.js';
+import { runWhenIdle } from './app/browser-scheduler.js';
 import { createFrameLoop } from './app/frame-loop.js';
 import { createExplorerSession } from './app/explorer-session.js';
+import { createGalaxyHydrator } from './features/galaxy/galaxy-hydrator.js';
 import { createTimelineController } from './features/timeline/timeline-controller.js';
 import { createSeededRandom } from './domain/random.js';
 import { createUniverse } from './domain/universe.js';
@@ -11,6 +13,8 @@ import { galaxyTypes as galaxyTypeLabels } from './domain/catalog.js';
 import { createLocalGalaxyGroup } from './domain/local-group.js';
 import { disposeSharedTextures, getPointTexture } from './rendering/textures.js';
 import { createUniverseRenderer } from './rendering/renderer.js';
+import { createSceneGraph } from './rendering/scene-graph.js';
+import { disposeGroup } from './rendering/scene-resources.js';
 import { createCosmicEventBuilder } from './rendering/systems/cosmic-event-builder.js';
 import { createCosmicWebSystem } from './rendering/systems/cosmic-web-system.js';
 import { createLocalGroupSystem } from './rendering/systems/local-group-system.js';
@@ -70,18 +74,18 @@ let galaxyPreparationPromise = null;
 let galaxyHydrationPromise = null;
 let preparedGalaxyPositions = null;
 
-let universeGroup = new THREE.Group();
-let detailGroup = new THREE.Group();
-let galaxyGroup = new THREE.Group();
-let epochEffectsGroup = new THREE.Group();
-let remnantGroup = new THREE.Group();
-let heatDeathGroup = new THREE.Group();
-let cosmicFateGroup = new THREE.Group();
-let cosmicEventGroup = new THREE.Group();
-let localGroupGroup = new THREE.Group();
-let cosmicWebGroup = new THREE.Group();
-detailGroup.add(galaxyGroup, localGroupGroup, epochEffectsGroup, remnantGroup, heatDeathGroup, cosmicFateGroup, cosmicEventGroup);
-scene.add(universeGroup, detailGroup, cosmicWebGroup);
+const {
+  cosmicEventGroup,
+  cosmicFateGroup,
+  cosmicWebGroup,
+  detailGroup,
+  epochEffectsGroup,
+  galaxyGroup,
+  heatDeathGroup,
+  localGroupGroup,
+  remnantGroup,
+  universeGroup
+} = createSceneGraph(scene);
 
 let universe = null;
 let pointer = new THREE.Vector2(0, 0);
@@ -248,6 +252,35 @@ const cosmicEventBuilder = createCosmicEventBuilder({
   stellarPositionAt
 });
 
+const galaxyHydrator = createGalaxyHydrator({
+  buildCivilizations,
+  buildCosmicEvents: (starPositions) => cosmicEventBuilder.buildCosmicEvents(starPositions),
+  buildCosmicWeb: buildCosmicWebMap,
+  buildEpochEffects,
+  buildLocalGroup: buildLocalGroupMap,
+  buildSimulation: (nextCosmicEvents) => explorer.buildCivilizationSimulationAsync({
+    universe,
+    civilizationData,
+    civilizationSimulation,
+    cosmicEvents: nextCosmicEvents
+  }),
+  finish: ({ cosmicEvents: nextCosmicEvents, seed, simulationResult }) => {
+    cosmicEvents = nextCosmicEvents;
+    civilizationSimulation = simulationResult.simulation;
+    simulationResult.eventUpdates.forEach((update) => {
+      const event = cosmicEvents.find((candidate) => candidate.id === update.id);
+      if (event) Object.assign(event, update);
+    });
+    renderCosmicEventMarkers();
+    explorer.renderTimelineScale(universe, session.timeline.viewport);
+    updateTimelineZoomControl();
+    session.hydration.hydratedSeed = seed;
+    cachedTimelineVisualContext = null;
+  },
+  isCurrent: galaxyBuildIsCurrent,
+  warmUniverseScaleShaders
+});
+
 function loadExplorer() {
   if (explorerLoadPromise) return explorerLoadPromise;
 
@@ -262,14 +295,6 @@ function loadExplorer() {
   });
 
   return explorerLoadPromise;
-}
-
-function runWhenIdle(callback) {
-  if ('requestIdleCallback' in window) {
-    window.requestIdleCallback(callback, { timeout: 1400 });
-    return;
-  }
-  window.setTimeout(callback, 80);
 }
 
 function prepareGalaxyPreview() {
@@ -444,17 +469,6 @@ function blackHolePositionAt(hole, timelinePosition) {
   }
   if (positionOffset) position.add(new THREE.Vector3().fromArray(positionOffset));
   return position;
-}
-
-function disposeGroup(group) {
-  group.traverse((object) => {
-    if (object.geometry) object.geometry.dispose();
-    if (object.material) {
-      const materials = Array.isArray(object.material) ? object.material : [object.material];
-      materials.forEach((material) => material.dispose());
-    }
-  });
-  group.clear();
 }
 
 function buildUniverseObject() {
@@ -785,63 +799,8 @@ function buildGalaxyPreview() {
   return positions;
 }
 
-function yieldToMainThread() {
-  if (globalThis.scheduler?.yield) return globalThis.scheduler.yield();
-  return new Promise((resolve) => {
-    requestAnimationFrame(() => window.setTimeout(resolve, 0));
-  });
-}
-
 function galaxyBuildIsCurrent(seed, version) {
   return universe.seed === seed && session.hydration.buildVersion === version && !pageDisposed;
-}
-
-async function hydrateGalaxy(starPositions, seed, version) {
-  await yieldToMainThread();
-  if (!galaxyBuildIsCurrent(seed, version)) return false;
-  buildEpochEffects(starPositions);
-
-  await yieldToMainThread();
-  if (!galaxyBuildIsCurrent(seed, version)) return false;
-  // Keep the full stellar population for dense civilization territories; each
-  // marker is mapped to a nearby remnant below so it still follows late orbits.
-  buildCivilizations(starPositions);
-
-  await yieldToMainThread();
-  if (!galaxyBuildIsCurrent(seed, version)) return false;
-  buildLocalGroupMap();
-
-  await yieldToMainThread();
-  if (!galaxyBuildIsCurrent(seed, version)) return false;
-  buildCosmicWebMap();
-
-  await warmUniverseScaleShaders();
-  if (!galaxyBuildIsCurrent(seed, version)) return false;
-
-  await yieldToMainThread();
-  if (!galaxyBuildIsCurrent(seed, version)) return false;
-  cosmicEvents = cosmicEventBuilder.buildCosmicEvents(starPositions);
-
-  await yieldToMainThread();
-  if (!galaxyBuildIsCurrent(seed, version)) return false;
-  const simulationResult = await explorer.buildCivilizationSimulationAsync({
-    universe,
-    civilizationData,
-    civilizationSimulation,
-    cosmicEvents
-  });
-  if (!galaxyBuildIsCurrent(seed, version)) return false;
-  civilizationSimulation = simulationResult.simulation;
-  simulationResult.eventUpdates.forEach((update) => {
-    const event = cosmicEvents.find((candidate) => candidate.id === update.id);
-    if (event) Object.assign(event, update);
-  });
-  renderCosmicEventMarkers();
-  explorer.renderTimelineScale(universe, session.timeline.viewport);
-  updateTimelineZoomControl();
-  session.hydration.hydratedSeed = seed;
-  cachedTimelineVisualContext = null;
-  return true;
 }
 
 function buildEpochEffects(starPositions) {
@@ -1827,7 +1786,7 @@ async function enterUniverse() {
   if (!galaxyHydrationPromise) {
     const seed = universe.seed;
     const version = session.hydration.buildVersion;
-    galaxyHydrationPromise = hydrateGalaxy(preparedGalaxyPositions, seed, version)
+    galaxyHydrationPromise = galaxyHydrator.hydrate(preparedGalaxyPositions, seed, version)
       .then((hydrated) => finishGalaxyHydration(seed, hydrated))
       .catch((error) => {
         galaxyHydrationPromise = null;

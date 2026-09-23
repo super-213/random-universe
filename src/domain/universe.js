@@ -1,4 +1,3 @@
-import * as THREE from 'three';
 import { galaxyTypes } from './catalog.js';
 import {
   createCosmicFate,
@@ -6,6 +5,7 @@ import {
   darkEnergyModelForSeed
 } from './cosmic-fate.js';
 import { cosmicYearsToTimelinePosition } from './cosmic-time.js';
+import { clamp } from './math.js';
 import { createSeededRandom, generateSeedCode, normalizeSeedCode, randomBetween, seedToUint32 } from './random.js';
 
 const REFERENCE_AGE_YEARS = 1.38e10;
@@ -70,7 +70,7 @@ export function deriveCosmicMilestones({
 }) {
   const omegaMatter = Math.max(.06, 1 - darkEnergyDensity);
   const atomicBindingScale = fineStructure ** 2 * speed ** 2 / massRatio;
-  const recombinationYears = THREE.MathUtils.clamp(
+  const recombinationYears = clamp(
     380000
       * Math.pow(cmbTemperature / REFERENCE_CMB_TEMPERATURE / atomicBindingScale, 1.5)
       / expansionRate
@@ -78,7 +78,7 @@ export function deriveCosmicMilestones({
     40000,
     4e6
   );
-  const matterRadiationEqualityYears = THREE.MathUtils.clamp(
+  const matterRadiationEqualityYears = clamp(
     50000
       * Math.pow(cmbTemperature / REFERENCE_CMB_TEMPERATURE, 6)
       / Math.pow(expansionRate, 4)
@@ -86,7 +86,7 @@ export function deriveCosmicMilestones({
     5000,
     recombinationYears * .85
   );
-  const firstStarsYears = THREE.MathUtils.clamp(
+  const firstStarsYears = clamp(
     1.8e8
       / Math.pow(structureEfficiency, .7)
       / Math.pow(primordialFluctuation, .35)
@@ -94,7 +94,7 @@ export function deriveCosmicMilestones({
     3e7,
     9e8
   );
-  const matureGalaxiesYears = THREE.MathUtils.clamp(firstStarsYears * 5.4, firstStarsYears * 1.8, 3.2e9);
+  const matureGalaxiesYears = clamp(firstStarsYears * 5.4, firstStarsYears * 1.8, 3.2e9);
   return {
     atomicBindingScale,
     matterRadiationEqualityYears,
@@ -132,11 +132,11 @@ export function formatCivilizations(value) {
 
 export function stellarEndTimelinePosition(universe) {
   const exponent = universe.lastStarDeathExponent ?? universe.stellarFormationEndExponent;
-  return THREE.MathUtils.clamp(cosmicYearsToTimelinePosition(10 ** exponent, universe), 478, 1000);
+  return clamp(cosmicYearsToTimelinePosition(10 ** exponent, universe), 478, 1000);
 }
 
 export function stellarFormationEndTimelinePosition(universe) {
-  return THREE.MathUtils.clamp(
+  return clamp(
     cosmicYearsToTimelinePosition(10 ** universe.stellarFormationEndExponent, universe),
     478,
     1000
@@ -162,12 +162,12 @@ export function createUniverse(seed = generateSeedCode()) {
   // Alternative constants are a hypothesis layer, not a solved theory. Keep
   // their downstream values correlated so they are not independent decoration.
   const chemistryStability = Math.exp(-Math.pow((fineStructure - 1) / .17, 2) - Math.pow((massRatio - 1) / .14, 2));
-  const structureEfficiency = THREE.MathUtils.clamp(gravity * primordialFluctuation / Math.pow(expansionRate, .72), .12, 2.8);
+  const structureEfficiency = clamp(gravity * primordialFluctuation / Math.pow(expansionRate, .72), .12, 2.8);
   const elements = Math.max(2, Math.round(118 * chemistryStability * randomBetween(random, .82, 1.08)));
-  const stars = THREE.MathUtils.clamp(randomBetween(random, .35, 3.2) * structureEfficiency, .08, 7.2);
-  const stellarFormationEndExponent = THREE.MathUtils.clamp(12.5 - (darkEnergyDensity - .68) * 1.35 - (expansionRate - 1) * .42, 11.8, 13.25);
-  const lastStarDeathExponent = THREE.MathUtils.clamp(stellarFormationEndExponent + randomBetween(random, .68, 1.08), 12.8, 14.25);
-  const habitability = chemistryStability * THREE.MathUtils.clamp(1 - Math.abs(cmbTemperature - 2.725) / 3.5, .12, 1);
+  const stars = clamp(randomBetween(random, .35, 3.2) * structureEfficiency, .08, 7.2);
+  const stellarFormationEndExponent = clamp(12.5 - (darkEnergyDensity - .68) * 1.35 - (expansionRate - 1) * .42, 11.8, 13.25);
+  const lastStarDeathExponent = clamp(stellarFormationEndExponent + randomBetween(random, .68, 1.08), 12.8, 14.25);
+  const habitability = chemistryStability * clamp(1 - Math.abs(cmbTemperature - 2.725) / 3.5, .12, 1);
   const lifeProbability = Math.pow(random(), 4) * .08 * habitability;
   const speciesCount = Math.floor(randomBetween(random, 5, 16));
   const estimatedCivilizations = Math.floor(stars * 1e5 * lifeProbability * randomBetween(random, 0.02, 0.7));

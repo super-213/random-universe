@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import { clamp, smoothstep } from '../domain/math.js';
 import { stellarEndTimelinePosition } from '../domain/universe.js';
 import {
   cosmicYearsToTimelinePosition,
@@ -39,7 +39,7 @@ export function civilizationDeclineWindow(universe) {
 
 function declineProgressAt(time, start, end) {
   return Number.isFinite(start)
-    ? THREE.MathUtils.smoothstep(time, start, end)
+    ? smoothstep(time, start, end)
     : 0;
 }
 
@@ -165,14 +165,14 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
     cohesion[index] = species.cohesion ?? .6;
     machineAutonomy[index] = species.machineAutonomy ?? .18;
     morphologyModes[index] = morphologyCodes[species.morphology] || 1;
-    resources[index] = THREE.MathUtils.clamp(.48 + species.resilience * .12 + randomBetween(random, -.05, .05), .3, .78);
+    resources[index] = clamp(.48 + species.resilience * .12 + randomBetween(random, -.05, .05), .3, .78);
     materials[index] = resources[index];
-    energyReserves[index] = THREE.MathUtils.clamp(.34 + technology[index] * .28, .25, .64);
-    compute[index] = THREE.MathUtils.clamp(.18 + technology[index] * .34, .16, .58);
-    biosphereCapacity[index] = THREE.MathUtils.clamp(.42 + species.resilience * .18, .34, .76);
-    governance[index] = THREE.MathUtils.clamp(.24 + species.cooperation * .36 + cohesion[index] * .24, .22, .82);
-    research[index] = THREE.MathUtils.clamp(.18 + technology[index] * .54, .18, .62);
-    stability[index] = THREE.MathUtils.clamp(.26 + cohesion[index] * .58, .3, .84);
+    energyReserves[index] = clamp(.34 + technology[index] * .28, .25, .64);
+    compute[index] = clamp(.18 + technology[index] * .34, .16, .58);
+    biosphereCapacity[index] = clamp(.42 + species.resilience * .18, .34, .76);
+    governance[index] = clamp(.24 + species.cooperation * .36 + cohesion[index] * .24, .22, .82);
+    research[index] = clamp(.18 + technology[index] * .54, .18, .62);
+    stability[index] = clamp(.26 + cohesion[index] * .58, .3, .84);
   });
   for (let a = 0; a < speciesCount; a++) {
     for (let b = a + 1; b < speciesCount; b++) {
@@ -236,7 +236,7 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
     stats.affectedNodes.add(nodeIndex);
 
     const substrateResilience = substrateModes[speciesIndex] ? 1.3 : 1;
-    const destructionChance = THREE.MathUtils.clamp(
+    const destructionChance = clamp(
       severity * .62 / Math.max(.65, species.resilience * substrateResilience),
       0,
       .9
@@ -292,7 +292,7 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
     const target = civilizationData[targetIndex];
     if (event.type === 'galaxy-collision') {
       let affected = 0;
-      const severity = THREE.MathUtils.clamp(event.tidalStrength * 1.8, .04, .42);
+      const severity = clamp(event.tidalStrength * 1.8, .04, .42);
       civilizationData.forEach((species, speciesIndex) => {
         if (!seeded[speciesIndex] || territoryCountFor(speciesIndex) === 0) return;
         affected++;
@@ -325,7 +325,7 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       civilizationData.forEach((species, speciesIndex) => {
         if (!seeded[speciesIndex] || territoryCountFor(speciesIndex) === 0) return;
         affected++;
-        const loss = THREE.MathUtils.clamp(event.gasLossFraction * .16, .03, .14);
+        const loss = clamp(event.gasLossFraction * .16, .03, .14);
         materials[speciesIndex] = Math.max(.03, materials[speciesIndex] - loss);
         for (let node = 0; node < nodeCount; node++) {
           if (owners[node] === speciesIndex && (node + speciesIndex) % 6 === 0) {
@@ -342,7 +342,7 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       civilizationData.forEach((species, speciesIndex) => {
         if (!seeded[speciesIndex] || territoryCountFor(speciesIndex) === 0) return;
         affected++;
-        const loss = THREE.MathUtils.clamp((event.windVelocityKms || 800) / 24000, .025, .12);
+        const loss = clamp((event.windVelocityKms || 800) / 24000, .025, .12);
         energyReserves[speciesIndex] = Math.max(.03, energyReserves[speciesIndex] - loss);
         materials[speciesIndex] = Math.max(.03, materials[speciesIndex] - loss * .7);
         lastCauses[speciesIndex] = '星系风改变气体供给';
@@ -444,7 +444,7 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       return;
     }
     if (event.type === 'planetary-impact') {
-      const severity = THREE.MathUtils.clamp(event.impactSeverity || .3, .08, .8);
+      const severity = clamp(event.impactSeverity || .3, .08, .8);
       const homeNode = target.homeNodeIndex;
       if (owners[homeNode] === targetIndex) strength[homeNode] *= 1 - severity * .48;
       biosphereCapacity[targetIndex] *= 1 - severity * .62;
@@ -516,7 +516,7 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       if (event.decision === 'deterrence') score -= .38;
       if (event.decision === 'silence') score -= .05;
       const state = score > .3 ? 1 : score < -.26 ? -1 : 0;
-      setRelation(targetIndex, otherIndex, THREE.MathUtils.clamp(score, -.95, .95), state);
+      setRelation(targetIndex, otherIndex, clamp(score, -.95, .95), state);
       lastCauses[targetIndex] = event.decision === 'silence' ? '信号静默协议' : '星际信号接触';
       event.outcome = event.decision === 'reply'
         ? `${target.name} 与 ${other.name} 建立脆弱通信链路`
@@ -953,7 +953,7 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       universe
     );
     const elapsedMillionYears = Math.max(.01, (timeYears - previousYears) / 1e6);
-    const evolutionStep = THREE.MathUtils.clamp(elapsedMillionYears / 50, .02, 24);
+    const evolutionStep = clamp(elapsedMillionYears / 50, .02, 24);
     const relaxation = (rate) => 1 - (1 - rate) ** evolutionStep;
     const energyDecline = declineProgressAt(
       time,
@@ -1106,7 +1106,7 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
         * (contamination[owner] > 0 ? .72 : 1) * (filterStates[owner] < 0 ? .78 : 1);
       strength[node] += relaxation(.032 + species.resilience * .018)
         * support * recoveryAvailability * (1 - strength[node]);
-      strength[node] = THREE.MathUtils.clamp(strength[node], 0, 1.35);
+      strength[node] = clamp(strength[node], 0, 1.35);
     }
 
     const contact = new Uint8Array(speciesCount * speciesCount);
@@ -1140,7 +1140,7 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
           if (state === 1 && score < .1) state = 0;
           if (state === -1 && score > -.08) state = 0;
         }
-        setRelation(a, b, THREE.MathUtils.clamp(score, -.95, .95), state);
+        setRelation(a, b, clamp(score, -.95, .95), state);
       }
     }
 
@@ -1177,7 +1177,7 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
         const defender = owners[target];
         if (defender < 0) {
           if (reservedFor[target] >= 0 && reservedFor[target] !== speciesIndex && !seeded[reservedFor[target]]) continue;
-          const colonizationChance = THREE.MathUtils.clamp(
+          const colonizationChance = clamp(
             .18 + species.expansionRate * .19 + friendlyCounts[speciesIndex] * .025,
             0,
             .92
@@ -1256,7 +1256,7 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       const declineCause = fateDecline > energyDecline
         ? universe.cosmicFate.label
         : '恒星能源枯竭';
-      const terminalShock = THREE.MathUtils.smoothstep(environmentalDecline, .9, 1);
+      const terminalShock = smoothstep(environmentalDecline, .9, 1);
       const abruptFateFinished = universe.cosmicFate.type === 'vacuum-decay'
         && time >= declineWindow.fateEnd;
       for (let node = 0; node < nodeCount; node++) {
@@ -1266,7 +1266,7 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
         const refugeFactor = substrateModes[owner] && engineeringModes[owner] > 0
           ? .28
           : substrateModes[owner] ? .38 : engineeringModes[owner] > 0 ? .62 : 1;
-        const resilienceFactor = THREE.MathUtils.clamp(
+        const resilienceFactor = clamp(
           1.1 / Math.max(.45, civilizationData[owner].resilience || 1),
           .72,
           1.45
@@ -1325,7 +1325,7 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
         const capacity = Math.max(1.2, infrastructureCapacity[speciesIndex] * 2.4
           * (terraforming[speciesIndex] > 0 ? 1.24 : 1)
           * (substrateModes[speciesIndex] ? 1.34 : 1));
-        const targetEnergy = THREE.MathUtils.clamp(environmentalAvailability * (
+        const targetEnergy = clamp(environmentalAvailability * (
           .26 + technology[speciesIndex] * .28 + energyTiers[speciesIndex] * .14
             + megastructures[speciesIndex] * .1 - counts[speciesIndex] * .0007
         ),
@@ -1333,7 +1333,7 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
           1
         );
         energyReserves[speciesIndex] += (targetEnergy - energyReserves[speciesIndex]) * relaxation(.075);
-        const targetMaterials = THREE.MathUtils.clamp(environmentalAvailability * (
+        const targetMaterials = clamp(environmentalAvailability * (
           .32 + Math.min(.34, counts[speciesIndex] / 150) + terraforming[speciesIndex] * .08
             - internalPopulation[speciesIndex] / capacity * .12 - conflictPressure * .16
         ),
@@ -1341,7 +1341,7 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
           1
         );
         materials[speciesIndex] += (targetMaterials - materials[speciesIndex]) * relaxation(.055);
-        const targetCompute = THREE.MathUtils.clamp(
+        const targetCompute = clamp(
           .12 + technology[speciesIndex] * .4 + research[speciesIndex] * .2
             + substrateModes[speciesIndex] * .18 + energyReserves[speciesIndex] * .08,
           .06,
@@ -1352,7 +1352,7 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
           ? .22
           : climateStates[speciesIndex] === -1 ? .48
             : climateStates[speciesIndex] === 1 ? .82 : 1;
-        const targetBiosphere = THREE.MathUtils.clamp(environmentalAvailability * climateBiosphereFactor * (
+        const targetBiosphere = clamp(environmentalAvailability * climateBiosphereFactor * (
           .3 + terraforming[speciesIndex] * .22 + biosphereStages[speciesIndex] * .035
             - internalPopulation[speciesIndex] / capacity * .15 - conflictPressure * .12
         ),
@@ -1360,7 +1360,7 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
           1
         );
         biosphereCapacity[speciesIndex] += (targetBiosphere - biosphereCapacity[speciesIndex]) * relaxation(.048);
-        logisticsThroughput[speciesIndex] = THREE.MathUtils.clamp(
+        logisticsThroughput[speciesIndex] = clamp(
           (materials[speciesIndex] + energyReserves[speciesIndex] + compute[speciesIndex]) / 3
             * (.45 + governance[speciesIndex] * .35 + stability[speciesIndex] * .2)
             * Math.min(1, .25 + counts[speciesIndex] / 80),
@@ -1369,21 +1369,21 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
         );
         resources[speciesIndex] = materials[speciesIndex] * .5
           + biosphereCapacity[speciesIndex] * .3 + logisticsThroughput[speciesIndex] * .2;
-        const targetGovernance = THREE.MathUtils.clamp(
+        const targetGovernance = clamp(
           .22 + species.cooperation * .26 + cohesion[speciesIndex] * .34
             + causalResponses[speciesIndex] * .04 - conflictPressure * .18,
           .08,
           1
         );
         governance[speciesIndex] += (targetGovernance - governance[speciesIndex]) * relaxation(.045);
-        const targetResearch = THREE.MathUtils.clamp(
+        const targetResearch = clamp(
           .18 + technology[speciesIndex] * .38 + energyReserves[speciesIndex] * .16
             + Math.max(0, precursorKnowledge[speciesIndex]) * .14 + artifacts[speciesIndex] * .06,
           .08,
           1
         );
         research[speciesIndex] += (targetResearch - research[speciesIndex]) * relaxation(.05);
-        const targetStability = THREE.MathUtils.clamp(environmentalAvailability * (
+        const targetStability = clamp(environmentalAvailability * (
           .16 + cohesion[speciesIndex] * .42 + governance[speciesIndex] * .2
             + resources[speciesIndex] * .16 + energyReserves[speciesIndex] * .1
             - conflictPressure * .22 - Math.max(0, contamination[speciesIndex]) * .16
@@ -1486,7 +1486,7 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
   events.forEach((event) => {
     const impacts = Array.from(eventImpactStats.get(event).entries()).map(([speciesIndex, stats]) => ({
       speciesIndex,
-      lossFraction: THREE.MathUtils.clamp(stats.effectiveLoss / Math.max(1, stats.initialCount), 0, 1),
+      lossFraction: clamp(stats.effectiveLoss / Math.max(1, stats.initialCount), 0, 1),
       collapse: stats.collapse,
       affectedDomains: stats.affectedNodes.size,
       lostDomains: stats.lostNodes.size,
@@ -1513,7 +1513,7 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
 export function civilizationSnapshotAt(civilizationSimulation, position) {
   if (!civilizationSimulation?.snapshots.length) return null;
   const simulation = civilizationSimulation;
-  const index = THREE.MathUtils.clamp(
+  const index = clamp(
     Math.floor((position - simulation.start) / simulation.step),
     0,
     simulation.snapshots.length - 1
