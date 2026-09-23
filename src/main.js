@@ -1,5 +1,9 @@
 import * as THREE from 'three';
 import './style.css';
+import { createExplorer } from './app/create-explorer.js';
+import { createFrameLoop } from './app/frame-loop.js';
+import { createExplorerSession } from './app/explorer-session.js';
+import { createTimelineController } from './features/timeline/timeline-controller.js';
 import { createSeededRandom } from './domain/random.js';
 import { createUniverse } from './domain/universe.js';
 import { cosmicGalaxyPositionAt, createCosmicWebModel } from './domain/cosmic-web.js';
@@ -7,6 +11,10 @@ import { galaxyTypes as galaxyTypeLabels } from './domain/catalog.js';
 import { createLocalGalaxyGroup } from './domain/local-group.js';
 import { disposeSharedTextures, getPointTexture } from './rendering/textures.js';
 import { createUniverseRenderer } from './rendering/renderer.js';
+import { createCosmicEventBuilder } from './rendering/systems/cosmic-event-builder.js';
+import { createCosmicWebSystem } from './rendering/systems/cosmic-web-system.js';
+import { createLocalGroupSystem } from './rendering/systems/local-group-system.js';
+import { createShipSystem } from './rendering/systems/ship-system.js';
 import {
   civilizationObservation,
   lightTravelYearsForSceneDistance
@@ -23,86 +31,20 @@ import {
   cosmicCivilizationStateAt,
   createCosmicCivilizationPlan
 } from './simulation/cosmic-civilizations.js';
-import { obstacleAvoidingPathPoints } from './simulation/ship-navigation.js';
 import {
   historyExportPayload,
   renderCivilizationChronicle,
   renderMultiverseComparison
 } from './ui/civilization-chronicle.js';
 import { updateUniverseData } from './ui/universe-data.js';
-import {
-  formatTimeSpeed,
-  snapSpeedExponent,
-  speedExponentMax,
-  speedExponentMin,
-  speedFromExponent
-} from './ui/speed-control.js';
+import { createDomReferences } from './ui/dom-references.js';
 
-let erasForUniverse;
-let galaxyTypes;
-let speciesColors;
-let speciesNames;
-let randomBetween;
-let gaussianRandom;
-let createStellarDawnModel;
-let createStellarPopulation;
-let stellarSpectralType;
-let STELLAR_DAWN_END;
-let STELLAR_DAWN_START;
-let stellarEndTimelinePosition;
-let cosmicTimeLabel;
-let cosmicYearsToTimelinePosition;
-let createCosmicTimelineState;
-let referenceFutureYearsAtTimelinePosition;
-let timelinePositionToCosmicYears;
-let selectTimelineNarrative;
-let timelineUnitsPerSecond;
-let makeGlowTexture;
-let makeRingTexture;
-let animateBlackHoleVisual;
-let createBlackHoleVisual;
-let applyCivilizationSnapshot;
-let syncCivilizationHosts;
-let createCivilizationEventVisual;
-let animateCosmicEvents;
-let updateCosmicEvents;
-let updateEpochVisuals;
-let createMergerGravityField;
-let createStellarGravityState;
-let blackHoleEvaporationExponent;
-let blackHoleMassFromSimulation;
-let selectBlackHoleMergerPair;
-let selectBlackHoleProgenitors;
-let orbitalAngleAt;
-let buildCivilizationSimulationAsync;
-let civilizationSnapshotAt;
-let deriveCivilizationRuntime;
-let findDominantRelationship;
-let createCivilizationEventPlan;
-let createRareEventPlan;
-let expandEventSchedule;
-let applyTransientImpactScales;
-let createTransientGravityField;
-let createTransientSimulation;
-let describeTransientSimulation;
-let focusTimelineScale;
-let renderCivilizationRows;
-let renderTimelineEvent;
-let renderTimelineHeader;
-let renderTimelineScale;
-let resetTimelineScaleFocus;
-let restartTimelineScaleIntro;
-let clusterTimelineEvents;
-let nearestTimelineEvent;
-let timelineDetailWindow;
-let timelinePercentAt;
-let timelinePositionAtPercent;
-let zoomTimelineViewport;
-let organizeCivilizationLegend;
-let resetCivilizationLegend;
+let explorer = null;
 
-const $ = (selector) => document.querySelector(selector);
-const canvas = $('#universe');
+const dom = createDomReferences();
+const $ = dom.query;
+const session = createExplorerSession();
+const canvas = dom.byId.universe;
 const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const compactCivilizationLayout = window.matchMedia('(max-width: 800px)');
 const timelineUpdateIntervalMs = 1000 / 30;
@@ -113,7 +55,7 @@ const maxLogisticsShipsPerSpecies = Math.ceil(
   maxLogisticsRoutesPerSpecies / routesPerVisibleShip
 );
 const showCivilizationLogistics = false;
-const coordinateElements = [$('#coord-x'), $('#coord-y'), $('#coord-z')];
+const coordinateElements = [dom.byId['coord-x'], dom.byId['coord-y'], dom.byId['coord-z']];
 
 const { renderer } = await createUniverseRenderer(canvas);
 
@@ -124,12 +66,9 @@ camera.position.set(0, 0.5, 32);
 
 let controls = null;
 let explorerLoadPromise = null;
-let galaxyPreparedForSeed = null;
-let galaxyHydratedForSeed = null;
 let galaxyPreparationPromise = null;
 let galaxyHydrationPromise = null;
 let preparedGalaxyPositions = null;
-let galaxyBuildVersion = 0;
 
 let universeGroup = new THREE.Group();
 let detailGroup = new THREE.Group();
@@ -145,8 +84,6 @@ detailGroup.add(galaxyGroup, localGroupGroup, epochEffectsGroup, remnantGroup, h
 scene.add(universeGroup, detailGroup, cosmicWebGroup);
 
 let universe = null;
-let mode = 'generator';
-let transition = null;
 let pointer = new THREE.Vector2(0, 0);
 let smoothedPointer = new THREE.Vector2(0, 0);
 let raycaster = new THREE.Raycaster();
@@ -184,385 +121,143 @@ let stellarGravityState = null;
 let starDeathThresholds = null;
 let originalRemnantPositions = null;
 let remnantDynamics = null;
-let cosmicPosition = 0;
-let timePlaying = false;
-let timeSpeed = 10;
 let lastFrame = performance.now();
 let pulsarAnimationTimeMs = 0;
 let lastTimelineUpdateAt = 0;
 let lastCoordinateUpdateAt = 0;
 let cosmicEvents = [];
 let timelineMarkerResizeFrame = null;
-let animationFrameId = null;
 let pageDisposed = false;
-let timelineViewport = { start: 0, end: 1000 };
-let timelineEventFilter = 'all';
-let timelineSnapEnabled = true;
-let currentEras = null;
 let cachedTimelineVisualContext = null;
-let lastCivilizationSnapshot = null;
-let activeSpeciesCount = 0;
-let ascendedSpeciesCount = 0;
-let activeCivilizationRelationship = null;
-let selectedChronicleIndex = null;
-let observerSpeciesIndex = null;
-let localGalaxyGroup = null;
-let localGroupRoutes = [];
-let intergalacticMarkers = [];
-let intergalacticRouteAssignments = [];
-let localGroupGalaxies = [];
-let universeScaleView = false;
-let cosmicWebModel = null;
-let cosmicWebVisual = null;
-let cosmicCivilizationPlan = null;
-let cosmicCivilizationVisual = null;
-let cosmicFlowTime = 0;
-let lastCosmicFlowUpdateAt = 0;
+const localGroupState = {
+  model: null,
+  routes: [],
+  shipMarkers: [],
+  routeAssignments: [],
+  galaxies: []
+};
+const cosmicWebState = {
+  model: null,
+  visual: null,
+  civilizationPlan: null,
+  civilizationVisual: null,
+  flowTime: 0,
+  lastFlowUpdateAt: 0,
+  shadersWarmed: false
+};
 let galaxyViewPose = null;
-let universeScaleShadersWarmed = false;
-let shipHighlightEnabled = false;
-let immersiveMode = false;
 let immersiveUiTimer = null;
 let suppressImmersiveCanvasClick = false;
-let keyboardStarIndex = -1;
 let keyboardStarMarker = null;
 const immersiveUiDelayMs = 3500;
-const shipForward = new THREE.Vector3(1, 0, 0);
 const shipRouteDirection = new THREE.Vector3();
 const shipRouteStart = new THREE.Vector3();
 const shipRouteEnd = new THREE.Vector3();
-const shipRouteStartArray = [0, 0, 0];
-const shipRouteEndArray = [0, 0, 0];
 
-function createTravelShip(random, color, size = 1) {
-  const ship = new THREE.Group();
-  const hullMaterial = new THREE.MeshBasicMaterial({
-    color,
-    transparent: true,
-    opacity: 0,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending
-  });
-  const hull = new THREE.Mesh(new THREE.ConeGeometry(.12, .48, 3), hullMaterial);
-  hull.rotation.z = -Math.PI / 2;
-  ship.add(hull);
+const cosmicWebSystem = createCosmicWebSystem({
+  camera,
+  compactLayout: compactCivilizationLayout,
+  cosmicWebGroup,
+  disposeGroup,
+  getActiveSpeciesCount: () => session.civilization.activeSpeciesCount,
+  getDependencies: () => explorer,
+  getPosition: () => session.timeline.position,
+  getUniverse: () => universe,
+  prefersReducedMotion,
+  query: $,
+  renderer,
+  restoreDetailGroupToScene,
+  scene,
+  state: cosmicWebState
+});
+const {
+  applyOpacity: applyCosmicWebOpacity,
+  build: buildCosmicWebMap,
+  updateMotion: updateCosmicWebMotion,
+  updateVisuals: updateCosmicWebVisuals,
+  warmShaders: warmUniverseScaleShaders
+} = cosmicWebSystem;
 
-  const highlightMaterial = new THREE.SpriteMaterial({
-    map: makeRingTexture(),
-    color,
-    transparent: true,
-    opacity: 0,
-    depthTest: false,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending
-  });
-  const highlight = new THREE.Sprite(highlightMaterial);
-  highlight.scale.setScalar(1.05);
-  highlight.renderOrder = 6;
-  ship.add(highlight);
+const shipSystem = createShipSystem({
+  getDependencies: () => explorer,
+  getState: () => ({
+    mode: session.mode,
+    shipHighlight: session.view.shipHighlight,
+    universeScale: session.view.universeScale
+  }),
+  getBlackHoleRemnants: () => blackHoleRemnants,
+  getLocalGroupGalaxies: () => localGroupState.galaxies,
+  getShipCollections: () => [localGroupState.shipMarkers, logisticsShipMarkers],
+  galaxyGroup,
+  remnantGroup,
+  prefersReducedMotion
+});
+const {
+  activeBlackHoleNavigationObstacles,
+  assignShipNavigationPath,
+  beginShipDisappearance,
+  createTravelShip,
+  forEachShipMarker,
+  intergalacticNavigationObstacles,
+  positionShipOnNavigationPath,
+  resetShipDisappearance,
+  updateShipDisappearance
+} = shipSystem;
 
-  const engineMaterial = new THREE.SpriteMaterial({
-    map: makeGlowTexture(),
-    color,
-    transparent: true,
-    opacity: 0,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending
-  });
-  const engine = new THREE.Sprite(engineMaterial);
-  engine.position.x = -.28;
-  engine.scale.set(.42, .24, 1);
-  ship.add(engine);
+const localGroupSystem = createLocalGroupSystem({
+  beginShipDisappearance,
+  createTravelShip,
+  disposeGroup,
+  getCivilizationData: () => civilizationData,
+  getDependencies: () => explorer,
+  getFateBubble: () => fateBubble,
+  getMode: () => session.mode,
+  getSession: () => session,
+  getUniverse: () => universe,
+  group: localGroupGroup,
+  isUniverseScaleTransition,
+  prefersReducedMotion,
+  query: $,
+  resetShipDisappearance,
+  routesPerVisibleShip,
+  state: localGroupState,
+  updateIntergalacticShipAppearance,
+  updateIntergalacticShipNavigationPath
+});
+const {
+  animate: animateLocalGroupGalaxies,
+  build: buildLocalGroupMap,
+  updateVisuals: updateLocalGroupVisuals
+} = localGroupSystem;
 
-  const explosionMaterial = new THREE.SpriteMaterial({
-    map: makeGlowTexture(),
-    color: 0xff8a42,
-    transparent: true,
-    opacity: 0,
-    depthTest: false,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending
-  });
-  const explosion = new THREE.Sprite(explosionMaterial);
-  explosion.scale.setScalar(.1);
-  explosion.renderOrder = 8;
-  ship.add(explosion);
-
-  const explosionRingMaterial = new THREE.SpriteMaterial({
-    map: makeRingTexture(),
-    color: 0xffd27a,
-    transparent: true,
-    opacity: 0,
-    depthTest: false,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending
-  });
-  const explosionRing = new THREE.Sprite(explosionRingMaterial);
-  explosionRing.scale.setScalar(.1);
-  explosionRing.renderOrder = 9;
-  ship.add(explosionRing);
-
-  ship.visible = false;
-  ship.renderOrder = 5;
-  ship.userData.hullMaterial = hullMaterial;
-  ship.userData.engineMaterial = engineMaterial;
-  ship.userData.highlightMaterial = highlightMaterial;
-  ship.userData.highlightSprite = highlight;
-  ship.userData.explosionMaterial = explosionMaterial;
-  ship.userData.explosionSprite = explosion;
-  ship.userData.explosionRingMaterial = explosionRingMaterial;
-  ship.userData.explosionRing = explosionRing;
-  ship.userData.highlightMix = shipHighlightEnabled ? 1 : 0;
-  ship.userData.trafficPhase = random() * 2;
-  ship.userData.trafficSpeed = randomBetween(random, .008, .028);
-  ship.userData.pulsePhase = random() * Math.PI * 2;
-  ship.userData.baseScale = size;
-  ship.userData.defaultDisappearance = ship.userData.pulsePhase < Math.PI * .58
-    ? 'explosion'
-    : 'arrival';
-  ship.userData.trafficActive = false;
-  ship.userData.disappearance = null;
-  ship.userData.disappearanceComplete = false;
-  return ship;
-}
-
-function forEachShipMarker(callback) {
-  intergalacticMarkers.forEach((ships) => ships.forEach(callback));
-  logisticsShipMarkers.forEach((ships) => ships.forEach(callback));
-}
-
-function assignShipNavigationPath(ship, start, end, obstacles, clearance) {
-  start.toArray(shipRouteStartArray);
-  end.toArray(shipRouteEndArray);
-  const navigationPoints = obstacleAvoidingPathPoints(
-    shipRouteStartArray,
-    shipRouteEndArray,
-    obstacles,
-    { clearance }
-  );
-  const currentCurve = ship.userData.routeCurve;
-  if (navigationPoints.length === 2) {
-    if (currentCurve?.isLineCurve3) {
-      currentCurve.v1.fromArray(navigationPoints[0]);
-      currentCurve.v2.fromArray(navigationPoints[1]);
-      return;
-    }
-    ship.userData.routePoints = null;
-    ship.userData.routeCurve = new THREE.LineCurve3(
-      new THREE.Vector3().fromArray(navigationPoints[0]),
-      new THREE.Vector3().fromArray(navigationPoints[1])
-    );
-    return;
-  }
-
-  let routePoints = ship.userData.routePoints;
-  if (!currentCurve?.isCatmullRomCurve3 || routePoints?.length !== navigationPoints.length) {
-    routePoints = navigationPoints.map((point) => new THREE.Vector3().fromArray(point));
-    ship.userData.routePoints = routePoints;
-    ship.userData.routeCurve = new THREE.CatmullRomCurve3(
-      routePoints,
-      false,
-      'centripetal'
-    );
-    return;
-  }
-  navigationPoints.forEach((point, index) => routePoints[index].fromArray(point));
-}
-
-function positionShipOnNavigationPath(ship, progress, direction) {
-  const routeCurve = ship.userData.routeCurve;
-  if (!routeCurve) return;
-  const normalizedProgress = THREE.MathUtils.clamp(progress, 0, 1);
-  ship.userData.routeProgress = normalizedProgress;
-  ship.userData.routeDirection = direction;
-  routeCurve.getPoint(normalizedProgress, ship.position);
-  routeCurve.getTangent(normalizedProgress, shipRouteDirection).multiplyScalar(direction);
-  ship.quaternion.setFromUnitVectors(shipForward, shipRouteDirection.normalize());
-}
-
-function resetShipDisappearance(ship) {
-  ship.userData.disappearance = null;
-  ship.userData.disappearanceComplete = false;
-  ship.userData.explosionMaterial.opacity = 0;
-  ship.userData.explosionRingMaterial.opacity = 0;
-  ship.userData.explosionSprite.scale.setScalar(.1);
-  ship.userData.explosionRing.scale.setScalar(.1);
-}
-
-function beginShipDisappearance(ship, mode, targetProgress = null) {
-  if (!ship.visible || ship.userData.disappearance || ship.userData.disappearanceComplete) return;
-  const routeProgress = ship.userData.routeProgress ?? 0;
-  const routeDirection = ship.userData.routeDirection || 1;
-  ship.userData.disappearance = {
-    mode,
-    startedAt: performance.now(),
-    duration: prefersReducedMotion ? 280 : mode === 'explosion' ? 920 : 1250,
-    startProgress: routeProgress,
-    targetProgress: targetProgress ?? (routeDirection >= 0 ? 1 : 0),
-    startScale: ship.scale.x,
-    hullOpacity: ship.userData.hullMaterial.opacity,
-    engineOpacity: ship.userData.engineMaterial.opacity,
-    highlightOpacity: ship.userData.highlightMaterial.opacity
-  };
-}
-
-function updateShipDisappearance(ship, now) {
-  const disappearance = ship.userData.disappearance;
-  if (!disappearance) return false;
-  const phase = THREE.MathUtils.clamp(
-    (now - disappearance.startedAt) / disappearance.duration,
-    0,
-    1
-  );
-  const correctView = ship.userData.shipContext === 'local-group'
-    ? universeScaleView
-    : !universeScaleView;
-  ship.visible = shipHighlightEnabled && mode === 'explorer' && correctView;
-
-  if (disappearance.mode === 'explosion') {
-    const flash = Math.sin(phase * Math.PI);
-    const hullFade = 1 - THREE.MathUtils.smoothstep(phase, .08, .42);
-    ship.userData.hullMaterial.opacity = disappearance.hullOpacity * hullFade;
-    ship.userData.engineMaterial.opacity = disappearance.engineOpacity * hullFade;
-    ship.userData.highlightMaterial.opacity = disappearance.highlightOpacity * hullFade;
-    ship.userData.explosionMaterial.opacity = flash * .95;
-    ship.userData.explosionRingMaterial.opacity = (1 - phase) * .72;
-    ship.userData.explosionSprite.scale.setScalar(.25 + phase * 3.8);
-    ship.userData.explosionRing.scale.setScalar(.2 + phase * 5.2);
-    ship.scale.setScalar(disappearance.startScale);
-  } else {
-    const arrival = 1 - Math.pow(1 - phase, 3);
-    const landingProgress = THREE.MathUtils.lerp(
-      disappearance.startProgress,
-      disappearance.targetProgress,
-      arrival
-    );
-    positionShipOnNavigationPath(
-      ship,
-      prefersReducedMotion ? disappearance.targetProgress : landingProgress,
-      disappearance.targetProgress >= disappearance.startProgress ? 1 : -1
-    );
-    const fade = THREE.MathUtils.smoothstep(phase, .64, 1);
-    ship.userData.hullMaterial.opacity = disappearance.hullOpacity * (1 - fade);
-    ship.userData.engineMaterial.opacity = disappearance.engineOpacity * (1 - fade);
-    ship.userData.highlightMaterial.opacity = disappearance.highlightOpacity * (1 - fade);
-    ship.scale.setScalar(disappearance.startScale * (1 - fade * .76));
-  }
-
-  if (phase < 1) return true;
-  ship.visible = false;
-  ship.userData.disappearance = null;
-  ship.userData.disappearanceComplete = true;
-  ship.userData.explosionMaterial.opacity = 0;
-  ship.userData.explosionRingMaterial.opacity = 0;
-  return true;
-}
-
-function activeBlackHoleNavigationObstacles() {
-  remnantGroup.updateWorldMatrix(true, false);
-  galaxyGroup.updateWorldMatrix(true, false);
-  return blackHoleRemnants
-    .filter((hole) => hole.visible)
-    .map((hole) => {
-      const position = hole.getWorldPosition(new THREE.Vector3());
-      galaxyGroup.worldToLocal(position);
-      return {
-        position: position.toArray(),
-        radius: hole.userData.isCentral
-          ? 1.45
-          : .55 + THREE.MathUtils.clamp(Math.log10(1 + hole.userData.massSolar) * .08, 0, .5)
-      };
-    });
-}
-
-function intergalacticNavigationObstacles(targetGalaxy) {
-  return localGroupGalaxies
-    .filter((candidate) => candidate !== targetGalaxy)
-    .map((candidate) => ({
-      position: candidate.galaxy.position.toArray(),
-      radius: Math.max(1, candidate.radius * 1.35)
-    }));
-}
+const cosmicEventBuilder = createCosmicEventBuilder({
+  addBlackHoleRemnant,
+  blackHoleBaseScale,
+  blackHoleDisplayScaleAt,
+  blackHolePositionAt,
+  cosmicEventGroup,
+  galaxyGroup,
+  getBlackHoleRemnants: () => blackHoleRemnants,
+  getCivilizationData: () => civilizationData,
+  getCivilizationEvents: () => civilizationEvents,
+  getCivilizationSimulation: () => civilizationSimulation,
+  getDependencies: () => explorer,
+  getLocalGroup: () => localGroupState.model,
+  getRemnantDynamics: () => remnantDynamics,
+  getStarDeathThresholds: () => starDeathThresholds,
+  getStellarPopulation: () => stellarPopulation,
+  getUniverse: () => universe,
+  stellarPositionAt
+});
 
 function loadExplorer() {
   if (explorerLoadPromise) return explorerLoadPromise;
 
-  explorerLoadPromise = import('./explorer-dependencies.js').then((explorer) => {
-    ({
-      erasForUniverse,
-      galaxyTypes,
-      speciesColors,
-      speciesNames,
-      randomBetween,
-      gaussianRandom,
-      createStellarDawnModel,
-      createStellarPopulation,
-      stellarSpectralType,
-      STELLAR_DAWN_END,
-      STELLAR_DAWN_START,
-      stellarEndTimelinePosition,
-      cosmicTimeLabel,
-      cosmicYearsToTimelinePosition,
-      createCosmicTimelineState,
-      referenceFutureYearsAtTimelinePosition,
-      timelinePositionToCosmicYears,
-      selectTimelineNarrative,
-      timelineUnitsPerSecond,
-      makeGlowTexture,
-      makeRingTexture,
-      animateBlackHoleVisual,
-      createBlackHoleVisual,
-      applyCivilizationSnapshot,
-      syncCivilizationHosts,
-      createCivilizationEventVisual,
-      animateCosmicEvents,
-      updateCosmicEvents,
-      updateEpochVisuals,
-      createMergerGravityField,
-      createStellarGravityState,
-      blackHoleEvaporationExponent,
-      blackHoleMassFromSimulation,
-      selectBlackHoleMergerPair,
-      selectBlackHoleProgenitors,
-      orbitalAngleAt,
-      buildCivilizationSimulationAsync,
-      civilizationSnapshotAt,
-      deriveCivilizationRuntime,
-      findDominantRelationship,
-      createCivilizationEventPlan,
-      createRareEventPlan,
-      expandEventSchedule,
-      applyTransientImpactScales,
-      createTransientGravityField,
-      createTransientSimulation,
-      describeTransientSimulation,
-      focusTimelineScale,
-      renderCivilizationRows,
-      renderTimelineEvent,
-      renderTimelineHeader,
-      renderTimelineScale,
-      resetTimelineScaleFocus,
-      restartTimelineScaleIntro,
-      clusterTimelineEvents,
-      nearestTimelineEvent,
-      timelineDetailWindow,
-      timelinePercentAt,
-      timelinePositionAtPercent,
-      zoomTimelineViewport,
-      organizeCivilizationLegend,
-      resetCivilizationLegend
-    } = explorer);
-
-    controls = new explorer.OrbitControls(camera, canvas);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.045;
-    controls.enablePan = false;
-    controls.minDistance = 8;
-    controls.maxDistance = 46;
-    // The camera should only move in response to the observer. Automatic camera
-    // orbit made a static galaxy look as though every star suddenly accelerated.
-    controls.autoRotate = false;
-    controls.enabled = false;
+  explorerLoadPromise = import('./explorer-dependencies.js').then((dependencies) => {
+    const created = createExplorer({ camera, canvas, dependencies });
+    explorer = created.dependencies;
+    controls = created.controls;
+    return created;
   }).catch((error) => {
     explorerLoadPromise = null;
     throw error;
@@ -581,19 +276,19 @@ function runWhenIdle(callback) {
 
 function prepareGalaxyPreview() {
   const seed = universe.seed;
-  const version = galaxyBuildVersion;
-  if (galaxyPreparedForSeed === seed && preparedGalaxyPositions) {
+  const version = session.hydration.buildVersion;
+  if (session.hydration.preparedSeed === seed && preparedGalaxyPositions) {
     return Promise.resolve(preparedGalaxyPositions);
   }
   if (galaxyPreparationPromise) return galaxyPreparationPromise;
 
   const preparationPromise = loadExplorer()
     .then(() => {
-      if (!galaxyBuildIsCurrent(seed, version) || mode !== 'generator') return null;
+      if (!galaxyBuildIsCurrent(seed, version) || session.mode !== 'generator') return null;
       const positions = buildGalaxyPreview();
       if (!galaxyBuildIsCurrent(seed, version)) return null;
       preparedGalaxyPositions = positions;
-      galaxyPreparedForSeed = seed;
+      session.hydration.preparedSeed = seed;
       return positions;
     });
   const trackedPromise = preparationPromise.finally(() => {
@@ -604,9 +299,9 @@ function prepareGalaxyPreview() {
 }
 
 function scheduleGalaxyPreparation() {
-  const version = galaxyBuildVersion;
+  const version = session.hydration.buildVersion;
   runWhenIdle(() => {
-    if (!galaxyBuildIsCurrent(universe.seed, version) || mode !== 'generator') return;
+    if (!galaxyBuildIsCurrent(universe.seed, version) || session.mode !== 'generator') return;
     prepareGalaxyPreview().catch((error) => {
       console.warn('宇宙探索器预加载失败，将在进入时重试', error);
     });
@@ -628,15 +323,15 @@ function addBlackHoleRemnant({
 }) {
   const massScale = THREE.MathUtils.clamp((Math.log10(massSolar) - .6) / 8.4, 0, 1);
   const baseScale = blackHoleBaseScale(massSolar, isCentral);
-  const hole = createBlackHoleVisual({
+  const hole = explorer.createBlackHoleVisual({
     color: isCentral ? 0xffc996 : (random() > .35 ? 0xffb77c : 0xb9d7ff),
-    tilt: randomBetween(random, -.38, .38),
+    tilt: explorer.randomBetween(random, -.38, .38),
     phase: random() * Math.PI * 2,
     visualScale: isCentral ? 1.14 : 1,
     intensity: 0
   });
   const hawkingGlow = new THREE.Sprite(new THREE.SpriteMaterial({
-    map: makeGlowTexture(),
+    map: explorer.makeGlowTexture(),
     color: 0x6f9fcc,
     transparent: true,
     opacity: 0,
@@ -645,7 +340,7 @@ function addBlackHoleRemnant({
   }));
   hawkingGlow.scale.set(1.2, 1.2, 1);
   const finalPulse = new THREE.Sprite(new THREE.SpriteMaterial({
-    map: makeGlowTexture(),
+    map: explorer.makeGlowTexture(),
     color: 0xe8f4ff,
     transparent: true,
     opacity: 0,
@@ -666,7 +361,7 @@ function addBlackHoleRemnant({
     );
   }
 
-  const evaporationExponent = blackHoleEvaporationExponent(
+  const evaporationExponent = explorer.blackHoleEvaporationExponent(
     massSolar,
     universe.blackHoleEvaporationExponent
   );
@@ -677,7 +372,7 @@ function addBlackHoleRemnant({
     birthAt,
     visibleAt,
     formationDuration,
-    evaporationAt: cosmicYearsToTimelinePosition(10 ** evaporationExponent, universe),
+    evaporationAt: explorer.cosmicYearsToTimelinePosition(10 ** evaporationExponent, universe),
     evaporationExponent,
     massSolar,
     sourceIndex,
@@ -729,7 +424,7 @@ function stellarPositionAt(sourceIndex, timelinePosition) {
   );
   return position.applyAxisAngle(
     axis,
-    orbitalAngleAt(timelinePosition, stellarGravityState.orbitRates[sourceIndex])
+    explorer.orbitalAngleAt(timelinePosition, stellarGravityState.orbitRates[sourceIndex])
   );
 }
 
@@ -762,593 +457,6 @@ function disposeGroup(group) {
     }
   });
   group.clear();
-}
-
-function buildLocalGroupMap() {
-  disposeGroup(localGroupGroup);
-  localGroupGroup.rotation.set(0, 0, 0);
-  localGroupRoutes = [];
-  intergalacticMarkers = [];
-  intergalacticRouteAssignments = [];
-  localGroupGalaxies = [];
-  localGalaxyGroup = createLocalGalaxyGroup(universe.seed, $('#galaxy-name').textContent);
-  const random = createSeededRandom(universe.seed, 7317);
-  localGalaxyGroup.companions.forEach((companion) => {
-    const galaxy = new THREE.Group();
-    galaxy.position.fromArray(companion.position);
-    galaxy.rotation.set(
-      randomBetween(random, -.18, .18),
-      randomBetween(random, -.4, .4),
-      randomBetween(random, -.12, .12)
-    );
-    const count = Math.round(820 + companion.radius * 260);
-    const positions = new Float32Array(count * 3);
-    const colors = new Float32Array(count * 3);
-    const baseColors = new Float32Array(count * 3);
-    const radii = new Float32Array(count);
-    const angles = new Float32Array(count);
-    const verticals = new Float32Array(count);
-    const phases = new Float32Array(count);
-    const formationRadii = new Float32Array(count);
-    const formationAngles = new Float32Array(count);
-    const formationVerticals = new Float32Array(count);
-    const birthAt = new Float32Array(count);
-    const deathAt = new Float32Array(count);
-    const remnantStrength = new Float32Array(count);
-    const tint = new THREE.Color().setHSL(companion.hue, .58, .68);
-    const isSpiral = companion.type === '小型螺旋星系';
-    const isIrregular = companion.type === '不规则星系';
-    const flattening = isIrregular ? .82 : isSpiral ? .68 : .76;
-    for (let index = 0; index < count; index++) {
-      const offset = index * 3;
-      const radius = Math.pow(random(), .78) * companion.radius;
-      const angle = isSpiral
-        ? (index % 2) * Math.PI + radius * 1.55 + gaussianRandom(random) * .3
-        : random() * Math.PI * 2;
-      const vertical = gaussianRandom(random) * companion.radius * (isIrregular ? .3 : .16);
-      radii[index] = radius;
-      angles[index] = angle;
-      verticals[index] = vertical;
-      phases[index] = random() * Math.PI * 2;
-      formationRadii[index] = radius * randomBetween(random, 1.28, 1.62)
-        + random() * companion.radius * .16;
-      formationAngles[index] = angle + gaussianRandom(random) * .34;
-      formationVerticals[index] = vertical * randomBetween(random, 1.8, 2.5)
-        + gaussianRandom(random) * companion.radius * .18;
-      positions[offset] = Math.cos(angle) * radius;
-      positions[offset + 1] = vertical;
-      positions[offset + 2] = Math.sin(angle) * radius * flattening;
-    }
-    const companionPopulation = createStellarPopulation(universe, positions, {
-      namespace: 7400 + companion.index
-    });
-    birthAt.set(companionPopulation.birthAt);
-    deathAt.set(companionPopulation.deathAt);
-    const galaxyBirthStart = Math.min(...birthAt);
-    for (let index = 0; index < count; index++) {
-      const offset = index * 3;
-      baseColors[offset] = companionPopulation.colors[offset] * .82 + tint.r * .18;
-      baseColors[offset + 1] = companionPopulation.colors[offset + 1] * .82 + tint.g * .18;
-      baseColors[offset + 2] = companionPopulation.colors[offset + 2] * .82 + tint.b * .18;
-      colors[offset] = baseColors[offset];
-      colors[offset + 1] = baseColors[offset + 1];
-      colors[offset + 2] = baseColors[offset + 2];
-      remnantStrength[index] = companionPopulation.remnantTypes[index] > 1
-        ? randomBetween(random, .1, .24)
-        : random() < .22 ? randomBetween(random, .04, .12) : 0;
-    }
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    const material = new THREE.PointsMaterial({
-      size: 1.45,
-      sizeAttenuation: false,
-      map: getPointTexture(),
-      alphaTest: .01,
-      vertexColors: true,
-      transparent: true,
-      opacity: .76,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending
-    });
-    material.userData.baseOpacity = .76;
-    const points = new THREE.Points(geometry, material);
-    points.userData.companionIndex = companion.index;
-    galaxy.add(points);
-
-    const core = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: makeGlowTexture(),
-      color: tint,
-      transparent: true,
-      opacity: .4,
-      depthTest: false,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending
-    }));
-    core.scale.setScalar(companion.radius * 1.68);
-    core.material.userData.baseOpacity = .4;
-    core.renderOrder = 3;
-    galaxy.add(core);
-
-    const gas = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: makeGlowTexture(),
-      color: tint.clone().lerp(new THREE.Color(0x8fc9e8), .48),
-      transparent: true,
-      opacity: 0,
-      depthTest: false,
-      depthWrite: false,
-      fog: false,
-      blending: THREE.AdditiveBlending
-    }));
-    gas.scale.setScalar(companion.radius * 4.1);
-    gas.renderOrder = -1;
-    galaxy.add(gas);
-    localGroupGroup.add(galaxy);
-    localGroupGalaxies.push({
-      galaxy,
-      points,
-      core,
-      gas,
-      basePosition: companion.position.slice(),
-      baseColors,
-      radii,
-      angles,
-      verticals,
-      phases,
-      formationRadii,
-      formationAngles,
-      formationVerticals,
-      birthAt,
-      deathAt,
-      remnantStrength,
-      flattening,
-      radius: companion.radius,
-      galaxyBirthStart,
-      rotationSpeed: (isSpiral ? .082 : isIrregular ? .036 : .052) * (random() < .5 ? -1 : 1),
-      radialWobble: isIrregular ? .026 : .008,
-      pulsePhase: random() * Math.PI * 2
-    });
-  });
-
-  civilizationData.forEach((species) => {
-    const destination = localGalaxyGroup.companions[species.color % localGalaxyGroup.companions.length];
-    const geometry = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(),
-      new THREE.Vector3().fromArray(destination.position)
-    ]);
-    const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({
-      color: species.color,
-      transparent: true,
-      opacity: 0,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending
-    }));
-    line.visible = false;
-    localGroupGroup.add(line);
-    localGroupRoutes.push(line);
-
-    const ships = Array.from({ length: 1 }, (_, shipIndex) => {
-      const ship = createTravelShip(random, species.color);
-      ship.userData.trafficPhase = (ship.userData.trafficPhase + shipIndex) % 2;
-      ship.userData.shipContext = 'local-group';
-      localGroupGroup.add(ship);
-      return ship;
-    });
-    intergalacticMarkers.push(ships);
-  });
-  localGroupGroup.visible = false;
-}
-
-function buildCosmicWebMap() {
-  restoreDetailGroupToScene();
-  disposeGroup(cosmicWebGroup);
-  cosmicWebGroup.rotation.set(.12, -.22, .04);
-  cosmicWebModel = createCosmicWebModel(universe);
-  const { positions, luminosity, colorMix } = cosmicWebModel;
-  const galaxyPositions = positions.slice();
-  const colors = new Float32Array(positions.length);
-  const baseColors = new Float32Array(positions.length);
-  const cool = new THREE.Color().setHSL(universe.hue, .58, .69);
-  const warm = new THREE.Color(0xffd6a1);
-  const color = new THREE.Color();
-  for (let index = 0; index < luminosity.length; index++) {
-    color.copy(cool).lerp(warm, colorMix[index]);
-    const offset = index * 3;
-    baseColors[offset] = color.r * luminosity[index];
-    baseColors[offset + 1] = color.g * luminosity[index];
-    baseColors[offset + 2] = color.b * luminosity[index];
-  }
-
-  const galaxyGeometry = new THREE.BufferGeometry();
-  galaxyGeometry.setAttribute('position', new THREE.BufferAttribute(galaxyPositions, 3));
-  galaxyGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-  const galaxyMaterial = new THREE.PointsMaterial({
-    size: compactCivilizationLayout.matches ? 1.65 : 1.25,
-    sizeAttenuation: false,
-    map: getPointTexture(),
-    alphaTest: .012,
-    vertexColors: true,
-    transparent: true,
-    opacity: 0,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending
-  });
-  const galaxies = new THREE.Points(galaxyGeometry, galaxyMaterial);
-  cosmicWebGroup.add(galaxies);
-
-  const clusterGlows = cosmicWebModel.clusters
-    .slice()
-    .sort((left, right) => right.mass - left.mass)
-    .slice(0, 12)
-    .map((cluster) => {
-      const glowMaterial = new THREE.SpriteMaterial({
-        map: makeGlowTexture(),
-        color: cool,
-        transparent: true,
-        opacity: 0,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending
-      });
-      const glow = new THREE.Sprite(glowMaterial);
-      glow.position.fromArray(cluster.position);
-      glow.scale.setScalar(2.2 + cluster.mass * 2.1);
-      cosmicWebGroup.add(glow);
-      return glow;
-    });
-
-  const locatorMaterial = new THREE.SpriteMaterial({
-    map: makeRingTexture(),
-    color: 0xd8ff5f,
-    transparent: true,
-    opacity: 0,
-    depthTest: false,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending
-  });
-  const locator = new THREE.Sprite(locatorMaterial);
-  const initialLocatorPosition = cosmicGalaxyPositionAt(
-    cosmicWebModel,
-    cosmicWebModel.currentGalaxyIndex,
-    0
-  );
-  const currentGalaxyAnchor = new THREE.Group();
-  currentGalaxyAnchor.position.fromArray(initialLocatorPosition);
-  locator.scale.setScalar(3.2);
-  locator.renderOrder = 8;
-  currentGalaxyAnchor.add(locator);
-  cosmicWebGroup.add(currentGalaxyAnchor);
-
-  cosmicCivilizationPlan = createCosmicCivilizationPlan(universe, cosmicWebModel);
-  const routeCapacity = cosmicCivilizationPlan.routes.length;
-  const travelerPositions = new Float32Array(routeCapacity * 3);
-  const travelerColors = new Float32Array(routeCapacity * 3);
-  const travelerGeometry = new THREE.BufferGeometry();
-  travelerGeometry.setAttribute('position', new THREE.BufferAttribute(travelerPositions, 3));
-  travelerGeometry.setAttribute('color', new THREE.BufferAttribute(travelerColors, 3));
-  travelerGeometry.setDrawRange(0, 0);
-  const travelers = new THREE.Points(travelerGeometry, new THREE.PointsMaterial({
-    size: compactCivilizationLayout.matches ? 5.2 : 4.1,
-    sizeAttenuation: false,
-    map: getPointTexture(),
-    alphaTest: .008,
-    vertexColors: true,
-    transparent: true,
-    opacity: 0,
-    depthTest: false,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending
-  }));
-  travelers.renderOrder = 7;
-  cosmicWebGroup.add(travelers);
-
-  const settlementPositions = new Float32Array(routeCapacity * 3);
-  const settlementColors = new Float32Array(routeCapacity * 3);
-  const settlementGeometry = new THREE.BufferGeometry();
-  settlementGeometry.setAttribute('position', new THREE.BufferAttribute(settlementPositions, 3));
-  settlementGeometry.setAttribute('color', new THREE.BufferAttribute(settlementColors, 3));
-  settlementGeometry.setDrawRange(0, 0);
-  const settlements = new THREE.Points(settlementGeometry, new THREE.PointsMaterial({
-    size: compactCivilizationLayout.matches ? 3.4 : 2.6,
-    sizeAttenuation: false,
-    map: getPointTexture(),
-    alphaTest: .01,
-    vertexColors: true,
-    transparent: true,
-    opacity: 0,
-    depthTest: false,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending
-  }));
-  settlements.renderOrder = 6;
-  cosmicWebGroup.add(settlements);
-
-  const travelPulses = Array.from({ length: 12 }, () => {
-    const pulse = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: makeRingTexture(),
-      color: 0xd8ff5f,
-      transparent: true,
-      opacity: 0,
-      depthTest: false,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending
-    }));
-    pulse.visible = false;
-    pulse.renderOrder = 9;
-    cosmicWebGroup.add(pulse);
-    return pulse;
-  });
-
-  cosmicWebVisual = {
-    galaxies,
-    clusterGlows,
-    currentGalaxyAnchor,
-    locator,
-    baseColors,
-    galaxyPositions,
-    reveal: 0
-  };
-  cosmicCivilizationVisual = {
-    travelers,
-    settlements,
-    travelPulses,
-    travelerPositions,
-    travelerColors,
-    settlementPositions,
-    settlementColors
-  };
-  cosmicWebGroup.visible = false;
-  cosmicFlowTime = 0;
-  lastCosmicFlowUpdateAt = 0;
-  universeScaleShadersWarmed = false;
-  $('#universe-scale-structure').textContent = `${cosmicWebModel.morphologyLabel} · ${cosmicWebModel.clusterCount} 个超星系团节点 · 当前星系已标记`;
-}
-
-async function warmUniverseScaleShaders() {
-  if (universeScaleShadersWarmed || !cosmicWebVisual || !renderer.compileAsync) return;
-  const wasVisible = cosmicWebGroup.visible;
-  cosmicWebGroup.visible = true;
-  try {
-    const compilation = renderer.compileAsync(scene, camera);
-    cosmicWebGroup.visible = wasVisible;
-    await compilation;
-    universeScaleShadersWarmed = true;
-  } finally {
-    cosmicWebGroup.visible = wasVisible;
-  }
-}
-
-function applyCosmicWebOpacity() {
-  if (!cosmicWebVisual) return;
-  const opacity = cosmicWebVisual.reveal * cosmicWebVisual.epochOpacity * cosmicWebVisual.fateOpacity;
-  cosmicWebVisual.galaxies.material.opacity = opacity * .96;
-  cosmicWebVisual.clusterGlows.forEach((glow) => {
-    glow.material.opacity = opacity * .1;
-  });
-  cosmicWebVisual.locator.material.opacity = opacity * .92;
-  if (cosmicCivilizationVisual) {
-    const activityOpacity = cosmicCivilizationVisual.activityOpacity ?? 1;
-    cosmicCivilizationVisual.travelers.material.opacity = opacity * activityOpacity;
-    cosmicCivilizationVisual.settlements.material.opacity = opacity * activityOpacity * .82;
-    cosmicCivilizationVisual.travelPulses.forEach((pulse) => {
-      pulse.material.opacity = (pulse.userData.baseOpacity || 0) * opacity * activityOpacity;
-    });
-  }
-}
-
-function writeRouteColor(array, offset, color, brightness = 1) {
-  array[offset] = ((color >> 16) & 255) / 255 * brightness;
-  array[offset + 1] = ((color >> 8) & 255) / 255 * brightness;
-  array[offset + 2] = (color & 255) / 255 * brightness;
-}
-
-const cosmicRouteSourcePosition = [0, 0, 0];
-const cosmicRouteTargetPosition = [0, 0, 0];
-
-function movingCosmicRouteEndpoint(route, endpoint, target) {
-  if (!cosmicWebModel) {
-    const position = route[endpoint === 'sourceIndex' ? 'source' : 'target'];
-    target[0] = position[0];
-    target[1] = position[1];
-    target[2] = position[2];
-    return target;
-  }
-  return cosmicGalaxyPositionAt(
-    cosmicWebModel,
-    route[endpoint],
-    cosmicFlowTime,
-    target
-  );
-}
-
-function positionAlongCosmicRoute(route, progress, target) {
-  const source = movingCosmicRouteEndpoint(
-    route,
-    'sourceIndex',
-    cosmicRouteSourcePosition
-  );
-  const destination = movingCosmicRouteEndpoint(
-    route,
-    'targetIndex',
-    cosmicRouteTargetPosition
-  );
-  const arc = Math.sin(progress * Math.PI) * route.arcHeight;
-  target[0] = THREE.MathUtils.lerp(source[0], destination[0], progress)
-    + route.arcDirection[0] * arc;
-  target[1] = THREE.MathUtils.lerp(source[1], destination[1], progress)
-    + route.arcDirection[1] * arc;
-  target[2] = THREE.MathUtils.lerp(source[2], destination[2], progress)
-    + route.arcDirection[2] * arc;
-  return target;
-}
-
-function updateCosmicCivilizationVisuals(
-  position,
-  updateReadout = true,
-  civilizationsActive = activeSpeciesCount > 0
-) {
-  if (!cosmicCivilizationPlan || !cosmicCivilizationVisual) return;
-  const state = cosmicCivilizationStateAt(cosmicCivilizationPlan, position);
-  const renderActivity = state.operational && civilizationsActive;
-  const active = renderActivity ? state.active : [];
-  const arrived = renderActivity ? state.arrived : [];
-  const traffic = renderActivity ? state.traffic : [];
-  const visibleTravel = [...active, ...traffic];
-  const travelPosition = [0, 0, 0];
-  cosmicCivilizationVisual.activityOpacity = renderActivity ? state.activityOpacity : 0;
-
-  visibleTravel.forEach(({ route, progress }, index) => {
-    const offset = index * 3;
-    positionAlongCosmicRoute(route, progress, travelPosition);
-    cosmicCivilizationVisual.travelerPositions.set(travelPosition, offset);
-    writeRouteColor(cosmicCivilizationVisual.travelerColors, offset, route.color, 1.28);
-  });
-  cosmicCivilizationVisual.travelers.geometry.setDrawRange(0, visibleTravel.length);
-  cosmicCivilizationVisual.travelers.geometry.attributes.position.needsUpdate = true;
-  cosmicCivilizationVisual.travelers.geometry.attributes.color.needsUpdate = true;
-
-  arrived.forEach((route, index) => {
-    const offset = index * 3;
-    movingCosmicRouteEndpoint(route, 'targetIndex', travelPosition);
-    cosmicCivilizationVisual.settlementPositions.set(travelPosition, offset);
-    writeRouteColor(cosmicCivilizationVisual.settlementColors, offset, route.color, .9);
-  });
-  cosmicCivilizationVisual.settlements.geometry.setDrawRange(0, arrived.length);
-  cosmicCivilizationVisual.settlements.geometry.attributes.position.needsUpdate = true;
-  cosmicCivilizationVisual.settlements.geometry.attributes.color.needsUpdate = true;
-
-  cosmicCivilizationVisual.travelPulses.forEach((pulse, index) => {
-    const data = renderActivity ? state.pulses[index] : null;
-    if (!data) {
-      pulse.visible = false;
-      pulse.userData.baseOpacity = 0;
-      return;
-    }
-    const { route, type, strength } = data;
-    pulse.visible = true;
-    pulse.material.color.setHex(type === 'failure' ? 0xff705c : route.color);
-    if (type === 'departure') {
-      movingCosmicRouteEndpoint(route, 'sourceIndex', travelPosition);
-      pulse.position.fromArray(travelPosition);
-    } else if (type === 'arrival') {
-      movingCosmicRouteEndpoint(route, 'targetIndex', travelPosition);
-      pulse.position.fromArray(travelPosition);
-    } else {
-      const failureProgress = (route.failureAt - route.departureAt)
-        / Math.max(1e-6, route.arrivalAt - route.departureAt);
-      positionAlongCosmicRoute(route, failureProgress, travelPosition);
-      pulse.position.fromArray(travelPosition);
-    }
-    pulse.userData.baseScale = .8 + (1 - strength) * 2.8;
-    pulse.scale.setScalar(pulse.userData.baseScale);
-    pulse.userData.baseOpacity = strength * .72;
-  });
-  applyCosmicWebOpacity();
-
-  if (!updateReadout) return;
-
-  if (position < cosmicCivilizationPlan.civilizationStartAt) {
-    $('#universe-scale-activity').textContent = '全宇宙文明航行尚未出现';
-    $('#universe-scale-event').textContent = '';
-    return;
-  }
-  if (!renderActivity || (visibleTravel.length === 0 && state.latestEvent)) {
-    $('#universe-scale-activity').textContent = '星系际文明活动已终止 · 无在途航行器';
-    $('#universe-scale-event').textContent = '';
-    return;
-  }
-  $('#universe-scale-activity').textContent = `${visibleTravel.length} 艘星系际航行器在途 · ${arrived.length} 条航路持续通航 · ${state.failed.length} 次失联`;
-  const event = state.latestEvent;
-  if (!event) {
-    $('#universe-scale-event').textContent = '等待第一批跨星系文明完成启航条件';
-    return;
-  }
-  const source = `G-${String(event.route.sourceIndex).padStart(5, '0')}`;
-  const target = `G-${String(event.route.targetIndex).padStart(5, '0')}`;
-  const eventLabel = event.type === 'departure'
-    ? '启航'
-    : event.type === 'arrival' ? '抵达' : '失联';
-  $('#universe-scale-event').textContent = `最近事件 · ${event.route.modeLabel} ${eventLabel} · ${source} → ${target}`;
-}
-
-function updateCosmicWebMotion(now, force = false) {
-  if (!cosmicWebModel || !cosmicWebVisual) return;
-  if (!force && now - lastCosmicFlowUpdateAt < 50) return;
-  const elapsed = lastCosmicFlowUpdateAt > 0 ? now - lastCosmicFlowUpdateAt : 0;
-  lastCosmicFlowUpdateAt = now;
-  if (!prefersReducedMotion) cosmicFlowTime += Math.min(.12, elapsed * .001);
-  for (let index = 0; index < cosmicWebModel.galaxyCount; index++) {
-    cosmicGalaxyPositionAt(
-      cosmicWebModel,
-      index,
-      cosmicFlowTime,
-      cosmicWebVisual.galaxyPositions,
-      index * 3
-    );
-  }
-  cosmicWebVisual.galaxies.geometry.attributes.position.needsUpdate = true;
-  const locatorPosition = cosmicGalaxyPositionAt(
-    cosmicWebModel,
-    cosmicWebModel.currentGalaxyIndex,
-    cosmicFlowTime
-  );
-  cosmicWebVisual.currentGalaxyAnchor.position.fromArray(locatorPosition);
-  updateCosmicCivilizationVisuals(cosmicPosition, false);
-}
-
-function updateCosmicWebVisuals(position) {
-  if (!cosmicWebVisual || !cosmicWebModel) return;
-  const colors = cosmicWebVisual.galaxies.geometry.attributes.color.array;
-  const stellarEnd = stellarEndTimelinePosition(universe);
-  const stellarLight = 1 - THREE.MathUtils.smoothstep(position, stellarEnd - 75, stellarEnd + 12);
-  const remnantLight = THREE.MathUtils.smoothstep(position, stellarEnd - 24, stellarEnd + 18)
-    * (1 - THREE.MathUtils.smoothstep(position, 900, 985));
-  let formedCount = 0;
-  for (let index = 0; index < cosmicWebModel.galaxyCount; index++) {
-    const born = THREE.MathUtils.smoothstep(
-      position,
-      cosmicWebModel.formationAt[index],
-      cosmicWebModel.formationAt[index] + 18
-    );
-    if (position >= cosmicWebModel.formationAt[index]) formedCount++;
-    const brightness = born * (stellarLight + remnantLight * .075);
-    const offset = index * 3;
-    colors[offset] = cosmicWebVisual.baseColors[offset] * brightness;
-    colors[offset + 1] = cosmicWebVisual.baseColors[offset + 1] * brightness;
-    colors[offset + 2] = cosmicWebVisual.baseColors[offset + 2] * brightness;
-  }
-  cosmicWebVisual.galaxies.geometry.attributes.color.needsUpdate = true;
-
-  const fate = universe.cosmicFate;
-  const finiteOutcome = fate.type !== 'heat-death';
-  const fatePhase = finiteOutcome
-    ? THREE.MathUtils.smoothstep(position, fate.onsetAt, 1000)
-    : 0;
-  cosmicWebVisual.epochOpacity = THREE.MathUtils.smoothstep(position, 195, 330);
-  cosmicWebVisual.fateOpacity = fate.type === 'vacuum-decay'
-    ? 1 - fatePhase
-    : fate.type === 'big-rip'
-      ? Math.pow(1 - fatePhase, .42)
-      : 1;
-  if (fate.type === 'big-rip') {
-    cosmicWebGroup.scale.setScalar(1 + Math.pow(fatePhase, 1.45) * 1.8);
-  } else if (fate.type === 'big-crunch') {
-    cosmicWebGroup.scale.setScalar(Math.max(.015, 1 - Math.pow(fatePhase, 1.28) * .985));
-  } else {
-    cosmicWebGroup.scale.setScalar(1);
-  }
-  applyCosmicWebOpacity();
-
-  const countLabel = formedCount === 0
-    ? '宇宙网尚未形成'
-    : `${formedCount.toLocaleString('zh-CN')} / ${cosmicWebModel.galaxyCount.toLocaleString('zh-CN')} 个代表性星系`;
-  $('#universe-scale-count').textContent = countLabel;
-  let eraLabel = '等待第一批星系形成';
-  if (formedCount > 0) eraLabel = `可观测直径约 ${cosmicWebModel.observableDiameterBillionLightYears.toFixed(0)}0 亿光年 · 宇宙网形成中`;
-  if (formedCount === cosmicWebModel.galaxyCount) eraLabel = `可观测直径约 ${cosmicWebModel.observableDiameterBillionLightYears.toFixed(0)}0 亿光年 · 宇宙网已形成`;
-  if (stellarLight < .08) eraLabel = '恒星时代结束 · 星系只剩致密残骸';
-  if (finiteOutcome && fatePhase > 0) eraLabel = `${fate.label}正在改变整个可观测尺度`;
-  $('#universe-scale-era').textContent = eraLabel;
-  updateCosmicCivilizationVisuals(position);
 }
 
 function buildUniverseObject() {
@@ -1409,7 +517,7 @@ function buildUniverseObject() {
 
   universeGroup.rotation.set(0.15, -0.3, -0.08);
   universeGroup.scale.setScalar(0.01);
-  transition = { type: 'birth', start: performance.now(), duration: prefersReducedMotion ? 1 : 1300 };
+  session.transition = { type: 'birth', start: performance.now(), duration: prefersReducedMotion ? 1 : 1300 };
 }
 
 function buildGalaxyPreview() {
@@ -1448,36 +556,36 @@ function buildGalaxyPreview() {
   stellarPopulation = null;
   originalRemnantPositions = null;
   remnantDynamics = null;
-  localGalaxyGroup = null;
-  localGroupRoutes = [];
-  intergalacticMarkers = [];
-  intergalacticRouteAssignments = [];
-  localGroupGalaxies = [];
-  cosmicWebModel = null;
-  cosmicWebVisual = null;
-  cosmicCivilizationPlan = null;
-  cosmicCivilizationVisual = null;
-  cosmicFlowTime = 0;
-  lastCosmicFlowUpdateAt = 0;
+  localGroupState.model = null;
+  localGroupState.routes = [];
+  localGroupState.shipMarkers = [];
+  localGroupState.routeAssignments = [];
+  localGroupState.galaxies = [];
+  cosmicWebState.model = null;
+  cosmicWebState.visual = null;
+  cosmicWebState.civilizationPlan = null;
+  cosmicWebState.civilizationVisual = null;
+  cosmicWebState.flowTime = 0;
+  cosmicWebState.lastFlowUpdateAt = 0;
   galaxyViewPose = null;
-  universeScaleShadersWarmed = false;
-  currentEras = erasForUniverse(universe);
+  cosmicWebState.shadersWarmed = false;
+  session.timeline.eras = explorer.erasForUniverse(universe);
   cachedTimelineVisualContext = null;
-  lastCivilizationSnapshot = null;
-  activeSpeciesCount = 0;
-  ascendedSpeciesCount = 0;
-  activeCivilizationRelationship = null;
-  timelineViewport = { start: 0, end: 1000 };
+  session.timeline.lastCivilizationSnapshot = null;
+  session.civilization.activeSpeciesCount = 0;
+  session.civilization.ascendedSpeciesCount = 0;
+  session.civilization.activeRelationship = null;
+  session.timeline.viewport = { start: 0, end: 1000 };
   const random = createSeededRandom(universe.seed, 91);
   const count = 17000;
   const positions = new Float32Array(count * 3);
   const colors = new Float32Array(count * 3);
   starDeathThresholds = new Float32Array(count);
   const irregularClumps = Array.from({ length: 4 + universe.seedValue % 3 }, (_, index) => ({
-    x: randomBetween(random, -8, 8) + index * .35,
-    y: randomBetween(random, -.6, .6),
-    z: randomBetween(random, -6, 6),
-    spread: randomBetween(random, 1.1, 3.1)
+    x: explorer.randomBetween(random, -8, 8) + index * .35,
+    y: explorer.randomBetween(random, -.6, .6),
+    z: explorer.randomBetween(random, -6, 6),
+    spread: explorer.randomBetween(random, 1.1, 3.1)
   }));
 
   for (let i = 0; i < count; i++) {
@@ -1488,46 +596,46 @@ function buildGalaxyPreview() {
     if (universe.galaxyType === 0) {
       const selector = random();
       if (selector < .2) {
-        x = gaussianRandom(random) * 3.7;
-        z = gaussianRandom(random) * .42;
-        y = gaussianRandom(random) * .18;
+        x = explorer.gaussianRandom(random) * 3.7;
+        z = explorer.gaussianRandom(random) * .42;
+        y = explorer.gaussianRandom(random) * .18;
       } else if (selector < .29) {
-        x = gaussianRandom(random) * 1.7;
-        z = gaussianRandom(random) * 1.7;
-        y = gaussianRandom(random) * .65;
+        x = explorer.gaussianRandom(random) * 1.7;
+        z = explorer.gaussianRandom(random) * 1.7;
+        y = explorer.gaussianRandom(random) * .65;
       } else {
         const radius = 3 + Math.pow(random(), .72) * 11;
         const arm = i % 2;
-        const angle = arm * Math.PI + (radius - 3) * .46 + gaussianRandom(random) * (.12 + radius * .012);
-        const spread = gaussianRandom(random) * (.18 + radius * .025);
+        const angle = arm * Math.PI + (radius - 3) * .46 + explorer.gaussianRandom(random) * (.12 + radius * .012);
+        const spread = explorer.gaussianRandom(random) * (.18 + radius * .025);
         x = Math.cos(angle) * radius + spread;
         z = Math.sin(angle) * radius + spread;
-        y = gaussianRandom(random) * (.12 + radius * .018);
+        y = explorer.gaussianRandom(random) * (.12 + radius * .018);
       }
     } else if (universe.galaxyType === 1) {
       const arms = 7 + universe.seedValue % 5;
       const radius = Math.pow(random(), .68) * 14;
       const arm = i % arms;
-      const angle = arm / arms * Math.PI * 2 + radius * .31 + gaussianRandom(random) * (.26 + radius * .018);
+      const angle = arm / arms * Math.PI * 2 + radius * .31 + explorer.gaussianRandom(random) * (.26 + radius * .018);
       const patch = 1 + Math.sin(radius * 2.7 + arm * 1.9) * .11;
-      x = Math.cos(angle) * radius * patch + gaussianRandom(random) * .25;
-      z = Math.sin(angle) * radius * patch + gaussianRandom(random) * .25;
-      y = gaussianRandom(random) * (.18 + radius * .028);
+      x = Math.cos(angle) * radius * patch + explorer.gaussianRandom(random) * .25;
+      z = Math.sin(angle) * radius * patch + explorer.gaussianRandom(random) * .25;
+      y = explorer.gaussianRandom(random) * (.18 + radius * .028);
     } else if (universe.galaxyType === 2) {
       const selector = random();
       const angle = random() * Math.PI * 2;
       let radius;
-      if (selector < .72) radius = 8.4 + gaussianRandom(random) * .78;
-      else if (selector < .9) radius = Math.abs(gaussianRandom(random)) * 2.1;
+      if (selector < .72) radius = 8.4 + explorer.gaussianRandom(random) * .78;
+      else if (selector < .9) radius = Math.abs(explorer.gaussianRandom(random)) * 2.1;
       else radius = 4 + random() * 8;
-      x = Math.cos(angle) * radius * 1.15 + gaussianRandom(random) * .13;
-      z = Math.sin(angle) * radius + gaussianRandom(random) * .13;
-      y = gaussianRandom(random) * (.18 + radius * .012);
+      x = Math.cos(angle) * radius * 1.15 + explorer.gaussianRandom(random) * .13;
+      z = Math.sin(angle) * radius + explorer.gaussianRandom(random) * .13;
+      y = explorer.gaussianRandom(random) * (.18 + radius * .012);
     } else if (universe.galaxyType === 3) {
       const falloff = Math.pow(random(), .38);
-      x = gaussianRandom(random) * 5.5 * falloff;
-      y = gaussianRandom(random) * 2.35 * falloff;
-      z = gaussianRandom(random) * 3.75 * falloff;
+      x = explorer.gaussianRandom(random) * 5.5 * falloff;
+      y = explorer.gaussianRandom(random) * 2.35 * falloff;
+      z = explorer.gaussianRandom(random) * 3.75 * falloff;
       const radius = Math.hypot(x, y, z);
       if (radius > 13.5) {
         const scale = 13.5 / radius;
@@ -1535,15 +643,15 @@ function buildGalaxyPreview() {
       }
     } else {
       if (random() < .13) {
-        const tail = randomBetween(random, -12, 12);
+        const tail = explorer.randomBetween(random, -12, 12);
         x = tail;
-        z = Math.sin(tail * .24) * 2.7 + gaussianRandom(random) * .7;
-        y = gaussianRandom(random) * .55;
+        z = Math.sin(tail * .24) * 2.7 + explorer.gaussianRandom(random) * .7;
+        y = explorer.gaussianRandom(random) * .55;
       } else {
         const clump = irregularClumps[Math.floor(random() * irregularClumps.length)];
-        x = clump.x + gaussianRandom(random) * clump.spread;
-        y = clump.y + gaussianRandom(random) * clump.spread * .38;
-        z = clump.z + gaussianRandom(random) * clump.spread * .72;
+        x = clump.x + explorer.gaussianRandom(random) * clump.spread;
+        y = clump.y + explorer.gaussianRandom(random) * clump.spread * .38;
+        z = clump.z + explorer.gaussianRandom(random) * clump.spread * .72;
       }
     }
 
@@ -1553,14 +661,14 @@ function buildGalaxyPreview() {
   }
 
   originalGalaxyPositions = positions.slice();
-  stellarPopulation = createStellarPopulation(universe, originalGalaxyPositions);
+  stellarPopulation = explorer.createStellarPopulation(universe, originalGalaxyPositions);
   colors.set(stellarPopulation.colors);
   starDeathThresholds.set(stellarPopulation.deathAt);
   originalGalaxyColors = colors.slice();
-  stellarDawnModel = createStellarDawnModel(universe.seed, originalGalaxyPositions);
+  stellarDawnModel = explorer.createStellarDawnModel(universe.seed, originalGalaxyPositions);
   stellarDawnModel.birthAt.set(stellarPopulation.birthAt);
   stellarDawnModel.birthYears = stellarPopulation.birthYears;
-  stellarGravityState = createStellarGravityState(originalGalaxyPositions, universe);
+  stellarGravityState = explorer.createStellarGravityState(originalGalaxyPositions, universe);
 
   const gasPositions = new Float32Array(stellarDawnModel.gasSourceIndices.length * 3);
   const gasColors = new Float32Array(stellarDawnModel.gasSourceIndices.length * 3);
@@ -1599,7 +707,7 @@ function buildGalaxyPreview() {
   galaxyGroup.add(points);
   clickableStars = points;
   keyboardStarMarker = new THREE.Sprite(new THREE.SpriteMaterial({
-    map: makeRingTexture(),
+    map: explorer.makeRingTexture(),
     color: 0xffffff,
     transparent: true,
     opacity: .9,
@@ -1617,7 +725,7 @@ function buildGalaxyPreview() {
     group.userData.maxRadius = site.maxRadius;
     group.userData.phase = site.phase;
     const front = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: makeRingTexture(),
+      map: explorer.makeRingTexture(),
       color: 0x8ddbea,
       transparent: true,
       opacity: 0,
@@ -1625,7 +733,7 @@ function buildGalaxyPreview() {
       blending: THREE.AdditiveBlending
     }));
     const sourceGlow = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: makeGlowTexture(),
+      map: explorer.makeGlowTexture(),
       color: 0xe9f8ff,
       transparent: true,
       opacity: 0,
@@ -1649,14 +757,14 @@ function buildGalaxyPreview() {
     { scale: 1.2, opacity: .035 }
   ];
   const coreProfile = coreProfiles[universe.galaxyType];
-  const coreGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeGlowTexture(), color: 0xffdca4, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
+  const coreGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: explorer.makeGlowTexture(), color: 0xffdca4, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
   coreGlow.scale.set(coreProfile.scale, coreProfile.scale, 1);
   coreGlow.userData.isCoreGlow = true;
   coreGlow.userData.profile = coreProfile;
   galaxyGroup.add(coreGlow);
 
   if (universe.activeNucleus) {
-    const agnGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeGlowTexture(), color: 0xd9ecff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
+    const agnGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: explorer.makeGlowTexture(), color: 0xd9ecff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
     agnGlow.scale.set(.72, .72, 1);
     agnGlow.userData.isAgnGlow = true;
     galaxyGroup.add(agnGlow);
@@ -1687,7 +795,7 @@ function yieldToMainThread() {
 }
 
 function galaxyBuildIsCurrent(seed, version) {
-  return universe.seed === seed && galaxyBuildVersion === version && !pageDisposed;
+  return universe.seed === seed && session.hydration.buildVersion === version && !pageDisposed;
 }
 
 async function hydrateGalaxy(starPositions, seed, version) {
@@ -1714,11 +822,11 @@ async function hydrateGalaxy(starPositions, seed, version) {
 
   await yieldToMainThread();
   if (!galaxyBuildIsCurrent(seed, version)) return false;
-  buildCosmicEvents(starPositions);
+  cosmicEvents = cosmicEventBuilder.buildCosmicEvents(starPositions);
 
   await yieldToMainThread();
   if (!galaxyBuildIsCurrent(seed, version)) return false;
-  const simulationResult = await buildCivilizationSimulationAsync({
+  const simulationResult = await explorer.buildCivilizationSimulationAsync({
     universe,
     civilizationData,
     civilizationSimulation,
@@ -1731,9 +839,9 @@ async function hydrateGalaxy(starPositions, seed, version) {
     if (event) Object.assign(event, update);
   });
   renderCosmicEventMarkers();
-  renderTimelineScale(universe, timelineViewport);
+  explorer.renderTimelineScale(universe, session.timeline.viewport);
   updateTimelineZoomControl();
-  galaxyHydratedForSeed = seed;
+  session.hydration.hydratedSeed = seed;
   cachedTimelineVisualContext = null;
   return true;
 }
@@ -1753,14 +861,14 @@ function buildEpochEffects(starPositions) {
     // Sample isotropic comoving coordinates inside a sphere. Independent XYZ
     // samples would fill a cube and expose square corners during expansion.
     const azimuth = random() * Math.PI * 2;
-    const vertical = randomBetween(random, -1, 1);
+    const vertical = explorer.randomBetween(random, -1, 1);
     const horizontal = Math.sqrt(1 - vertical * vertical);
     const volumeRadius = Math.cbrt(random());
     primordialDirections[i * 3] = Math.cos(azimuth) * horizontal * volumeRadius;
     primordialDirections[i * 3 + 1] = vertical * volumeRadius;
     primordialDirections[i * 3 + 2] = Math.sin(azimuth) * horizontal * volumeRadius;
     primordialFactors[i] = THREE.MathUtils.clamp(
-      1 + gaussianRandom(random) * .035 * universe.primordialFluctuation,
+      1 + explorer.gaussianRandom(random) * .035 * universe.primordialFluctuation,
       .82,
       1.18
     );
@@ -1807,7 +915,7 @@ function buildEpochEffects(starPositions) {
   epochEffectsGroup.add(expansionStreaks);
 
   bangCore = new THREE.Sprite(new THREE.SpriteMaterial({
-    map: makeGlowTexture(),
+    map: explorer.makeGlowTexture(),
     color: 0xffffff,
     transparent: true,
     opacity: 1,
@@ -1820,7 +928,7 @@ function buildEpochEffects(starPositions) {
 
   shockwaves = [0xfff4df, 0xff9b54, 0x88bfff].map((color, index) => {
     const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: makeRingTexture(),
+      map: explorer.makeRingTexture(),
       color,
       transparent: true,
       opacity: 0,
@@ -1881,11 +989,11 @@ function buildEpochEffects(starPositions) {
       : (fate === 3 ? 704 : fate === 2 ? 724 : 710) + haloDelay + Math.pow(random(), .68) * (fate === 3 ? 28 : 92);
     remnantDynamics.escapeAt[i] = referenceEscapeAt > 1000
       ? referenceEscapeAt
-      : cosmicYearsToTimelinePosition(
-          referenceFutureYearsAtTimelinePosition(referenceEscapeAt, universe),
+      : explorer.cosmicYearsToTimelinePosition(
+          explorer.referenceFutureYearsAtTimelinePosition(referenceEscapeAt, universe),
           universe
         );
-    remnantDynamics.speeds[i] = fate === 3 ? randomBetween(random, 1.7, 2.6) : randomBetween(random, .55, 1.05);
+    remnantDynamics.speeds[i] = fate === 3 ? explorer.randomBetween(random, 1.7, 2.6) : explorer.randomBetween(random, .55, 1.05);
     const remnantColor = new THREE.Color(
       remnantType === 1 ? 0xc8dcff
         : remnantType === 2 ? 0x7aa7ff
@@ -1919,12 +1027,12 @@ function buildEpochEffects(starPositions) {
     addBlackHoleRemnant({
       random,
       massSolar: longestLivedMass,
-      birthAt: cosmicYearsToTimelinePosition(firstStarsYears * 2.2, universe),
+      birthAt: explorer.cosmicYearsToTimelinePosition(firstStarsYears * 2.2, universe),
       isCentral: true
     });
   }
 
-  const sampledProgenitors = selectBlackHoleProgenitors(
+  const sampledProgenitors = explorer.selectBlackHoleProgenitors(
     starDeathThresholds,
     universe.hasCentralBlackHole ? 4 : 5,
     random,
@@ -1933,7 +1041,7 @@ function buildEpochEffects(starPositions) {
   sampledProgenitors.forEach((sourceIndex) => {
     addBlackHoleRemnant({
       random,
-      massSolar: Math.max(3, stellarPopulation.massSolar[sourceIndex] * randomBetween(random, .1, .22)),
+      massSolar: Math.max(3, stellarPopulation.massSolar[sourceIndex] * explorer.randomBetween(random, .1, .22)),
       birthAt: starDeathThresholds[sourceIndex],
       sourceIndex
     });
@@ -1987,7 +1095,7 @@ function buildEpochEffects(starPositions) {
   );
   fateBubble.position.set(4.2, -1.4, 2.6);
   fateGlow = new THREE.Sprite(new THREE.SpriteMaterial({
-    map: makeGlowTexture(),
+    map: explorer.makeGlowTexture(),
     color: fateColor,
     transparent: true,
     opacity: 0,
@@ -2003,1101 +1111,6 @@ function buildEpochEffects(starPositions) {
   remnantGroup.visible = false;
   heatDeathGroup.visible = false;
   cosmicFateGroup.visible = false;
-}
-
-function buildCosmicEvents(starPositions) {
-  const random = createSeededRandom(universe.seed, 1447);
-  cosmicEvents = [];
-  const centralBlackHole = blackHoleRemnants.find((hole) => hole.userData.isCentral) || null;
-  const stellarEnd = stellarEndTimelinePosition(universe);
-  const finiteOutcome = universe.cosmicFate.type !== 'heat-death';
-  const eventBoundary = finiteOutcome ? universe.cosmicFate.onsetAt : 1000;
-  const remapEventStart = (position) => position < 470
-    ? position
-    : cosmicYearsToTimelinePosition(
-        referenceFutureYearsAtTimelinePosition(position, universe),
-        universe
-      );
-  const persistentEpochEnd = Math.min(eventBoundary, remapEventStart(845));
-  const livingStarEvents = new Set([
-    'pair-instability-supernova', 'young-pulsar-birth', 'classical-nova',
-    'type-ia-supernova', 'red-dwarf-superflare', 'gamma-ray-burst',
-    'neutron-star-kilonova', 'quasar-awakening', 'magnetar-flare',
-    'tidal-disruption-event', 'core-collapse-supernova', 'pulsar-glitch',
-    'superluminous-supernova', 'failed-supernova'
-  ]);
-  const transientDurationYears = {
-    'pair-instability-supernova': 2,
-    'young-pulsar-birth': 10,
-    'classical-nova': .4,
-    'type-ia-supernova': 2,
-    'red-dwarf-superflare': 3 / 365.25,
-    'gamma-ray-burst': 1 / 365.25,
-    'neutron-star-kilonova': 3,
-    'quasar-awakening': 8e6,
-    'magnetar-flare': 1 / 365.25,
-    'tidal-disruption-event': 4,
-    'core-collapse-supernova': 2,
-    'pulsar-glitch': 1 / 365.25,
-    'superluminous-supernova': 5,
-    'failed-supernova': 3,
-    'stellar-black-hole-merger': 1,
-    'late-black-hole-merger': 1
-  };
-
-  const nucleusEvent = universe.hasCentralBlackHole
-    ? {
-        type: 'quasar-awakening', visual: 'pulsar', label: '类星体短暂苏醒',
-        message: '中心黑洞吸积率骤升，相对论喷流穿过星系核', preferCenter: true,
-        start: 480 + random() * 16, duration: 30, color: '#8dd9ff',
-        occurrenceModel: 'bernoulli',
-        occurrenceProbability: universe.activeNucleus ? .78 : .24,
-        maximumOccurrences: 1
-      }
-    : {
-        type: 'magnetar-flare', visual: 'pulsar', label: '磁星巨型耀斑',
-        message: '磁壳重排释放高能辐射，脉冲扫过邻近恒星系',
-        start: 480 + random() * 16, duration: 26, color: '#7dcaff',
-        occurrenceModel: 'renewal', occurrenceProbability: .54,
-        repeatProbability: .34, maximumOccurrences: 2
-      };
-
-  const baseSchedule = [
-    {
-      type: 'pair-instability-supernova', visual: 'supernova', label: '成对不稳定超新星',
-      message: '第一代巨星被完全撕碎，重元素云向外扩散',
-      start: 258 + random() * 18, duration: 28, color: '#ffb36b',
-      occurrenceModel: 'bernoulli',
-      occurrenceProbability: THREE.MathUtils.clamp(.18 + universe.structureEfficiency * .12, .16, .52),
-      maximumOccurrences: 1
-    },
-    {
-      type: 'young-pulsar-birth', visual: 'pulsar', label: '年轻脉冲星诞生',
-      message: '新生中子星高速自转，双极束流开始扫掠星际介质',
-      start: 302 + random() * 18, duration: 27, color: '#68c8ff',
-      occurrenceModel: 'poisson', expectedOccurrences: .72, maximumOccurrences: 2
-    },
-    {
-      type: 'classical-nova', visual: 'nova', label: '经典新星爆发',
-      message: '白矮星表面的吸积氢发生热核失控，抛出明亮但低质量的壳层',
-      start: 336 + random() * 12, duration: 20, color: '#ffe4a8',
-      occurrenceModel: 'renewal', occurrenceProbability: .76,
-      repeatProbability: .52, maximumOccurrences: 3
-    },
-    {
-      type: 'type-ia-supernova', visual: 'supernova', label: 'Ia 型超新星爆发',
-      message: '白矮星发生热核失控，将铁族元素抛入星际空间',
-      start: 368 + random() * 22, duration: 25, color: '#ffd08a',
-      occurrenceModel: 'poisson', expectedOccurrences: .82, maximumOccurrences: 3
-    },
-    {
-      type: 'red-dwarf-superflare', visual: 'stellar-flare', label: '红矮星超级耀斑',
-      message: '磁场突然重联，高能辐射与带电粒子冲击近轨行星',
-      start: 396 + random() * 12, duration: 21, color: '#ffcb72',
-      occurrenceModel: 'renewal', occurrenceProbability: .82,
-      repeatProbability: .58, maximumOccurrences: 3
-    },
-    {
-      type: 'gamma-ray-burst', visual: 'pulsar', label: '长伽马射线暴',
-      message: '垂死巨星坍缩，狭窄高能喷流贯穿恒星外层',
-      start: 420 + random() * 20, duration: 24, color: '#89b9ff',
-      occurrenceModel: 'bernoulli',
-      occurrenceProbability: THREE.MathUtils.clamp(.12 + universe.structureEfficiency * .1, .1, .38),
-      maximumOccurrences: 1
-    },
-    {
-      type: 'neutron-star-kilonova', visual: 'kilonova', label: '中子星并合千新星',
-      message: '双中子星旋近并合，短伽马射线束与富含重元素的抛射物同时释放',
-      start: 450 + random() * 12, duration: 25, color: '#caa5ff',
-      occurrenceModel: 'bernoulli', occurrenceProbability: .3, maximumOccurrences: 1
-    },
-    nucleusEvent,
-    {
-      type: 'tidal-disruption-event', visual: 'tidal-disruption', label: '潮汐瓦解事件',
-      message: '恒星掠过中央黑洞的潮汐半径，被拉成长流并逐步吸积', preferCenter: true,
-      requiresCentralBlackHole: true,
-      hostBlackHoleId: 'central',
-      start: 502 + random() * 10, duration: 30, color: '#72e4ff',
-      occurrenceModel: 'bernoulli', occurrenceProbability: .32,
-      repeatSpacing: 40, maximumOccurrences: 1
-    },
-    {
-      type: 'core-collapse-supernova', visual: 'supernova', label: '核坍缩超新星',
-      message: '恒星核心坍缩，冲击波把新合成元素送入星际云',
-      start: 518 + random() * 20, duration: 27, color: '#ff875c',
-      occurrenceModel: 'poisson', expectedOccurrences: 1.05, maximumOccurrences: 3
-    },
-    {
-      type: 'pulsar-glitch', visual: 'pulsar', label: '脉冲星自转突变',
-      message: '中子星内部角动量重分配，脉冲节律突然跃迁',
-      start: 548 + random() * 18, duration: 22, color: '#8ba8ff',
-      occurrenceModel: 'renewal', occurrenceProbability: .62,
-      repeatProbability: .5, maximumOccurrences: 3
-    },
-    {
-      type: 'superluminous-supernova', visual: 'supernova', label: '超亮超新星',
-      message: '磁星引擎持续注入能量，爆发亮度超过普通超新星',
-      start: 552 + random() * 16, duration: 26, color: '#ff6b52',
-      occurrenceModel: 'bernoulli', occurrenceProbability: .24, maximumOccurrences: 1
-    },
-    {
-      type: 'failed-supernova', visual: 'stellar-collapse', label: '恒星无爆发消失',
-      message: '冲击波未能掀开恒星外层，亮度短暂上升后整体坍缩为黑洞',
-      start: 586 + random() * 14, duration: 29, color: '#b87958',
-      occurrenceModel: 'bernoulli', maximumOccurrences: 1,
-      occurrenceProbability: THREE.MathUtils.clamp(
-        .12 + universe.structureEfficiency * .13 + universe.gravity * .07,
-        .14,
-        .52
-      )
-    },
-    {
-      type: 'stellar-black-hole-merger', visual: 'black-hole-merger', label: '双黑洞合并',
-      message: '两颗既有黑洞近距离相遇并被彼此引力俘获，旋近啁啾达到峰值', preferCenter: true,
-      start: 616 + random() * 18, duration: 38, persistUntil: persistentEpochEnd,
-      persistenceFadeDuration: 24, color: '#c897ff',
-      occurrenceModel: 'poisson', expectedOccurrences: .48, maximumOccurrences: 2
-    },
-    {
-      type: 'late-black-hole-merger', visual: 'black-hole-merger', label: '孤立黑洞捕获合并',
-      message: '两个存续至简并时代的黑洞近遇后被引力束缚，最终完成并合', preferCenter: true,
-      start: 872 + random() * 18, duration: 42, persistUntil: Math.min(eventBoundary, remapEventStart(950)),
-      persistenceFadeDuration: 18, color: '#9bb8ff',
-      occurrenceModel: 'bernoulli', occurrenceProbability: .26, maximumOccurrences: 1
-    }
-  ].filter((event) => (!event.requiresCentralBlackHole || universe.hasCentralBlackHole)
-    && (event.type !== 'late-black-hole-merger'
-      || universe.cosmicFate.type === 'heat-death'
-      || universe.cosmicFate.outcomeExponent > 45))
-    .map((event) => {
-      const requiresLivingStar = livingStarEvents.has(event.type);
-      const start = remapEventStart(event.start);
-      const latestStart = Math.min(
-        eventBoundary - event.duration,
-        requiresLivingStar ? stellarEnd - event.duration : Infinity
-      );
-      return { ...event, start, latestStart, requiresLivingStar };
-    });
-  const schedule = expandEventSchedule(baseSchedule, universe, random)
-    .map((event) => {
-      const endBoundary = Math.min(
-        eventBoundary,
-        event.requiresLivingStar ? stellarEnd : Infinity
-      );
-      return {
-        ...event,
-        duration: Math.min(event.duration, endBoundary - event.start)
-      };
-    })
-    .filter((event) => event.duration >= 1)
-    .map((event, eventIndex) => {
-      const simulation = createTransientSimulation(event, universe, eventIndex);
-      const physicalStartYears = timelinePositionToCosmicYears(event.start, universe);
-      const physicalDurationYears = transientDurationYears[event.type] || 1;
-      const impactAt = cosmicYearsToTimelinePosition(
-        physicalStartYears + physicalDurationYears,
-        universe
-      );
-      const simulatedEvent = {
-        ...event,
-        simulation,
-        physicalStartYears,
-        physicalDurationYears,
-        impactAt
-      };
-      if (simulation?.model === 'black-hole-binary') {
-        simulatedEvent.gasRich = simulation.gasRich;
-        simulatedEvent.radiatedMassFraction = simulation.radiatedMassFraction;
-        simulatedEvent.recoilKms = simulation.recoilKms;
-      }
-      if (!simulation?.persistentRemnant) return simulatedEvent;
-      simulatedEvent.persistUntil = event.type === 'late-black-hole-merger'
-        ? Math.min(eventBoundary, remapEventStart(950))
-        : persistentEpochEnd;
-      simulatedEvent.persistenceFadeDuration = 24;
-      return simulatedEvent;
-    });
-
-  const impactProfiles = {
-    'pair-instability-supernova': { radius: .55, maxStars: 5, sourceDim: .02, neighborDim: .96, kick: .018, civilization: .08, range: 2.4 },
-    'young-pulsar-birth': { radius: .42, maxStars: 2, sourceDim: .12, neighborDim: .99, kick: .01, civilization: .035, range: 1.8, directional: true, beamAngle: .12 },
-    'classical-nova': { radius: .18, maxStars: 1, sourceDim: 1, neighborDim: 1, kick: 0, civilization: .012, range: .75, maxSpecies: 1 },
-    'type-ia-supernova': { radius: .48, maxStars: 4, sourceDim: .02, neighborDim: .97, kick: .012, civilization: .06, range: 2.1 },
-    'red-dwarf-superflare': { radius: .22, maxStars: 1, sourceDim: 1, neighborDim: 1, kick: 0, civilization: .09, range: 1.15, maxSpecies: 1 },
-    'gamma-ray-burst': { radius: 7.5, maxStars: 46, sourceDim: .025, neighborDim: .82, kick: 0, civilization: .42, range: 12, maxSpecies: 1, directional: true, beamAngle: .1 },
-    'neutron-star-kilonova': { radius: 4.8, maxStars: 24, sourceDim: .03, neighborDim: .9, kick: .006, civilization: .24, range: 8.5, maxSpecies: 1, directional: true, beamAngle: .14 },
-    'quasar-awakening': { radius: 8.5, maxStars: 60, sourceDim: .95, neighborDim: .96, kick: 0, civilization: .16, range: 14, maxSpecies: 2, directional: true, beamAngle: .16 },
-    'magnetar-flare': { radius: 1.1, maxStars: 8, sourceDim: .82, neighborDim: .94, kick: 0, civilization: .12, range: 3.2, maxSpecies: 1 },
-    'tidal-disruption-event': { radius: .32, maxStars: 2, sourceDim: .015, neighborDim: .995, kick: .008, civilization: .075, range: 2.8, maxSpecies: 1 },
-    'core-collapse-supernova': { radius: .5, maxStars: 4, sourceDim: .025, neighborDim: .97, kick: .014, civilization: .06, range: 2.2 },
-    'pulsar-glitch': { radius: .01, maxStars: 1, sourceDim: .985, neighborDim: 1, kick: 0, civilization: 0, range: 0, maxSpecies: 0 },
-    'superluminous-supernova': { radius: .62, maxStars: 6, sourceDim: .02, neighborDim: .95, kick: .02, civilization: .09, range: 2.8, maxSpecies: 1 },
-    'failed-supernova': { radius: .24, maxStars: 2, sourceDim: .008, neighborDim: .995, kick: .003, civilization: .025, range: 1.25, maxSpecies: 1 },
-    'stellar-black-hole-merger': { radius: .08, maxStars: 1, sourceDim: .06, neighborDim: 1, kick: 0, civilization: 0, range: 0, maxSpecies: 0 },
-    'late-black-hole-merger': { radius: .08, maxStars: 1, sourceDim: .04, neighborDim: 1, kick: 0, civilization: 0, range: 0, maxSpecies: 0 }
-  };
-
-  const compactSourceTypes = {
-    'classical-nova': 1,
-    'type-ia-supernova': 1,
-    'neutron-star-kilonova': 2,
-    'magnetar-flare': 2,
-    'pulsar-glitch': 2
-  };
-  const minimumSourceMasses = {
-    'pair-instability-supernova': 40,
-    'young-pulsar-birth': 8,
-    'gamma-ray-burst': 20,
-    'core-collapse-supernova': 8,
-    'superluminous-supernova': 20,
-    'failed-supernova': 25
-  };
-  const pickPosition = (data) => {
-    const preferCenter = data.preferCenter;
-    const compactType = compactSourceTypes[data.type];
-    const minimumMass = minimumSourceMasses[data.type] || 0;
-    const candidates = [];
-    const maxRadius = preferCenter ? 2.8 : 6.2;
-    for (let candidate = 0; candidate < starPositions.length / 3; candidate++) {
-      const born = stellarPopulation.birthAt[candidate] <= data.start;
-      const alive = starDeathThresholds[candidate] > data.impactAt;
-      if (!born) continue;
-      if (compactType) {
-        if (stellarPopulation.remnantTypes[candidate] !== compactType
-          || starDeathThresholds[candidate] > data.start) continue;
-      } else if (data.requiresLivingStar && !alive) {
-        continue;
-      }
-      const mass = stellarPopulation.massSolar[candidate];
-      if (minimumMass && mass < minimumMass) continue;
-      if (data.type === 'red-dwarf-superflare' && mass >= .6) continue;
-      const offset = candidate * 3;
-      if (Math.hypot(starPositions[offset], starPositions[offset + 1], starPositions[offset + 2]) < maxRadius) {
-        candidates.push(candidate);
-      }
-    }
-    if (!candidates.length) return null;
-    const source = candidates[Math.floor(random() * candidates.length)];
-    return {
-      index: source,
-      position: new THREE.Vector3(starPositions[source * 3], starPositions[source * 3 + 1], starPositions[source * 3 + 2])
-    };
-  };
-
-  const deriveConsequences = (data, location) => {
-    const profile = applyTransientImpactScales(impactProfiles[data.type], data.simulation, universe);
-    const impactPhases = {
-      supernova: .08,
-      nova: .14,
-      kilonova: .22,
-      pulsar: .46,
-      'stellar-flare': .38,
-      'tidal-disruption': .58,
-      'stellar-collapse': .64,
-      'black-hole-merger': .68
-    };
-    const impactPhase = impactPhases[data.visual] ?? .5;
-    const visualImpactAt = data.start + data.duration * impactPhase;
-    const impactAt = data.impactAt ?? visualImpactAt;
-    const nearbyStars = [];
-    for (let index = 0; index < starPositions.length / 3; index++) {
-      const offset = index * 3;
-      const distance = Math.hypot(
-        starPositions[offset] - location.position.x,
-        starPositions[offset + 1] - location.position.y,
-        starPositions[offset + 2] - location.position.z
-      );
-      if (distance > profile.radius) continue;
-      if (profile.directional && data.beamDirection && distance > .001) {
-        const direction = new THREE.Vector3(
-          starPositions[offset] - location.position.x,
-          starPositions[offset + 1] - location.position.y,
-          starPositions[offset + 2] - location.position.z
-        ).normalize();
-        if (Math.abs(direction.dot(data.beamDirection)) < Math.cos(profile.beamAngle)) continue;
-      }
-      nearbyStars.push({ index, distance });
-    }
-    nearbyStars.sort((a, b) => a.distance - b.distance);
-    const starImpacts = nearbyStars.slice(0, profile.maxStars).map(({ index, distance }, order) => {
-      const offset = index * 3;
-      const proximity = 1 - Math.min(1, distance / profile.radius);
-      let dx = starPositions[offset] - location.position.x;
-      let dy = starPositions[offset + 1] - location.position.y;
-      let dz = starPositions[offset + 2] - location.position.z;
-      const length = Math.hypot(dx, dy, dz);
-      if (length < .001) {
-        const theta = random() * Math.PI * 2;
-        const z = random() * 2 - 1;
-        const radial = Math.sqrt(1 - z * z);
-        dx = Math.cos(theta) * radial; dy = z; dz = Math.sin(theta) * radial;
-      } else {
-        dx /= length; dy /= length; dz /= length;
-      }
-      const kick = profile.kick * (.2 + proximity * .8) * (.72 + random() * .5);
-      return {
-        index,
-        dimFactor: order === 0 ? profile.sourceDim : 1 - (1 - profile.neighborDim) * proximity,
-        kick: [dx * kick, dy * kick, dz * kick]
-      };
-    });
-
-    const sourceOutcomes = {
-      'pair-instability-supernova': '爆发源完全解体且没有致密残骸',
-      'classical-nova': '白矮星保留下来，重新开始从伴星吸积物质',
-      'type-ia-supernova': '白矮星被热核爆炸完全摧毁',
-      'red-dwarf-superflare': '宿主恒星保持完整，但近轨行星大气受到高能粒子冲击',
-      'neutron-star-kilonova': '并合形成大质量中子星或黑洞，并把重元素抛入星际空间',
-      'tidal-disruption-event': '恒星被撕碎，部分物质形成吸积流，部分沿轨道逃逸',
-      'core-collapse-supernova': '坍缩核心留下中子星或恒星级黑洞',
-      'superluminous-supernova': '恒星外层被大规模抛射，中心结局仍不确定',
-      'failed-supernova': '恒星几乎没有明亮爆炸便消失，留下新生黑洞'
-    };
-    const simulatedOutcome = describeTransientSimulation(data);
-    const systemSummary = simulatedOutcome
-      ? simulatedOutcome
-      : data.visual === 'black-hole-merger'
-        ? `约 ${(data.radiatedMassFraction * 100).toFixed(1)}% 总质量以引力波带走，残余黑洞以约 ${data.recoilKms} km/s 反冲${data.gasRich ? '，周围气体受热形成短暂余辉' : '；真空环境中没有超新星式爆炸'}`
-        : data.type === 'pulsar-glitch'
-          ? '自转频率发生微小跃变，没有可见的大规模破坏'
-        : sourceOutcomes[data.type]
-          ? `${sourceOutcomes[data.type]}，${Math.max(0, starImpacts.length - 1)} 个邻近恒星系受影响`
-        : data.visual === 'pulsar'
-          ? `${starImpacts.length} 个位于辐射束或近场内的恒星系受到影响`
-          : `爆发源发生结构性改变，${Math.max(0, starImpacts.length - 1)} 个邻近恒星系受冲击`;
-    return { impactAt, visualImpactAt, impactPhase, starImpacts, systemOutcome: systemSummary };
-  };
-
-  const deriveCivilizationNodeImpacts = (data, location, consequences, gravityField, eventIndex) => {
-    if (!civilizationSimulation || !remnantDynamics) return [];
-    const profile = applyTransientImpactScales(impactProfiles[data.type], data.simulation, universe);
-    const impactRandom = createSeededRandom(universe.seed, 6203 + eventIndex * 131);
-    const impactMap = new Map();
-    const addImpact = (nodeIndex, at, severity, permanent = false, kind = 'damage') => {
-      const key = `${kind}:${nodeIndex}:${at.toFixed(4)}`;
-      const existing = impactMap.get(key);
-      if (existing) {
-        existing.severity = 1 - (1 - existing.severity) * (1 - severity);
-        existing.permanent ||= permanent;
-        return;
-      }
-      impactMap.set(key, {
-        nodeIndex,
-        at,
-        severity: THREE.MathUtils.clamp(severity, 0, 1),
-        permanent,
-        kind,
-        destructionRoll: impactRandom()
-      });
-    };
-
-    if (profile.civilization > 0 && profile.range > 0) {
-      for (let nodeIndex = 0; nodeIndex < civilizationSimulation.habitatPositions.length / 3; nodeIndex++) {
-        const offset = nodeIndex * 3;
-        const dx = civilizationSimulation.habitatPositions[offset] - location.position.x;
-        const dy = civilizationSimulation.habitatPositions[offset + 1] - location.position.y;
-        const dz = civilizationSimulation.habitatPositions[offset + 2] - location.position.z;
-        const distance = Math.hypot(dx, dy, dz);
-        if (distance > profile.range) continue;
-        if (profile.directional && data.beamDirection && distance > .001) {
-          const inverseDistance = 1 / distance;
-          const alignment = Math.abs(
-            dx * inverseDistance * data.beamDirection.x
-            + dy * inverseDistance * data.beamDirection.y
-            + dz * inverseDistance * data.beamDirection.z
-          );
-          if (alignment < Math.cos(profile.beamAngle)) continue;
-        }
-        const proximity = Math.max(.08, 1 - distance / profile.range);
-        const severity = THREE.MathUtils.clamp(
-          profile.civilization * (.62 + proximity * .48) * (.84 + impactRandom() * .3),
-          0,
-          .58
-        );
-        const pulsePhases = data.simulation?.pulsePhases;
-        if (pulsePhases?.length) {
-          pulsePhases.forEach((pulsePhase, pulseIndex) => {
-            const weight = data.simulation.pulseWeights?.[pulseIndex] ?? 1;
-            addImpact(nodeIndex, consequences.impactAt, severity * weight);
-          });
-        } else {
-          addImpact(nodeIndex, consequences.impactAt, severity);
-        }
-        if (data.simulation?.recoveryDuration && data.simulation.recoveryFraction > 0) {
-          const lastPulsePhase = pulsePhases?.length ? Math.max(...pulsePhases) : consequences.impactPhase;
-          const recoveryAt = data.start + data.duration * lastPulsePhase + data.simulation.recoveryDuration;
-          addImpact(nodeIndex, recoveryAt, severity * data.simulation.recoveryFraction, false, 'recovery');
-        }
-      }
-    }
-
-    const starImpacts = new Map(consequences.starImpacts.map((impact) => [impact.index, impact]));
-    const capturedStars = new Map();
-    if (gravityField) {
-      for (let sample = 0; sample < gravityField.indices.length; sample++) {
-        if (gravityField.restDistances[sample] >= gravityField.captureRadius) continue;
-        capturedStars.set(gravityField.indices[sample], gravityField.restDistances[sample]);
-      }
-    }
-
-    for (let nodeIndex = 0; nodeIndex < civilizationSimulation.habitatRemnantIndices.length; nodeIndex++) {
-      const remnantIndex = civilizationSimulation.habitatRemnantIndices[nodeIndex];
-      const sourceStarIndex = remnantDynamics.sourceIndices[remnantIndex];
-      const stellarImpact = starImpacts.get(sourceStarIndex);
-      if (stellarImpact) {
-        const stellarDamage = 1 - stellarImpact.dimFactor;
-        if (stellarDamage > .001) {
-          addImpact(nodeIndex, consequences.impactAt, stellarDamage, stellarImpact.dimFactor <= .15);
-        }
-      }
-      const captureDistance = capturedStars.get(sourceStarIndex);
-      if (captureDistance !== undefined) {
-        const captureDelay = captureDistance / gravityField.captureRadius * 11;
-        addImpact(nodeIndex, consequences.impactAt + captureDelay + 13, 1, true);
-      }
-    }
-
-    return Array.from(impactMap.values()).sort((a, b) => a.at - b.at || a.nodeIndex - b.nodeIndex);
-  };
-
-  const buildWaveSamples = (data, location, eventIndex) => {
-    const isKilonova = data.visual === 'kilonova';
-    if (data.visual !== 'black-hole-merger' && !isKilonova) return null;
-    const waveRadius = isKilonova ? 6.4 : data.type === 'late-black-hole-merger' ? 7.2 : 8.8;
-    const candidates = [];
-    for (let index = 0; index < starPositions.length / 3; index++) {
-      const offset = index * 3;
-      const dx = starPositions[offset] - location.position.x;
-      const dy = starPositions[offset + 1] - location.position.y;
-      const dz = starPositions[offset + 2] - location.position.z;
-      const distance = Math.hypot(dx, dy, dz);
-      if (distance > .12 && distance <= waveRadius) candidates.push({ index, dx, dy, dz, distance });
-    }
-
-    const sampleRandom = createSeededRandom(universe.seed, 9107 + eventIndex * 97);
-    const sampleCount = Math.min(isKilonova ? 900 : 1800, candidates.length);
-    const stride = candidates.length / Math.max(1, sampleCount);
-    const indices = new Uint16Array(sampleCount);
-    const distances = new Float32Array(sampleCount);
-    const transverse = new Float32Array(sampleCount * 3);
-    const polarities = new Float32Array(sampleCount);
-    for (let sample = 0; sample < sampleCount; sample++) {
-      const start = sample * stride;
-      const candidate = candidates[Math.min(candidates.length - 1, Math.floor(start + sampleRandom() * stride))];
-      const inverseDistance = 1 / candidate.distance;
-      const nx = candidate.dx * inverseDistance;
-      const ny = candidate.dy * inverseDistance;
-      const nz = candidate.dz * inverseDistance;
-      let tx = -nz;
-      let ty = 0;
-      let tz = nx;
-      const tangentLength = Math.hypot(tx, ty, tz);
-      if (tangentLength < .04) {
-        tx = 1; ty = 0; tz = 0;
-      } else {
-        tx /= tangentLength; ty /= tangentLength; tz /= tangentLength;
-      }
-      indices[sample] = candidate.index;
-      distances[sample] = candidate.distance;
-      transverse.set([tx, ty, tz], sample * 3);
-      polarities[sample] = Math.cos(Math.atan2(nz, nx) * 2) * (.72 + sampleRandom() * .28);
-    }
-    const waveAmplitude = isKilonova
-      ? THREE.MathUtils.clamp((data.simulation?.radiatedMassFraction || .025) / .04, .38, 1)
-      : THREE.MathUtils.clamp((data.simulation?.radiatedMassFraction || .045) / .045, .62, 1.8);
-    return { waveRadius, waveAmplitude, indices, distances, transverse, polarities };
-  };
-
-  schedule.forEach((scheduledData, index) => {
-    let data = scheduledData;
-    let mergerPair = null;
-    let mergerAnchors = null;
-    if (data.visual === 'black-hole-merger') {
-      const candidates = blackHoleRemnants.map((hole, holeIndex) => ({
-        id: hole.userData.originEventId || `primordial-remnant-${holeIndex}`,
-        hole,
-        birthAt: hole.userData.birthAt,
-        evaporationAt: hole.userData.evaporationAt,
-        consumedAt: hole.userData.handoffAt ?? hole.userData.consumedAt,
-        isCentral: hole.userData.isCentral,
-        massSolar: hole.userData.massSolar,
-        position: blackHolePositionAt(hole, data.start).toArray()
-      }));
-      mergerPair = selectBlackHoleMergerPair(candidates, {
-        at: data.start,
-        maximumSeparation: data.type === 'late-black-hole-merger' ? 8.2 : 5.4
-      });
-      // A scheduled narrative beat is discarded when the extant compact-object
-      // population has no close encounter. This keeps the event causal rather
-      // than manufacturing a binary merely because the timeline reached a date.
-      if (!mergerPair) return;
-
-      const pairMasses = [mergerPair.left.massSolar, mergerPair.right.massSolar];
-      const totalMass = pairMasses[0] + pairMasses[1];
-      const center = new THREE.Vector3()
-        .fromArray(mergerPair.left.position)
-        .multiplyScalar(pairMasses[0] / totalMass)
-        .addScaledVector(
-          new THREE.Vector3().fromArray(mergerPair.right.position),
-          pairMasses[1] / totalMass
-        );
-      const anchorEntries = [mergerPair.left.hole, mergerPair.right.hole].flatMap((hole) => {
-        const anchors = hole.userData.anchorSourceIndices;
-        const weights = hole.userData.anchorWeights;
-        if (!anchors?.length) {
-          return Number.isInteger(hole.userData.sourceIndex)
-            ? [{ index: hole.userData.sourceIndex, weight: hole.userData.massSolar }]
-            : [];
-        }
-        const existingTotal = weights?.reduce((sum, weight) => sum + weight, 0) || anchors.length;
-        return anchors.map((anchorIndex, anchorIndexInHole) => ({
-          index: anchorIndex,
-          weight: (weights?.[anchorIndexInHole] ?? 1) / existingTotal * hole.userData.massSolar
-        }));
-      });
-      const combinedAnchors = new Map();
-      anchorEntries.forEach(({ index: anchorIndex, weight }) => {
-        combinedAnchors.set(anchorIndex, (combinedAnchors.get(anchorIndex) || 0) + weight);
-      });
-      mergerAnchors = {
-        indices: Array.from(combinedAnchors.keys()),
-        weights: Array.from(combinedAnchors.values())
-      };
-      data = {
-        ...data,
-        blackHoleMasses: pairMasses,
-        triggerSeparation: mergerPair.separation,
-        message: `两颗已存在的黑洞相距 ${mergerPair.separation.toFixed(2)} 个星系尺度单位，近遇后被彼此引力俘获`,
-        mergerStartScales: [
-          blackHoleDisplayScaleAt(mergerPair.left.hole, data.start),
-          blackHoleDisplayScaleAt(mergerPair.right.hole, data.start)
-        ],
-        mergerStartOffsets: [
-          new THREE.Vector3().fromArray(mergerPair.left.position).sub(center).toArray(),
-          new THREE.Vector3().fromArray(mergerPair.right.position).sub(center).toArray()
-        ],
-        mergerAnchorSourceIndices: mergerAnchors.indices,
-        mergerAnchorWeights: mergerAnchors.weights
-      };
-      data.simulation = createTransientSimulation(data, universe, index);
-      data.mergerRemnantScale = blackHoleBaseScale(data.simulation.remnantMass);
-      data.gasRich = data.simulation.gasRich;
-      data.radiatedMassFraction = data.simulation.radiatedMassFraction;
-      data.recoilKms = data.simulation.recoilKms;
-    }
-    const group = new THREE.Group();
-    const sourceLocation = mergerPair ? null : pickPosition(data);
-    const location = mergerPair
-      ? {
-          index: mergerAnchors.indices[0],
-          position: new THREE.Vector3()
-            .fromArray(mergerPair.left.position)
-            .multiplyScalar(mergerPair.left.massSolar / (mergerPair.left.massSolar + mergerPair.right.massSolar))
-            .addScaledVector(
-              new THREE.Vector3().fromArray(mergerPair.right.position),
-              mergerPair.right.massSolar / (mergerPair.left.massSolar + mergerPair.right.massSolar)
-            )
-        }
-      : sourceLocation;
-    if (!location) return;
-    if (data.hostBlackHoleId === 'central' && centralBlackHole) {
-      data.tidalApproachOffset = stellarPositionAt(location.index, data.start).toArray();
-      group.position.copy(blackHolePositionAt(centralBlackHole, data.start));
-    } else {
-      group.position.copy(location.position);
-    }
-    group.visible = false;
-    cosmicEventGroup.add(group);
-    const profile = impactProfiles[data.type];
-    if (profile.directional) {
-      data.beamDirection = new THREE.Vector3(gaussianRandom(random), gaussianRandom(random), gaussianRandom(random)).normalize();
-      group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), data.beamDirection);
-    }
-
-    if (data.visual === 'supernova' || data.visual === 'nova' || data.visual === 'kilonova') {
-      const isNova = data.visual === 'nova';
-      const isKilonova = data.visual === 'kilonova';
-      const photosphereColor = isKilonova ? 0xb89dff : isNova ? 0xffe6ad : 0xffad63;
-      const remnantColor = isKilonova ? 0xe0c8ff : isNova ? 0xf8fbff : 0xaed8ff;
-      const innerFlash = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeGlowTexture(), color: 0xffffff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
-      const photosphere = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeGlowTexture(), color: photosphereColor, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
-      const remnant = new THREE.Sprite(new THREE.SpriteMaterial({ map: getPointTexture(), color: remnantColor, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
-      remnant.scale.set(.16, .16, 1);
-
-      const simulatedEjectaScale = THREE.MathUtils.clamp(
-        Math.sqrt((data.simulation?.ejectaMass || (isNova ? .00002 : 8)) / (isNova ? .00002 : 8)),
-        .7,
-        1.65
-      );
-      const ejectaCount = Math.round((isNova ? 360 : 620) * simulatedEjectaScale);
-      const ejectaPositions = new Float32Array(ejectaCount * 3);
-      const ejectaColors = new Float32Array(ejectaCount * 3);
-      const ejectaDirections = new Float32Array(ejectaCount * 3);
-      const ejectaVelocity = new Float32Array(ejectaCount);
-      const ejectaDelay = new Float32Array(ejectaCount);
-      const hot = new THREE.Color(isKilonova ? 0xd9f3ff : isNova ? 0xfff8d8 : 0xfff0c7);
-      const cool = new THREE.Color(isKilonova ? 0x8d4fd1 : isNova ? 0xffb568 : 0xff4b32);
-      for (let i = 0; i < ejectaCount; i++) {
-        const theta = random() * Math.PI * 2;
-        const phi = Math.acos(2 * random() - 1);
-        const clustered = 1 + Math.sin(theta * 5 + phi * 3) * .18 + (random() - .5) * .24;
-        const direction = new THREE.Vector3(
-          Math.sin(phi) * Math.cos(theta) * clustered,
-          Math.cos(phi) * (isKilonova ? .34 : 1.08 + random() * .34),
-          Math.sin(phi) * Math.sin(theta) * clustered
-        ).normalize();
-        ejectaDirections.set([direction.x, direction.y, direction.z], i * 3);
-        const simulatedVelocityScale = isKilonova
-          ? THREE.MathUtils.clamp((data.simulation?.ejectaVelocityC || .2) / .18, .72, 1.55)
-          : isNova
-            ? THREE.MathUtils.clamp((data.simulation?.ejectaVelocityKms || 1800) / 1800, .64, 1.7)
-            : THREE.MathUtils.clamp((data.simulation?.ejectaVelocityKms || 9000) / 9000, .62, 1.72);
-        const velocityScale = isNova ? .46 * simulatedVelocityScale : simulatedVelocityScale;
-        ejectaVelocity[i] = (.38 + Math.pow(random(), .48) * 1.45 + Math.abs(direction.y) * .22) * velocityScale;
-        ejectaDelay[i] = Math.pow(random(), 2.4) * .22;
-        const color = hot.clone().lerp(cool, Math.pow(random(), .52));
-        ejectaColors.set([color.r, color.g, color.b], i * 3);
-      }
-      const ejectaGeometry = new THREE.BufferGeometry();
-      ejectaGeometry.setAttribute('position', new THREE.BufferAttribute(ejectaPositions, 3));
-      ejectaGeometry.setAttribute('color', new THREE.BufferAttribute(ejectaColors, 3));
-      const ejecta = new THREE.Points(ejectaGeometry, new THREE.PointsMaterial({ size: .1, map: getPointTexture(), alphaTest: .008, vertexColors: true, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
-
-      const shellCount = Math.round((isNova ? 160 : 280) * Math.min(1.45, simulatedEjectaScale));
-      const shellPositions = new Float32Array(shellCount * 3);
-      const shellDirections = new Float32Array(shellCount * 3);
-      const shellNoise = new Float32Array(shellCount);
-      for (let i = 0; i < shellCount; i++) {
-        const theta = random() * Math.PI * 2;
-        const y = 2 * random() - 1;
-        const radius = Math.sqrt(1 - y * y);
-        shellDirections.set([Math.cos(theta) * radius, y, Math.sin(theta) * radius], i * 3);
-        shellNoise[i] = random() * Math.PI * 2;
-      }
-      const shellGeometry = new THREE.BufferGeometry();
-      shellGeometry.setAttribute('position', new THREE.BufferAttribute(shellPositions, 3));
-      const shellColor = isKilonova ? 0xa57cff : isNova ? 0xffe0a0 : 0xffd4a0;
-      const shell = new THREE.Points(shellGeometry, new THREE.PointsMaterial({ color: shellColor, size: isNova ? .052 : .072, map: getPointTexture(), alphaTest: .01, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
-
-      let polarJets = null;
-      let gravityWave = null;
-      if (isKilonova) {
-        const jetLength = 2.6 + (data.simulation?.ejectaVelocityC || .2) * 4.2;
-        const jetGeometry = new THREE.BufferGeometry();
-        jetGeometry.setAttribute('position', new THREE.Float32BufferAttribute([
-          0, -.12, 0, 0, -jetLength, 0,
-          0, .12, 0, 0, jetLength, 0
-        ], 3));
-        polarJets = new THREE.LineSegments(jetGeometry, new THREE.LineBasicMaterial({ color: 0xc9efff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
-        gravityWave = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeRingTexture(), color: 0xc4b4ff, transparent: true, opacity: 0, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending }));
-      }
-
-      group.add(photosphere, innerFlash, ejecta, shell, remnant);
-      if (polarJets) group.add(polarJets);
-      if (gravityWave) group.add(gravityWave);
-      group.userData.effect = { innerFlash, photosphere, remnant, ejecta, ejectaDirections, ejectaVelocity, ejectaDelay, shell, shellDirections, shellNoise, polarJets, gravityWave };
-    } else if (data.visual === 'tidal-disruption') {
-      const starCore = new THREE.Sprite(new THREE.SpriteMaterial({ map: getPointTexture(), color: 0xfff1c9, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
-      starCore.scale.set(.28, .28, 1);
-      const flare = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeGlowTexture(), color: 0x8eeaff, transparent: true, opacity: 0, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending }));
-      const disk = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeRingTexture(), color: 0x6bdcff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, rotation: random() * Math.PI }));
-      disk.scale.set(1.5, .48, 1);
-
-      const debrisCount = 480;
-      const debrisPositions = new Float32Array(debrisCount * 3);
-      const debrisOffsets = new Float32Array(debrisCount);
-      const debrisNoise = new Float32Array(debrisCount);
-      const debrisColors = new Float32Array(debrisCount * 3);
-      const debrisHot = new THREE.Color(0xf9f1c7);
-      const debrisCool = new THREE.Color(0x55cfff);
-      for (let i = 0; i < debrisCount; i++) {
-        const bound = random() < (data.simulation?.boundFraction || .5);
-        debrisOffsets[i] = bound ? -random() : random();
-        debrisNoise[i] = random() * Math.PI * 2;
-        const color = debrisHot.clone().lerp(debrisCool, Math.pow(random(), .62));
-        debrisColors.set([color.r, color.g, color.b], i * 3);
-      }
-      const debrisGeometry = new THREE.BufferGeometry();
-      debrisGeometry.setAttribute('position', new THREE.BufferAttribute(debrisPositions, 3));
-      debrisGeometry.setAttribute('color', new THREE.BufferAttribute(debrisColors, 3));
-      const debris = new THREE.Points(debrisGeometry, new THREE.PointsMaterial({ size: .075, map: getPointTexture(), alphaTest: .008, vertexColors: true, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
-
-      group.add(flare, disk, debris, starCore);
-      group.userData.effect = { starCore, flare, disk, debris, debrisOffsets, debrisNoise };
-    } else if (data.visual === 'stellar-flare') {
-      const starCore = new THREE.Sprite(new THREE.SpriteMaterial({ map: getPointTexture(), color: 0xffb75a, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
-      const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeGlowTexture(), color: 0xff7a32, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
-      const shock = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeRingTexture(), color: 0xffd27b, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
-      starCore.scale.set(.25, .25, 1);
-
-      const loops = [];
-      for (let loopIndex = 0; loopIndex < 3; loopIndex++) {
-        const points = [];
-        for (let i = 0; i <= 72; i++) {
-          const angle = i / 72 * Math.PI;
-          points.push(new THREE.Vector3(
-            Math.cos(angle) * (.42 + loopIndex * .16),
-            Math.sin(angle) * (.68 + loopIndex * .18),
-            Math.sin(angle * 2) * .06
-          ));
-        }
-        const loop = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), new THREE.LineBasicMaterial({ color: loopIndex === 1 ? 0xfff0a3 : 0xff9b52, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
-        loop.rotation.y = loopIndex * 1.86 + random() * .35;
-        loops.push(loop);
-      }
-
-      const particleCount = 320;
-      const particlePositions = new Float32Array(particleCount * 3);
-      const particleDirections = new Float32Array(particleCount * 3);
-      for (let i = 0; i < particleCount; i++) {
-        const theta = random() * Math.PI * 2;
-        const y = randomBetween(random, -.28, 1);
-        const radial = Math.sqrt(1 - Math.min(1, y * y));
-        particleDirections.set([Math.cos(theta) * radial, y, Math.sin(theta) * radial], i * 3);
-      }
-      const particleGeometry = new THREE.BufferGeometry();
-      particleGeometry.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
-      const particles = new THREE.Points(particleGeometry, new THREE.PointsMaterial({ color: 0xffc970, size: .06, map: getPointTexture(), alphaTest: .008, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
-
-      group.add(halo, shock, starCore, particles, ...loops);
-      group.userData.effect = { starCore, halo, shock, loops, particles, particleDirections };
-    } else if (data.visual === 'stellar-collapse') {
-      const starCore = new THREE.Sprite(new THREE.SpriteMaterial({ map: getPointTexture(), color: 0xffa45b, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
-      const shroud = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeGlowTexture(), color: 0x9a5538, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
-      const remnantHole = createBlackHoleVisual({
-        color: 0x9d6b58,
-        tilt: -.18,
-        phase: random() * Math.PI * 2,
-        visualScale: .72,
-        intensity: 0
-      });
-      remnantHole.userData.spinDirection = -1;
-      remnantHole.visible = false;
-
-      const dustCount = Math.round(180 + (data.simulation?.ejectedEnvelopeFraction || .08) * 920);
-      const dustPositions = new Float32Array(dustCount * 3);
-      const dustDirections = new Float32Array(dustCount * 3);
-      for (let i = 0; i < dustCount; i++) {
-        const theta = random() * Math.PI * 2;
-        const y = random() * 2 - 1;
-        const radial = Math.sqrt(1 - y * y);
-        dustDirections.set([Math.cos(theta) * radial, y, Math.sin(theta) * radial], i * 3);
-      }
-      const dustGeometry = new THREE.BufferGeometry();
-      dustGeometry.setAttribute('position', new THREE.BufferAttribute(dustPositions, 3));
-      const dust = new THREE.Points(dustGeometry, new THREE.PointsMaterial({ color: 0x8c533b, size: .065, map: getPointTexture(), alphaTest: .008, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
-
-      group.add(shroud, dust, starCore, remnantHole);
-      group.userData.effect = { starCore, shroud, remnantHole, dust, dustDirections };
-    } else if (data.visual === 'pulsar') {
-      const core = new THREE.Sprite(new THREE.SpriteMaterial({ map: getPointTexture(), color: 0xf4fbff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
-      const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeGlowTexture(), color: 0x4bb9ff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
-      const nebula = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeGlowTexture(), color: 0x1676b8, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, rotation: random() * Math.PI }));
-      const sweepGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeGlowTexture(), color: 0xc9edff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
-      core.scale.set(.18, .18, 1);
-      nebula.scale.set(1.45, .58, 1);
-
-      const rotor = new THREE.Group();
-      rotor.rotation.z = .58 + random() * .32;
-      const jetPowerScale = data.simulation?.model === 'collapsar-jet'
-        ? THREE.MathUtils.clamp(data.simulation.lorentzFactor / 260, .7, 1.75)
-        : data.simulation?.model === 'quasar-duty-cycle'
-          ? THREE.MathUtils.clamp(data.simulation.jetLorentzFactor / 8, .7, 1.7)
-          : 1;
-      const jetCount = Math.round(420 * jetPowerScale);
-      const jetPositions = new Float32Array(jetCount * 3);
-      const jetColors = new Float32Array(jetCount * 3);
-      for (let i = 0; i < jetCount; i++) {
-        const side = i % 2 ? 1 : -1;
-        const distance = .1 + Math.pow(random(), .66) * 2.6 * jetPowerScale;
-        const width = .012 + distance * .014;
-        const angle = random() * Math.PI * 2;
-        jetPositions[i * 3] = Math.cos(angle) * width * random();
-        jetPositions[i * 3 + 1] = side * distance;
-        jetPositions[i * 3 + 2] = Math.sin(angle) * width * random();
-        const brightness = .35 + Math.pow(1 - distance / 2.8, .45) * .65;
-        jetColors.set([.38 * brightness, .76 * brightness, brightness], i * 3);
-      }
-      const jetGeometry = new THREE.BufferGeometry();
-      jetGeometry.setAttribute('position', new THREE.BufferAttribute(jetPositions, 3));
-      jetGeometry.setAttribute('color', new THREE.BufferAttribute(jetColors, 3));
-      const jets = new THREE.Points(jetGeometry, new THREE.PointsMaterial({ size: .09, map: getPointTexture(), alphaTest: .008, vertexColors: true, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
-      rotor.add(jets);
-
-      const fieldLines = [];
-      for (let lineIndex = 0; lineIndex < 4; lineIndex++) {
-        const points = [];
-        const stretch = .5 + lineIndex * .18;
-        for (let i = 0; i <= 80; i++) {
-          const angle = i / 80 * Math.PI * 2;
-          points.push(new THREE.Vector3(Math.cos(angle) * stretch, Math.sin(angle) * stretch * .34, Math.sin(angle * 2) * .08));
-        }
-        const field = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), new THREE.LineBasicMaterial({ color: 0x72cfff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
-        field.rotation.set(random() * Math.PI, random() * Math.PI, random() * Math.PI);
-        fieldLines.push(field);
-        rotor.add(field);
-      }
-
-      const knots = [];
-      for (let i = 0; i < 8; i++) {
-        const knot = new THREE.Sprite(new THREE.SpriteMaterial({ map: getPointTexture(), color: 0x9bddff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
-        knot.scale.set(.11, .11, 1);
-        knot.userData.offset = i / 8;
-        knot.userData.side = i % 2 ? 1 : -1;
-        knots.push(knot);
-        rotor.add(knot);
-      }
-      group.add(nebula, halo, sweepGlow, core, rotor);
-      group.userData.effect = { core, halo, nebula, sweepGlow, rotor, jets, fieldLines, knots, jetPowerScale };
-    } else if (data.visual === 'black-hole-merger') {
-      const makeHole = (color, direction) => {
-        const hole = createBlackHoleVisual({
-          color,
-          tilt: randomBetween(random, -.28, .28),
-          phase: random() * Math.PI * 2,
-          visualScale: 1,
-          intensity: 0
-        });
-        hole.userData.spinDirection = direction;
-        return hole;
-      };
-      const orbitalPlane = new THREE.Group();
-      const usesExistingPair = Boolean(data.mergerStartOffsets);
-      if (!usesExistingPair) orbitalPlane.rotation.set(.76, .18, .24);
-      const holeA = makeHole(0xffba70, 1);
-      const holeB = makeHole(0xa7d7ff, -1);
-      const remnantHole = makeHole(0xffd9ad, 1);
-      holeA.scale.setScalar(data.mergerStartScales?.[0] ?? 1);
-      holeB.scale.setScalar(data.mergerStartScales?.[1] ?? 1);
-      remnantHole.scale.setScalar(data.mergerRemnantScale ?? 1);
-      remnantHole.visible = false;
-
-      const makeTrail = (color) => {
-        const positions = new Float32Array(84 * 3);
-        const geometry = new THREE.BufferGeometry();
-        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-        return new THREE.Line(geometry, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
-      };
-      const trailA = makeTrail(0xff9b55);
-      const trailB = makeTrail(0x79bfff);
-      orbitalPlane.add(trailA, trailB, holeA, holeB, remnantHole);
-
-      const mergerGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeGlowTexture(), color: data.gasRich ? 0xffe2b5 : 0xdceaff, transparent: true, opacity: 0, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending }));
-      const gasEcho = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeRingTexture(), color: 0xffb46f, transparent: true, opacity: 0, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending }));
-      gasEcho.visible = data.gasRich;
-      const waveHalos = [0x9bc8ff, 0xd2b9ff, 0x79b7ff].map((color) => new THREE.Sprite(new THREE.SpriteMaterial({
-        map: makeRingTexture(),
-        color,
-        transparent: true,
-        opacity: 0,
-        depthTest: false,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending
-      })));
-      const wavefronts = [];
-      for (let waveIndex = 0; waveIndex < 6; waveIndex++) {
-        const points = [];
-        for (let i = 0; i < 160; i++) {
-          const angle = i / 160 * Math.PI * 2;
-          const quadrupole = 1 + Math.cos(angle * 2 + waveIndex * .7) * .065;
-          points.push(new THREE.Vector3(Math.cos(angle) * quadrupole, Math.sin(angle) * quadrupole, Math.sin(angle * 2 + waveIndex) * .055));
-        }
-        const wave = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(points), new THREE.LineBasicMaterial({ color: waveIndex % 3 === 1 ? 0xd8c3ff : 0x8fc6ff, transparent: true, opacity: 0, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending }));
-        wave.rotation.set(.34 + waveIndex * .47, .2 + waveIndex * .39, waveIndex * .76);
-        wavefronts.push(wave);
-        group.add(wave);
-      }
-
-      const waveParticleCount = 520;
-      const waveParticles = new Float32Array(waveParticleCount * 3);
-      const waveDirections = new Float32Array(waveParticleCount * 3);
-      const waveColors = new Float32Array(waveParticleCount * 3);
-      const coolWave = new THREE.Color(0x79bfff);
-      const warmWave = new THREE.Color(0xe0cbff);
-      for (let particle = 0; particle < waveParticleCount; particle++) {
-        const azimuth = random() * Math.PI * 2;
-        const vertical = randomBetween(random, -1, 1);
-        const horizontal = Math.sqrt(1 - vertical * vertical);
-        waveDirections.set([Math.cos(azimuth) * horizontal, vertical, Math.sin(azimuth) * horizontal], particle * 3);
-        const particleColor = coolWave.clone().lerp(warmWave, random());
-        waveColors.set([particleColor.r, particleColor.g, particleColor.b], particle * 3);
-      }
-      const waveParticleGeometry = new THREE.BufferGeometry();
-      waveParticleGeometry.setAttribute('position', new THREE.BufferAttribute(waveParticles, 3));
-      waveParticleGeometry.setAttribute('color', new THREE.BufferAttribute(waveColors, 3));
-      const waveDust = new THREE.Points(waveParticleGeometry, new THREE.PointsMaterial({ size: .075, map: getPointTexture(), alphaTest: .008, vertexColors: true, transparent: true, opacity: 0, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending }));
-
-      const recoilGeometry = new THREE.BufferGeometry();
-      recoilGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
-      const recoilTrail = new THREE.Line(recoilGeometry, new THREE.LineBasicMaterial({ color: 0xffd4aa, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
-      const recoilVector = new THREE.Vector3(gaussianRandom(random), gaussianRandom(random) * .45, gaussianRandom(random)).normalize();
-      group.add(waveDust, ...waveHalos, gasEcho, orbitalPlane, mergerGlow, recoilTrail);
-      group.userData.effect = {
-        orbitalPlane, holeA, holeB, remnantHole, trailA, trailB,
-        mergerGlow, gasEcho, waveHalos, wavefronts, waveDust,
-        waveDirections, recoilTrail, recoilVector, gasRich: data.gasRich,
-        mergerStartOffsets: data.mergerStartOffsets,
-        remnantScale: data.mergerRemnantScale
-      };
-    }
-
-    const consequences = deriveConsequences(data, location);
-    const waveSamples = buildWaveSamples(data, location, index);
-    const gravityField = data.visual === 'black-hole-merger'
-      ? createMergerGravityField(starPositions, location.position, {
-          seedValue: universe.seedValue,
-          eventIndex: index
-        })
-      : null;
-    const transientGravityField = createTransientGravityField(
-      starPositions,
-      location.position,
-      data.simulation,
-      universe.seedValue,
-      index
-    );
-    const civilizationNodeImpacts = deriveCivilizationNodeImpacts(
-      data,
-      location,
-      consequences,
-      gravityField,
-      index
-    );
-    const id = `${data.type}-${index}-${universe.seed}`;
-    const blackHoleMass = blackHoleMassFromSimulation(data.simulation);
-    if (mergerPair) {
-      [mergerPair.left.hole, mergerPair.right.hole].forEach((hole) => {
-        hole.userData.handoffStartAt = data.start;
-        hole.userData.handoffAt = data.start + data.duration * .08;
-        hole.userData.consumedAt = consequences.impactAt;
-        hole.userData.mergerEventId = id;
-      });
-    }
-    const sourceDestroyed = profile.sourceDim <= .15
-      && data.visual !== 'black-hole-merger';
-    if (sourceDestroyed) {
-      starDeathThresholds[location.index] = Math.min(
-        starDeathThresholds[location.index],
-        consequences.impactAt
-      );
-      if (stellarPopulation) {
-        stellarPopulation.deathAt[location.index] = starDeathThresholds[location.index];
-        stellarPopulation.deathYears[location.index] = Math.min(
-          stellarPopulation.deathYears[location.index],
-          timelinePositionToCosmicYears(consequences.impactAt, universe)
-        );
-      }
-      civilizationSimulation?.habitatStarIndices?.forEach((starIndex, nodeIndex) => {
-        if (starIndex === location.index) {
-          civilizationSimulation.habitatDeathAt[nodeIndex] = starDeathThresholds[location.index];
-        }
-      });
-      for (let remnantIndex = 0; remnantIndex < remnantDynamics.sourceIndices.length; remnantIndex++) {
-        if (remnantDynamics.sourceIndices[remnantIndex] !== location.index) continue;
-        // The event owns its explicit compact-remnant visual. Suppress the
-        // sampled population point for the same source to avoid a duplicate.
-        remnantDynamics.birthAt[remnantIndex] = 1001;
-      }
-    }
-    if (blackHoleMass) {
-      // Hand the compact remnant from the short-lived event visual to the
-      // long-lived population. Scrubbing now reconstructs the same object on
-      // both sides of the event instead of inventing it in the black-hole era.
-      data.persistUntil = data.start + data.duration;
-      data.persistenceFadeDuration = 8;
-      const persistentOffset = mergerPair
-        ? group.userData.effect.recoilVector.clone().multiplyScalar(THREE.MathUtils.clamp(
-            (data.simulation?.recoilKms || data.recoilKms || 500) / 720,
-            .22,
-            2.2
-          )).toArray()
-        : null;
-      addBlackHoleRemnant({
-        random,
-        massSolar: blackHoleMass,
-        birthAt: consequences.impactAt,
-        visibleAt: mergerPair
-          ? data.start + data.duration
-          : consequences.visualImpactAt,
-        formationDuration: mergerPair ? data.persistenceFadeDuration : 8,
-        sourceIndex: mergerPair ? null : location.index,
-        anchorSourceIndices: mergerPair ? mergerAnchors.indices : null,
-        anchorWeights: mergerPair ? mergerAnchors.weights : null,
-        positionOffset: persistentOffset,
-        originEventId: id
-      });
-    }
-
-    cosmicEvents.push({
-      ...data,
-      ...consequences,
-      civilizationNodeImpacts,
-      civilizationImpacts: [],
-      outcome: consequences.systemOutcome,
-      waveSamples,
-      gravityField,
-      transientGravityField,
-      group,
-      sourceIndex: location.index,
-      id,
-      label: data.label
-    });
-  });
-  let galacticCenterSourceIndex = 0;
-  let galacticCenterDistance = Infinity;
-  for (let starIndex = 0; starIndex < starPositions.length / 3; starIndex++) {
-    const offset = starIndex * 3;
-    const distance = starPositions[offset] ** 2 + starPositions[offset + 1] ** 2 + starPositions[offset + 2] ** 2;
-    if (distance < galacticCenterDistance) {
-      galacticCenterDistance = distance;
-      galacticCenterSourceIndex = starIndex;
-    }
-  }
-  const rareEvents = createRareEventPlan({
-    universe,
-    localGroup: localGalaxyGroup,
-    stellarPopulation,
-    starPositions,
-    civilizationData,
-    civilizationEvents
-  });
-  civilizationEvents.push(...rareEvents);
-  civilizationEvents.sort((left, right) => left.start - right.start);
-  civilizationEvents.forEach((data) => {
-    const remnantIndex = Number.isInteger(data.targetNodeIndex)
-      ? civilizationSimulation.habitatRemnantIndices[data.targetNodeIndex]
-      : null;
-    const sourceIndex = Number.isInteger(data.sourceIndex)
-      ? data.sourceIndex
-      : data.visual === 'galactic-encounter'
-        ? galacticCenterSourceIndex
-        : remnantDynamics.sourceIndices[remnantIndex];
-    if (!Number.isInteger(sourceIndex)) return;
-    const sourceOffset = sourceIndex * 3;
-    const group = createCivilizationEventVisual(data);
-    group.position.set(
-      starPositions[sourceOffset],
-      starPositions[sourceOffset + 1],
-      starPositions[sourceOffset + 2]
-    );
-    group.visible = false;
-    cosmicEventGroup.add(group);
-    cosmicEvents.push({
-      ...data,
-      group,
-      sourceIndex,
-      impactPhase: ((data.visualImpactAt ?? data.impactAt) - data.start) / data.duration,
-      starImpacts: [],
-      waveSamples: null,
-      gravityField: null,
-      transientGravityField: null
-    });
-  });
-  cosmicEvents.sort((a, b) => a.start - b.start);
-  remnantDynamics.firstBirthAt = Math.min(...remnantDynamics.birthAt);
-
-  cosmicEventGroup.rotation.copy(galaxyGroup.rotation);
-  cosmicEventGroup.visible = false;
 }
 
 function eventConfidenceClass(event) {
@@ -3128,6 +1141,7 @@ const timelineFilterLabels = {
 
 function updateTimelineFilterToggle(filter) {
   const label = timelineFilterLabels[filter];
+  const timelineFilterToggle = dom.byId['timeline-filter-toggle'];
   const sourceIcon = document.querySelector(`[data-event-filter="${filter}"] .timeline-filter-icon`);
   const currentIcon = timelineFilterToggle.querySelector('.timeline-filter-icon');
   if (sourceIcon && currentIcon) currentIcon.replaceWith(sourceIcon.cloneNode(true));
@@ -3136,7 +1150,7 @@ function updateTimelineFilterToggle(filter) {
   timelineFilterToggle.title = `${label.zh} / ${label.en}`;
 }
 
-function timelineEventMatchesFilter(event, filter = timelineEventFilter) {
+function timelineEventMatchesFilter(event, filter = session.timeline.eventFilter) {
   if (filter === 'astro') return event.category !== 'civilization';
   if (filter === 'civilization') return event.category === 'civilization';
   if (filter === 'speculative') return event.confidence === 'science-fiction';
@@ -3159,13 +1173,13 @@ function renderTimelineFilterCounts() {
 }
 
 function timelineViewportIsZoomed() {
-  return timelineViewport.end - timelineViewport.start < 999.5;
+  return session.timeline.viewport.end - session.timeline.viewport.start < 999.5;
 }
 
 function updateTimelineZoomControl() {
   const button = $('#timeline-zoom-reset');
   if (!button) return;
-  const zoom = 1000 / (timelineViewport.end - timelineViewport.start);
+  const zoom = 1000 / (session.timeline.viewport.end - session.timeline.viewport.start);
   button.hidden = !timelineViewportIsZoomed();
   button.textContent = `${zoom.toFixed(zoom >= 10 ? 0 : 1)}× · 重置`;
   button.setAttribute(
@@ -3175,19 +1189,19 @@ function updateTimelineZoomControl() {
 }
 
 function refreshTimelineViewport() {
-  if (!universe || !renderTimelineScale) return;
-  renderTimelineScale(universe, timelineViewport);
+  if (!universe || !explorer.renderTimelineScale) return;
+  explorer.renderTimelineScale(universe, session.timeline.viewport);
   renderCosmicEventMarkers();
-  currentEras ||= erasForUniverse(universe);
-  renderTimelineHeader(
-    createCosmicTimelineState(cosmicPosition, universe, currentEras),
-    timelineViewport
+  session.timeline.eras ||= explorer.erasForUniverse(universe);
+  explorer.renderTimelineHeader(
+    explorer.createCosmicTimelineState(session.timeline.position, universe, session.timeline.eras),
+    session.timeline.viewport
   );
   updateTimelineZoomControl();
 }
 
 function jumpToTimelineEvent(event) {
-  pauseTimelineForScrubbing();
+  timelineController.pause();
   updateCosmicTime(timelineEventPosition(event), true);
 }
 
@@ -3206,12 +1220,12 @@ function renderTimelineEventDetail(entries, sourceMarker) {
   if (!panel || !list || entries.length === 0) return;
   const orderedEntries = [...entries].sort((a, b) => a.position - b.position);
   const events = orderedEntries.map((entry) => entry.event);
-  const detailWindow = timelineDetailWindow(events);
+  const detailWindow = explorer.timelineDetailWindow(events);
   const firstImpact = orderedEntries[0].position;
   const lastImpact = orderedEntries.at(-1).position;
   const rangeLabel = firstImpact === lastImpact
-    ? cosmicTimeLabel(firstImpact, universe)
-    : `${cosmicTimeLabel(firstImpact, universe)} — ${cosmicTimeLabel(lastImpact, universe)}`;
+    ? explorer.cosmicTimeLabel(firstImpact, universe)
+    : `${explorer.cosmicTimeLabel(firstImpact, universe)} — ${explorer.cosmicTimeLabel(lastImpact, universe)}`;
 
   document.querySelectorAll('.event-cluster[aria-expanded="true"]').forEach((marker) => {
     marker.setAttribute('aria-expanded', 'false');
@@ -3221,8 +1235,8 @@ function renderTimelineEventDetail(entries, sourceMarker) {
   sourceMarker.classList.add('is-expanded');
   panel.style.setProperty('--timeline-detail-origin', sourceMarker.style.left || '50%');
   $('#timeline-event-detail-title').textContent = `${events.length} 个事件 · ${rangeLabel}`;
-  $('#timeline-event-detail-start').textContent = cosmicTimeLabel(detailWindow.start, universe);
-  $('#timeline-event-detail-end').textContent = cosmicTimeLabel(detailWindow.end, universe);
+  $('#timeline-event-detail-start').textContent = explorer.cosmicTimeLabel(detailWindow.start, universe);
+  $('#timeline-event-detail-end').textContent = explorer.cosmicTimeLabel(detailWindow.end, universe);
   list.replaceChildren();
 
   orderedEntries.forEach(({ event, index, position }) => {
@@ -3240,7 +1254,7 @@ function renderTimelineEventDetail(entries, sourceMarker) {
     row.style.setProperty('--event-color', event.color);
     row.setAttribute(
       'aria-label',
-      `${eventKind ? `${eventKind}，` : ''}${event.label}，从${cosmicTimeLabel(event.start, universe)}到${cosmicTimeLabel(eventEnd, universe)}，影响时刻${cosmicTimeLabel(position, universe)}`
+      `${eventKind ? `${eventKind}，` : ''}${event.label}，从${explorer.cosmicTimeLabel(event.start, universe)}到${explorer.cosmicTimeLabel(eventEnd, universe)}，影响时刻${explorer.cosmicTimeLabel(position, universe)}`
     );
 
     const label = document.createElement('span');
@@ -3248,7 +1262,7 @@ function renderTimelineEventDetail(entries, sourceMarker) {
     const name = document.createElement('b');
     name.textContent = event.label;
     const time = document.createElement('small');
-    time.textContent = cosmicTimeLabel(position, universe);
+    time.textContent = explorer.cosmicTimeLabel(position, universe);
     label.append(name, time);
 
     const plot = document.createElement('span');
@@ -3278,16 +1292,16 @@ function renderTimelineEventDetail(entries, sourceMarker) {
 
 function renderCosmicEventMarkers() {
   const container = $('#cosmic-event-markers');
-  if (!container || !clusterTimelineEvents) return;
+  if (!container || !explorer.clusterTimelineEvents) return;
   closeTimelineEventDetail();
   container.replaceChildren();
   const trackWidth = container.clientWidth || Math.max(1, innerWidth * .56);
   const minimumGap = compactCivilizationLayout.matches ? 18 : 14;
-  const groups = clusterTimelineEvents(
+  const groups = explorer.clusterTimelineEvents(
     filteredTimelineEvents(),
     trackWidth,
     minimumGap,
-    timelineViewport
+    session.timeline.viewport
   );
   groups.forEach((group) => {
     group.entries.forEach((entry) => {
@@ -3299,7 +1313,7 @@ function renderCosmicEventMarkers() {
   groups.forEach((group) => {
     const marker = document.createElement('button');
     marker.type = 'button';
-    marker.style.left = `${timelinePercentAt(group.position, timelineViewport)}%`;
+    marker.style.left = `${explorer.timelinePercentAt(group.position, session.timeline.viewport)}%`;
     marker.dataset.position = group.position.toFixed(3);
 
     if (group.entries.length === 1) {
@@ -3308,7 +1322,7 @@ function renderCosmicEventMarkers() {
       marker.dataset.eventIndex = String(index);
       marker.className = `event-marker${eventConfidenceClass(event)}`;
       marker.style.setProperty('--event-color', event.color);
-      marker.setAttribute('aria-label', `${eventKind ? `${eventKind}，` : ''}${event.label}，${cosmicTimeLabel(position, universe)}；${event.outcome}`);
+      marker.setAttribute('aria-label', `${eventKind ? `${eventKind}，` : ''}${event.label}，${explorer.cosmicTimeLabel(position, universe)}；${event.outcome}`);
       marker.title = `${eventKind ? `${eventKind} · ` : ''}${event.outcome}`;
       marker.addEventListener('click', () => {
         closeTimelineEventDetail();
@@ -3326,7 +1340,7 @@ function renderCosmicEventMarkers() {
       marker.setAttribute('aria-expanded', 'false');
       marker.setAttribute(
         'aria-label',
-        `${group.entries.length} 个事件，从${cosmicTimeLabel(firstPosition, universe)}到${cosmicTimeLabel(lastPosition, universe)}，点击展开详情`
+        `${group.entries.length} 个事件，从${explorer.cosmicTimeLabel(firstPosition, universe)}到${explorer.cosmicTimeLabel(lastPosition, universe)}，点击展开详情`
       );
       marker.title = group.entries.map((entry) => entry.event.label).join(' · ');
       marker.addEventListener('click', () => {
@@ -3334,7 +1348,7 @@ function renderCosmicEventMarkers() {
           closeTimelineEventDetail();
           return;
         }
-        pauseTimelineForScrubbing();
+        timelineController.pause();
         renderTimelineEventDetail(group.entries, marker);
       });
     }
@@ -3344,7 +1358,7 @@ function renderCosmicEventMarkers() {
 }
 
 function buildCivilizations() {
-  resetCivilizationLegend();
+  explorer.resetCivilizationLegend();
   const random = createSeededRandom(universe.seed, 410);
   const speciesCount = universe.speciesCount;
   const birthRandom = createSeededRandom(universe.seed, 411);
@@ -3373,7 +1387,7 @@ function buildCivilizations() {
     const birthYears = 10 ** (
       earliestExponent + (latestExponent - earliestExponent) * emergenceProgress
     );
-    return cosmicYearsToTimelinePosition(birthYears, universe);
+    return explorer.cosmicYearsToTimelinePosition(birthYears, universe);
   }).sort((left, right) => left - right);
   const remnantCount = originalRemnantPositions.length / 3;
   const seenHostStars = new Set();
@@ -3573,22 +1587,22 @@ function buildCivilizations() {
         homeNodeIndex = candidate;
       }
     }
-    const speciesColor = speciesColors[speciesIndex % speciesColors.length];
+    const speciesColor = explorer.speciesColors[speciesIndex % explorer.speciesColors.length];
     const aggression = random();
     const cooperation = random();
-    const expansionRate = randomBetween(random, .72, 1.36);
-    const resilience = randomBetween(random, .68, 1.32);
+    const expansionRate = explorer.randomBetween(random, .72, 1.36);
+    const resilience = explorer.randomBetween(random, .68, 1.32);
     const birth = speciesBirths[speciesIndex];
     const highDimensional = random() < .01;
     const ascensionAt = highDimensional
-      ? cosmicYearsToTimelinePosition(
-          timelinePositionToCosmicYears(birth, universe) + randomBetween(random, 2e9, 2e10),
+      ? explorer.cosmicYearsToTimelinePosition(
+          explorer.timelinePositionToCosmicYears(birth, universe) + explorer.randomBetween(random, 2e9, 2e10),
           universe
         )
       : Infinity;
     const developmentRandom = createSeededRandom(universe.seed, 4801 + speciesIndex * 31);
     registerSpecies({
-      name: speciesNames[(universe.seedValue + speciesIndex) % speciesNames.length],
+      name: explorer.speciesNames[(universe.seedValue + speciesIndex) % explorer.speciesNames.length],
       color: speciesColor,
       homeNodeIndex,
       birth,
@@ -3598,10 +1612,10 @@ function buildCivilizations() {
       cooperation,
       expansionRate,
       resilience,
-      technology: randomBetween(developmentRandom, .18, .48),
-      visibility: randomBetween(developmentRandom, .04, .18),
-      cohesion: randomBetween(developmentRandom, .48, .82),
-      machineAutonomy: randomBetween(developmentRandom, .08, .38)
+      technology: explorer.randomBetween(developmentRandom, .18, .48),
+      visibility: explorer.randomBetween(developmentRandom, .04, .18),
+      cohesion: explorer.randomBetween(developmentRandom, .48, .82),
+      machineAutonomy: explorer.randomBetween(developmentRandom, .08, .38)
     });
   }
 
@@ -3610,7 +1624,7 @@ function buildCivilizations() {
     return;
   }
 
-  const plan = createCivilizationEventPlan({ universe, civilizationData, habitatPositions });
+  const plan = explorer.createCivilizationEventPlan({ universe, civilizationData, habitatPositions });
   plan.speciesProfiles.forEach((profile, index) => {
     Object.assign(civilizationData[index], profile);
   });
@@ -3643,20 +1657,20 @@ function neighboringSeed(seed, offset) {
 }
 
 function installUniverse(nextUniverse, flash = true) {
-  galaxyBuildVersion += 1;
-  galaxyPreparedForSeed = null;
-  galaxyHydratedForSeed = null;
+  session.hydration.buildVersion += 1;
+  session.hydration.preparedSeed = null;
+  session.hydration.hydratedSeed = null;
   galaxyPreparationPromise = null;
   galaxyHydrationPromise = null;
   preparedGalaxyPositions = null;
-  observerSpeciesIndex = null;
-  selectedChronicleIndex = null;
+  session.civilization.observerSpeciesIndex = null;
+  session.civilization.selectedChronicleIndex = null;
   closeCivilizationChronicle();
   universe = nextUniverse;
   syncUniverseUrl();
   updateUniverseData(universe);
   buildUniverseObject();
-  currentEras = null;
+  session.timeline.eras = null;
   cachedTimelineVisualContext = null;
   $('.universe-data').scrollTop = 0;
   if (flash) {
@@ -3674,7 +1688,7 @@ function installUniverse(nextUniverse, flash = true) {
 }
 
 function toggleMultiverseLab(open = !$('#multiverse-lab').classList.contains('is-open')) {
-  if (mode !== 'generator') return;
+  if (session.mode !== 'generator') return;
   const lab = $('#multiverse-lab');
   lab.classList.toggle('is-open', open);
   lab.setAttribute('aria-hidden', String(!open));
@@ -3691,7 +1705,7 @@ function toggleMultiverseLab(open = !$('#multiverse-lab').classList.contains('is
 
 
 function regenerate() {
-  if (mode !== 'generator') return;
+  if (session.mode !== 'generator') return;
   toggleMultiverseLab(false);
   installUniverse(createUniverse());
 }
@@ -3709,19 +1723,19 @@ function setExplorerHydrationState(loading, failed = false) {
 function finishGalaxyHydration(seed, hydrated) {
   if (!hydrated || universe.seed !== seed) return;
   galaxyHydrationPromise = null;
-  if (mode !== 'explorer') return;
+  if (session.mode !== 'explorer') return;
   localGroupGroup.visible = true;
   setExplorerHydrationState(false);
-  updateCosmicTime(cosmicPosition, true);
-  restartTimelineScaleIntro();
-  timePlaying = cosmicPosition === 0;
+  updateCosmicTime(session.timeline.position, true);
+  explorer.restartTimelineScaleIntro();
+  session.timeline.playing = session.timeline.position === 0;
   lastTimelineUpdateAt = 0;
-  $('#toggle-time').textContent = timePlaying ? 'Ⅱ' : '▶';
-  $('#toggle-time').setAttribute('aria-label', timePlaying ? '暂停时间' : '播放时间');
+  $('#toggle-time').textContent = session.timeline.playing ? 'Ⅱ' : '▶';
+  $('#toggle-time').setAttribute('aria-label', session.timeline.playing ? '暂停时间' : '播放时间');
 }
 
 async function enterUniverse() {
-  if (mode !== 'generator') return;
+  if (session.mode !== 'generator') return;
   const enterButton = $('#enter-universe');
   const enterLabel = enterButton.querySelector('span');
   if (enterButton.getAttribute('aria-busy') === 'true') return;
@@ -3733,7 +1747,7 @@ async function enterUniverse() {
   try {
     await requestAppFullscreen();
     await prepareGalaxyPreview();
-    if (galaxyPreparedForSeed !== universe.seed || !preparedGalaxyPositions) {
+    if (session.hydration.preparedSeed !== universe.seed || !preparedGalaxyPositions) {
       throw new Error('星系预览未能完成');
     }
   } catch (error) {
@@ -3746,11 +1760,11 @@ async function enterUniverse() {
     enterLabel.textContent = '进入宇宙';
   }
 
-  mode = 'explorer';
+  session.mode = 'explorer';
   document.body.classList.add('is-exploring');
   $('#generator-view').classList.remove('is-active');
   $('#explorer-view').classList.add('is-active');
-  const alreadyHydrated = galaxyHydratedForSeed === universe.seed;
+  const alreadyHydrated = session.hydration.hydratedSeed === universe.seed;
   setExplorerHydrationState(!alreadyHydrated);
   $('#regenerate-top').style.opacity = '0';
   $('#regenerate-top').style.pointerEvents = 'none';
@@ -3766,9 +1780,9 @@ async function enterUniverse() {
   detailGroup.scale.setScalar(0.02);
   cosmicWebGroup.visible = false;
   cosmicWebGroup.position.set(0, 0, 0);
-  if (cosmicWebVisual) cosmicWebVisual.reveal = 0;
+  if (cosmicWebState.visual) cosmicWebState.visual.reveal = 0;
   galaxyViewPose = null;
-  universeScaleView = false;
+  session.view.universeScale = false;
   document.body.classList.remove('is-universe-scale-view');
   $('#toggle-universe-scale').setAttribute('aria-pressed', 'false');
   $('#toggle-universe-scale').textContent = '查看整个宇宙';
@@ -3777,46 +1791,46 @@ async function enterUniverse() {
   controls.enabled = true;
   controls.target.set(0, 0, 0);
   const linkedPosition = Number(new URLSearchParams(window.location.search).get('t'));
-  cosmicPosition = Number.isFinite(linkedPosition)
+  session.timeline.position = Number.isFinite(linkedPosition)
     ? THREE.MathUtils.clamp(linkedPosition, 0, 1000)
     : 0;
-  $('#cosmic-timeline').value = cosmicPosition;
-  updateCosmicTime(cosmicPosition, true);
-  timePlaying = alreadyHydrated && cosmicPosition === 0;
+  $('#cosmic-timeline').value = session.timeline.position;
+  updateCosmicTime(session.timeline.position, true);
+  session.timeline.playing = alreadyHydrated && session.timeline.position === 0;
   lastTimelineUpdateAt = 0;
-  $('#toggle-time').textContent = timePlaying ? 'Ⅱ' : '▶';
-  $('#toggle-time').setAttribute('aria-label', timePlaying ? '暂停时间' : '播放时间');
-  transition = { type: 'enter', start: performance.now(), duration: prefersReducedMotion ? 1 : 2100 };
+  $('#toggle-time').textContent = session.timeline.playing ? 'Ⅱ' : '▶';
+  $('#toggle-time').setAttribute('aria-label', session.timeline.playing ? '暂停时间' : '播放时间');
+  session.transition = { type: 'enter', start: performance.now(), duration: prefersReducedMotion ? 1 : 2100 };
 
   if (alreadyHydrated) {
-    restartTimelineScaleIntro();
+    explorer.restartTimelineScaleIntro();
     return;
   }
   if (!galaxyHydrationPromise) {
     const seed = universe.seed;
-    const version = galaxyBuildVersion;
+    const version = session.hydration.buildVersion;
     galaxyHydrationPromise = hydrateGalaxy(preparedGalaxyPositions, seed, version)
       .then((hydrated) => finishGalaxyHydration(seed, hydrated))
       .catch((error) => {
         galaxyHydrationPromise = null;
         if (!galaxyBuildIsCurrent(seed, version)) return;
         console.error('无法完成宇宙扩展数据加载', error);
-        if (mode === 'explorer') setExplorerHydrationState(true, true);
+        if (session.mode === 'explorer') setExplorerHydrationState(true, true);
       });
   }
 }
 
 function leaveUniverse() {
-  if (mode !== 'explorer') return;
+  if (session.mode !== 'explorer') return;
   closeTimelineEventDetail();
   setImmersiveMode(false);
-  mode = 'generator';
+  session.mode = 'generator';
   document.body.classList.remove('is-exploring');
   $('#explorer-view').classList.remove('is-active');
   $('#generator-view').classList.add('is-active');
   $('#star-inspector').classList.remove('is-open');
-  observerSpeciesIndex = null;
-  universeScaleView = false;
+  session.civilization.observerSpeciesIndex = null;
+  session.view.universeScale = false;
   document.body.classList.remove('is-universe-scale-view');
   setGalaxyMenuOpen(false);
   closeCivilizationChronicle();
@@ -3826,7 +1840,7 @@ function leaveUniverse() {
   $('#mode-label').textContent = '创世引擎在线';
   $('#regenerate-top').style.opacity = '';
   $('#regenerate-top').style.pointerEvents = '';
-  timePlaying = false;
+  session.timeline.playing = false;
   $('#toggle-time').textContent = '▶';
   $('#toggle-time').setAttribute('aria-label', '播放时间');
   controls.enabled = false;
@@ -3841,29 +1855,29 @@ function leaveUniverse() {
   localGroupGroup.visible = false;
   cosmicWebGroup.visible = false;
   scene.fog.density = .008;
-  transition = { type: 'leave', start: performance.now(), duration: prefersReducedMotion ? 1 : 1300 };
+  session.transition = { type: 'leave', start: performance.now(), duration: prefersReducedMotion ? 1 : 1300 };
 }
 
 function easeOutExpo(t) { return t === 1 ? 1 : 1 - Math.pow(2, -10 * t); }
 function easeInOutCubic(t) { return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
 
-function isUniverseScaleTransition(candidate = transition) {
+function isUniverseScaleTransition(candidate = session.transition) {
   return candidate?.type === 'universe-out' || candidate?.type === 'universe-in';
 }
 
 function cosmicWebAlignedPosition(target = new THREE.Vector3()) {
-  if (!cosmicWebVisual?.currentGalaxyAnchor) return target.set(0, 0, 0);
+  if (!cosmicWebState.visual?.currentGalaxyAnchor) return target.set(0, 0, 0);
   const previousPosition = cosmicWebGroup.position.clone();
   cosmicWebGroup.position.set(0, 0, 0);
   cosmicWebGroup.updateMatrixWorld(true);
-  cosmicWebVisual.currentGalaxyAnchor.getWorldPosition(target);
+  cosmicWebState.visual.currentGalaxyAnchor.getWorldPosition(target);
   cosmicWebGroup.position.copy(previousPosition);
   cosmicWebGroup.updateMatrixWorld(true);
   return target.multiplyScalar(-1);
 }
 
 function attachDetailGroupToCurrentGalaxy() {
-  const anchor = cosmicWebVisual?.currentGalaxyAnchor;
+  const anchor = cosmicWebState.visual?.currentGalaxyAnchor;
   if (!anchor || detailGroup.parent === anchor) return;
   anchor.attach(detailGroup);
   detailGroup.position.set(0, 0, 0);
@@ -3875,14 +1889,14 @@ function restoreDetailGroupToScene() {
 }
 
 function hideScaleIncompatibleMarkers() {
-  if (universeScaleView) {
+  if (session.view.universeScale) {
     logisticsShipMarkers.forEach((ships) => ships.forEach((ship) => {
       ship.visible = false;
     }));
     if (keyboardStarMarker) keyboardStarMarker.visible = false;
     return;
   }
-  intergalacticMarkers.forEach((ships) => ships.forEach((ship) => {
+  localGroupState.shipMarkers.forEach((ships) => ships.forEach((ship) => {
     ship.visible = false;
   }));
 }
@@ -3890,24 +1904,24 @@ function hideScaleIncompatibleMarkers() {
 function refreshScaleDependentVisualsWhenIdle(expectedUniverseScaleView) {
   runWhenIdle(() => {
     if (pageDisposed
-      || mode !== 'explorer'
-      || transition
-      || universeScaleView !== expectedUniverseScaleView) return;
-    updateLogisticsVisuals(lastCivilizationSnapshot);
-    updateLocalGroupVisuals(lastCivilizationSnapshot);
+      || session.mode !== 'explorer'
+      || session.transition
+      || session.view.universeScale !== expectedUniverseScaleView) return;
+    updateLogisticsVisuals(session.timeline.lastCivilizationSnapshot);
+    updateLocalGroupVisuals(session.timeline.lastCivilizationSnapshot);
     updateKeyboardStarMarker();
   });
 }
 
 function updateTransition(now) {
-  if (!transition) return;
-  const t = Math.min(1, (now - transition.start) / transition.duration);
-  if (transition.type === 'birth') {
+  if (!session.transition) return;
+  const t = Math.min(1, (now - session.transition.start) / session.transition.duration);
+  if (session.transition.type === 'birth') {
     const s = easeOutExpo(t);
     universeGroup.scale.setScalar(s);
     universeGroup.rotation.y = -0.3 + (1 - s) * 1.5;
   }
-  if (transition.type === 'enter') {
+  if (session.transition.type === 'enter') {
     const e = easeInOutCubic(t);
     universeGroup.scale.setScalar(Math.max(0.001, 1 - e * 1.5));
     universeGroup.rotation.z += 0.018 * (1 - t);
@@ -3915,33 +1929,33 @@ function updateTransition(now) {
     camera.position.z = 32 - e * 12;
     camera.position.y = 0.5 + e * 4.2;
   }
-  if (transition.type === 'leave') {
+  if (session.transition.type === 'leave') {
     const e = easeInOutCubic(t);
     detailGroup.scale.setScalar(1 - e * .96);
     universeGroup.scale.setScalar(e);
     camera.position.z = 20 + e * 12;
     camera.position.y = 4.7 - e * 4.2;
   }
-  if (transition.type === 'universe-out' || transition.type === 'universe-in') {
+  if (session.transition.type === 'universe-out' || session.transition.type === 'universe-in') {
     const e = easeInOutCubic(t);
-    const reveal = THREE.MathUtils.lerp(transition.mixStart, transition.mixEnd, e);
+    const reveal = THREE.MathUtils.lerp(session.transition.mixStart, session.transition.mixEnd, e);
     detailGroup.scale.setScalar(THREE.MathUtils.lerp(1, .018, reveal));
-    camera.position.lerpVectors(transition.cameraStart, transition.cameraEnd, e);
-    controls.target.lerpVectors(transition.targetStart, transition.targetEnd, e);
+    camera.position.lerpVectors(session.transition.cameraStart, session.transition.cameraEnd, e);
+    controls.target.lerpVectors(session.transition.targetStart, session.transition.targetEnd, e);
     camera.lookAt(controls.target);
     cosmicWebGroup.position.lerpVectors(
-      transition.cosmicPositionStart,
-      transition.cosmicPositionEnd,
+      session.transition.cosmicPositionStart,
+      session.transition.cosmicPositionEnd,
       e
     );
-    cosmicWebVisual.reveal = reveal;
+    cosmicWebState.visual.reveal = reveal;
     applyCosmicWebOpacity();
     scene.fog.density = THREE.MathUtils.lerp(.008, .0024, reveal);
   }
   if (t === 1) {
-    if (transition.type === 'enter') universeGroup.visible = false;
-    if (transition.type === 'leave') { detailGroup.visible = false; galaxyGroup.visible = false; localGroupGroup.visible = false; universeGroup.visible = true; universeGroup.scale.setScalar(1); }
-    if (transition.type === 'universe-in') {
+    if (session.transition.type === 'enter') universeGroup.visible = false;
+    if (session.transition.type === 'leave') { detailGroup.visible = false; galaxyGroup.visible = false; localGroupGroup.visible = false; universeGroup.visible = true; universeGroup.scale.setScalar(1); }
+    if (session.transition.type === 'universe-in') {
       restoreDetailGroupToScene();
       cosmicWebGroup.visible = false;
       cosmicWebGroup.position.set(0, 0, 0);
@@ -3953,32 +1967,32 @@ function updateTransition(now) {
       controls.minDistance = 8;
       controls.maxDistance = 46;
     }
-    if (transition.type === 'universe-out') {
+    if (session.transition.type === 'universe-out') {
       cosmicWebGroup.position.set(0, 0, 0);
       camera.far = 360;
       controls.minDistance = 68;
       controls.maxDistance = 158;
     }
     if (isUniverseScaleTransition()) {
-      const completedUniverseScaleView = transition.type === 'universe-out';
+      const completedUniverseScaleView = session.transition.type === 'universe-out';
       camera.updateProjectionMatrix();
-      controls.enabled = mode === 'explorer';
+      controls.enabled = session.mode === 'explorer';
       controls.update();
       refreshScaleDependentVisualsWhenIdle(completedUniverseScaleView);
     }
-    transition = null;
+    session.transition = null;
   }
 }
 
 function inspectStar(event) {
-  if (mode !== 'explorer' || universeScaleView || transition || !clickableStars || cosmicPosition < 250) return;
+  if (session.mode !== 'explorer' || session.view.universeScale || session.transition || !clickableStars || session.timeline.position < 250) return;
   pointer.x = (event.clientX / innerWidth) * 2 - 1;
   pointer.y = -(event.clientY / innerHeight) * 2 + 1;
   raycaster.setFromCamera(pointer, camera);
   const hits = raycaster.intersectObject(clickableStars);
   const livingHit = hits.find((hit) => (
-    cosmicPosition >= stellarPopulation.birthAt[hit.index]
-      && cosmicPosition < starDeathThresholds[hit.index]
+    session.timeline.position >= stellarPopulation.birthAt[hit.index]
+      && session.timeline.position < starDeathThresholds[hit.index]
   ));
   if (!livingHit) return;
   showStarInspector(livingHit.index);
@@ -3987,7 +2001,7 @@ function inspectStar(event) {
 function showStarInspector(index) {
   if (!clickableStars || !stellarPopulation || index < 0 || index >= starDeathThresholds.length) return;
   const temperature = stellarPopulation.temperatureK[index];
-  const type = stellarSpectralType(temperature);
+  const type = explorer.stellarSpectralType(temperature);
   const planets = stellarPopulation.planetCounts[index];
   const life = stellarPopulation.lifeSignals[index] ? '候选信号' : '未检出';
   $('#star-name').textContent = `RU-${String(index).padStart(5, '0')}`;
@@ -4001,32 +2015,32 @@ function showStarInspector(index) {
 }
 
 function advanceCosmicTime(deltaSeconds) {
-  cosmicPosition += deltaSeconds * timelineUnitsPerSecond(cosmicPosition) * timeSpeed;
+  session.timeline.position += deltaSeconds * explorer.timelineUnitsPerSecond(session.timeline.position) * session.timeline.speed;
 }
 
 
 
 function toggleCivilizations() {
-  if (mode !== 'explorer') return;
+  if (session.mode !== 'explorer') return;
   const panel = $('#civilization-panel');
   const expanded = !panel.classList.contains('is-expanded');
   panel.classList.toggle('is-expanded', expanded);
   $('#toggle-civilizations').setAttribute('aria-expanded', String(expanded));
   $('#civilization-legend').setAttribute('aria-hidden', String(!expanded));
   if (expanded && civilizationRuntimeState.length) {
-    renderCivilizationRows({
-      position: cosmicPosition,
-      simulationState: lastCivilizationSnapshot,
+    explorer.renderCivilizationRows({
+      position: session.timeline.position,
+      simulationState: session.timeline.lastCivilizationSnapshot,
       runtimeState: civilizationRuntimeState,
       civilizationData
     });
-    organizeCivilizationLegend(lastCivilizationSnapshot, civilizationData);
+    explorer.organizeCivilizationLegend(session.timeline.lastCivilizationSnapshot, civilizationData);
   }
 }
 
 function openCivilizationChronicle(speciesIndex) {
   if (!civilizationData[speciesIndex]) return;
-  selectedChronicleIndex = speciesIndex;
+  session.civilization.selectedChronicleIndex = speciesIndex;
   $('#star-inspector').classList.remove('is-open');
   document.body.classList.add('is-chronicle-open');
   renderCivilizationChronicle({
@@ -4035,18 +2049,18 @@ function openCivilizationChronicle(speciesIndex) {
     runtimeState: civilizationRuntimeState,
     cosmicEvents,
     universe,
-    timeLabel: cosmicTimeLabel,
-    localGroup: localGalaxyGroup,
+    timeLabel: explorer.cosmicTimeLabel,
+    localGroup: localGroupState.model,
     observation: civilizationObservation({
-      observerSpeciesIndex,
+      observerSpeciesIndex: session.civilization.observerSpeciesIndex,
       targetSpeciesIndex: speciesIndex,
-      position: cosmicPosition,
+      position: session.timeline.position,
       civilizationSimulation,
       civilizationData,
       universe
     })
   });
-  const observing = observerSpeciesIndex === speciesIndex;
+  const observing = session.civilization.observerSpeciesIndex === speciesIndex;
   $('#observe-civilization').classList.toggle('is-active', observing);
   $('#observe-civilization').textContent = observing ? '退出观察者模式' : '以此文明观察';
 }
@@ -4110,7 +2124,7 @@ function clearImmersiveUiTimer() {
 }
 
 function showImmersiveUi() {
-  if (!immersiveMode) return false;
+  if (!session.view.immersive) return false;
   const wasHidden = document.body.classList.contains('is-immersive-ui-hidden');
   document.body.classList.remove('is-immersive-ui-hidden');
   clearImmersiveUiTimer();
@@ -4123,31 +2137,31 @@ function showImmersiveUi() {
 }
 
 function setImmersiveMode(enabled) {
-  immersiveMode = Boolean(enabled && mode === 'explorer');
-  document.body.classList.toggle('is-immersive-mode', immersiveMode);
+  session.view.immersive = Boolean(enabled && session.mode === 'explorer');
+  document.body.classList.toggle('is-immersive-mode', session.view.immersive);
   document.body.classList.remove('is-immersive-ui-hidden');
   const button = $('#toggle-immersive');
-  button.setAttribute('aria-pressed', String(immersiveMode));
-  button.textContent = immersiveMode ? '退出沉浸模式' : '沉浸式模式';
+  button.setAttribute('aria-pressed', String(session.view.immersive));
+  button.textContent = session.view.immersive ? '退出沉浸模式' : '沉浸式模式';
   clearImmersiveUiTimer();
   setGalaxyMenuOpen(false);
-  if (immersiveMode) showImmersiveUi();
+  if (session.view.immersive) showImmersiveUi();
 }
 
 function toggleUniverseScaleView() {
-  if (mode !== 'explorer'
-    || !cosmicWebVisual
-    || (transition && !isUniverseScaleTransition())) return;
-  universeScaleView = !universeScaleView;
-  document.body.classList.toggle('is-universe-scale-view', universeScaleView);
-  $('#toggle-universe-scale').setAttribute('aria-pressed', String(universeScaleView));
-  $('#toggle-universe-scale').textContent = universeScaleView ? '返回当前星系' : '查看整个宇宙';
+  if (session.mode !== 'explorer'
+    || !cosmicWebState.visual
+    || (session.transition && !isUniverseScaleTransition())) return;
+  session.view.universeScale = !session.view.universeScale;
+  document.body.classList.toggle('is-universe-scale-view', session.view.universeScale);
+  $('#toggle-universe-scale').setAttribute('aria-pressed', String(session.view.universeScale));
+  $('#toggle-universe-scale').textContent = session.view.universeScale ? '返回当前星系' : '查看整个宇宙';
   setGalaxyMenuOpen(false);
-  const mixStart = THREE.MathUtils.clamp(cosmicWebVisual.reveal, 0, 1);
-  const mixEnd = universeScaleView ? 1 : 0;
+  const mixStart = THREE.MathUtils.clamp(cosmicWebState.visual.reveal, 0, 1);
+  const mixEnd = session.view.universeScale ? 1 : 0;
   const cameraStart = camera.position.clone();
   const targetStart = controls.target.clone();
-  if (universeScaleView && mixStart <= .001) {
+  if (session.view.universeScale && mixStart <= .001) {
     galaxyViewPose = {
       camera: cameraStart.clone(),
       target: targetStart.clone(),
@@ -4161,16 +2175,16 @@ function toggleUniverseScaleView() {
   };
   updateCosmicWebMotion(performance.now(), true);
   const alignedCosmicPosition = cosmicWebAlignedPosition();
-  if (universeScaleView && mixStart <= .001) {
+  if (session.view.universeScale && mixStart <= .001) {
     cosmicWebGroup.position.copy(alignedCosmicPosition);
     cosmicWebGroup.updateMatrixWorld(true);
     attachDetailGroupToCurrentGalaxy();
   }
   cosmicWebGroup.visible = true;
   controls.enabled = false;
-  const baseDuration = universeScaleView ? 1600 : 1400;
-  transition = {
-    type: universeScaleView ? 'universe-out' : 'universe-in',
+  const baseDuration = session.view.universeScale ? 1600 : 1400;
+  session.transition = {
+    type: session.view.universeScale ? 'universe-out' : 'universe-in',
     start: performance.now(),
     duration: prefersReducedMotion
       ? 1
@@ -4178,15 +2192,15 @@ function toggleUniverseScaleView() {
     mixStart,
     mixEnd,
     cameraStart,
-    cameraEnd: universeScaleView
+    cameraEnd: session.view.universeScale
       ? new THREE.Vector3(0, 24, 112)
       : galaxyViewPose.camera.clone(),
     targetStart,
-    targetEnd: universeScaleView
+    targetEnd: session.view.universeScale
       ? new THREE.Vector3()
       : galaxyViewPose.target.clone(),
     cosmicPositionStart: cosmicWebGroup.position.clone(),
-    cosmicPositionEnd: universeScaleView
+    cosmicPositionEnd: session.view.universeScale
       ? new THREE.Vector3()
       : alignedCosmicPosition
   };
@@ -4196,15 +2210,15 @@ function toggleUniverseScaleView() {
 }
 
 function closeCivilizationChronicle() {
-  selectedChronicleIndex = null;
+  session.civilization.selectedChronicleIndex = null;
   document.body.classList.remove('is-chronicle-open');
   $('#civilization-chronicle').classList.remove('is-open');
 }
 
 function observerDelayForEvent(event) {
-  if (observerSpeciesIndex === null || event.targetSpeciesIndex === null) return 0;
-  if (event.targetSpeciesIndex === observerSpeciesIndex) return 0;
-  const observerNode = civilizationData[observerSpeciesIndex]?.homeNodeIndex;
+  if (session.civilization.observerSpeciesIndex === null || event.targetSpeciesIndex === null) return 0;
+  if (event.targetSpeciesIndex === session.civilization.observerSpeciesIndex) return 0;
+  const observerNode = civilizationData[session.civilization.observerSpeciesIndex]?.homeNodeIndex;
   const eventNode = event.targetNodeIndex;
   if (observerNode === undefined || eventNode === undefined) return 0;
   const positions = civilizationSimulation.habitatPositions;
@@ -4218,9 +2232,9 @@ function observerDelayForEvent(event) {
   return lightTravelYearsForSceneDistance(distance, universe);
 }
 
-function observerCanSeeEvent(event, position = cosmicPosition) {
-  return observerSpeciesIndex === null || timelinePositionToCosmicYears(position, universe)
-    >= timelinePositionToCosmicYears(event.impactAt, universe) + observerDelayForEvent(event);
+function observerCanSeeEvent(event, position = session.timeline.position) {
+  return session.civilization.observerSpeciesIndex === null || explorer.timelinePositionToCosmicYears(position, universe)
+    >= explorer.timelinePositionToCosmicYears(event.impactAt, universe) + observerDelayForEvent(event);
 }
 
 function timelineMarkerEvents(marker) {
@@ -4241,7 +2255,7 @@ function updateObserverMarkers() {
     const beyondLightcone = visibleObservations.length === 0;
     const partial = visibleObservations.length > 0 && visibleObservations.length < observations.length;
     const maximumDelay = Math.max(0, ...visibleObservations.map((observation) => observation.delay));
-    const uncertain = observerSpeciesIndex !== null && !beyondLightcone && maximumDelay > 1e4;
+    const uncertain = session.civilization.observerSpeciesIndex !== null && !beyondLightcone && maximumDelay > 1e4;
     marker.classList.toggle('is-beyond-lightcone', beyondLightcone);
     marker.classList.toggle('is-partially-observed', partial);
     marker.classList.toggle('is-uncertain-observation', uncertain);
@@ -4253,14 +2267,14 @@ function updateObserverMarkers() {
 }
 
 function toggleObserverMode() {
-  if (selectedChronicleIndex === null) return;
-  observerSpeciesIndex = observerSpeciesIndex === selectedChronicleIndex ? null : selectedChronicleIndex;
-  $('#mode-label').textContent = observerSpeciesIndex === null
+  if (session.civilization.selectedChronicleIndex === null) return;
+  session.civilization.observerSpeciesIndex = session.civilization.observerSpeciesIndex === session.civilization.selectedChronicleIndex ? null : session.civilization.selectedChronicleIndex;
+  $('#mode-label').textContent = session.civilization.observerSpeciesIndex === null
     ? '宇宙观测模式'
-    : `${civilizationData[observerSpeciesIndex].name} · 有限光锥`;
-  openCivilizationChronicle(selectedChronicleIndex);
+    : `${civilizationData[session.civilization.observerSpeciesIndex].name} · 有限光锥`;
+  openCivilizationChronicle(session.civilization.selectedChronicleIndex);
   updateObserverMarkers();
-  updateCosmicTime(cosmicPosition, true);
+  updateCosmicTime(session.timeline.position, true);
 }
 
 
@@ -4272,9 +2286,12 @@ function toggleObserverMode() {
 function timelineVisualContext() {
   if (!cachedTimelineVisualContext) {
     cachedTimelineVisualContext = {
-      mode, epochEffectsGroup, primordialParticles, primordialFactors, primordialDirections,
+      mode: session.mode,
+      epochEffectsGroup, primordialParticles, primordialFactors, primordialDirections,
       expansionStreaks, expansionDirections, bangCore, shockwaves, renderer, scene,
-      clickableStars, originalGalaxyPositions, stellarGravityState, universe, transition, galaxyGroup,
+      clickableStars, originalGalaxyPositions, stellarGravityState, universe,
+      transition: session.transition,
+      galaxyGroup,
       starDeathThresholds, originalGalaxyColors, stellarDawnModel, dawnGas, dawnSites,
       cosmicEvents, remnantGroup,
       stellarRemnants, originalRemnantPositions, remnantDynamics, blackHoleRemnants,
@@ -4282,22 +2299,22 @@ function timelineVisualContext() {
       cosmicFateGroup, fateBubble, fateGlow, cosmicEventGroup
     };
   }
-  cachedTimelineVisualContext.mode = mode;
-  cachedTimelineVisualContext.transition = transition;
+  cachedTimelineVisualContext.mode = session.mode;
+  cachedTimelineVisualContext.transition = session.transition;
   return cachedTimelineVisualContext;
 }
 
 function applyCivilizationVisuals(runtimeState) {
   const fateFade = universe.cosmicFate.type === 'heat-death'
     ? 0
-    : THREE.MathUtils.smoothstep(cosmicPosition, universe.cosmicFate.onsetAt, 995);
+    : THREE.MathUtils.smoothstep(session.timeline.position, universe.cosmicFate.onsetAt, 995);
   runtimeState.forEach((state, index) => {
     const group = civilizationGroups[index];
     const species = civilizationData[index];
     group.visible = state.alive && state.count > 0;
     let observerOpacity = 1;
-    if (observerSpeciesIndex !== null && index !== observerSpeciesIndex) {
-      const observerState = runtimeState[observerSpeciesIndex];
+    if (session.civilization.observerSpeciesIndex !== null && index !== session.civilization.observerSpeciesIndex) {
+      const observerState = runtimeState[session.civilization.observerSpeciesIndex];
       const known = observerState?.friendlyNames.includes(species.name)
         || observerState?.conflictNames.includes(species.name);
       observerOpacity = known ? .62 : .12;
@@ -4400,7 +2417,7 @@ function updateLogisticsVisuals(simulationState) {
       resetShipDisappearance(ship);
     }
     ship.userData.trafficActive = true;
-    ship.visible = shipHighlightEnabled && mode === 'explorer' && !universeScaleView;
+    ship.visible = session.view.shipHighlight && session.mode === 'explorer' && !session.view.universeScale;
     ship.userData.navigationObstacles = navigationObstacles;
     updateLogisticsShipNavigationPath(ship);
     updateIntergalacticShipAppearance(ship);
@@ -4408,228 +2425,15 @@ function updateLogisticsVisuals(simulationState) {
 }
 
 function updateKeyboardStarMarker() {
-  if (!keyboardStarMarker || keyboardStarIndex < 0 || !clickableStars) return;
-  if (cosmicPosition < stellarPopulation.birthAt[keyboardStarIndex]
-    || cosmicPosition >= starDeathThresholds[keyboardStarIndex]) {
+  if (!keyboardStarMarker || session.view.keyboardStarIndex < 0 || !clickableStars) return;
+  if (session.timeline.position < stellarPopulation.birthAt[session.view.keyboardStarIndex]
+    || session.timeline.position >= starDeathThresholds[session.view.keyboardStarIndex]) {
     keyboardStarMarker.visible = false;
     return;
   }
   const positions = clickableStars.geometry.attributes.position.array;
-  keyboardStarMarker.position.fromArray(positions, keyboardStarIndex * 3);
-  keyboardStarMarker.visible = mode === 'explorer' && !universeScaleView && cosmicPosition >= 250;
-}
-
-function updateLocalGroupVisuals(simulationState) {
-  if (!localGalaxyGroup) return;
-  const visible = mode === 'explorer' && cosmicPosition >= 205;
-  const routesFormed = visible && cosmicPosition >= STELLAR_DAWN_END;
-  localGroupGroup.visible = visible;
-  const viewBoost = universeScaleView ? 1 : .34;
-  const stellarEnd = stellarEndTimelinePosition(universe);
-  const remapReferencePosition = (referencePosition) => cosmicYearsToTimelinePosition(
-    referenceFutureYearsAtTimelinePosition(referencePosition, universe),
-    universe
-  );
-  const remnantFadeStart = remapReferencePosition(845);
-  const remnantFadeEnd = remapReferencePosition(930);
-  const remnantPersistence = remnantFadeStart >= 999
-    ? 1
-    : 1 - THREE.MathUtils.smoothstep(
-        cosmicPosition,
-        remnantFadeStart,
-        Math.max(remnantFadeStart + 1, remnantFadeEnd)
-      );
-  const stellarPopulation = 1 - THREE.MathUtils.smoothstep(
-    cosmicPosition,
-    stellarEnd - 75,
-    stellarEnd + 10
-  );
-  const fate = universe.cosmicFate;
-  const finiteOutcome = fate?.type && fate.type !== 'heat-death';
-  const fatePhase = finiteOutcome
-    ? THREE.MathUtils.smoothstep(cosmicPosition, fate.onsetAt, 1000)
-    : 0;
-
-  localGroupGalaxies.forEach((companion) => {
-    let fateSurvival = 1;
-    companion.galaxy.position.fromArray(companion.basePosition);
-    companion.galaxy.scale.setScalar(1);
-    if (fatePhase > 0 && fate.type === 'big-rip') {
-      const separation = 1 + Math.pow(fatePhase, 1.7) * 3.2;
-      companion.galaxy.position.multiplyScalar(separation);
-      companion.galaxy.scale.setScalar(1 + Math.pow(fatePhase, 1.7) * 2.5);
-      fateSurvival = Math.pow(1 - fatePhase, .72);
-    } else if (fatePhase > 0 && fate.type === 'big-crunch') {
-      const contraction = Math.max(.012, 1 - Math.pow(fatePhase, 1.35) * .988);
-      companion.galaxy.position.multiplyScalar(contraction);
-      companion.galaxy.scale.setScalar(contraction);
-    } else if (fatePhase > 0 && fate.type === 'vacuum-decay') {
-      const bubbleRadius = .18 + Math.pow(fatePhase, .58) * 36;
-      const bubblePosition = fateBubble?.position || new THREE.Vector3();
-      const distance = companion.galaxy.position.distanceTo(bubblePosition);
-      fateSurvival = THREE.MathUtils.smoothstep(bubbleRadius - 1.2, bubbleRadius + .4, distance);
-    }
-
-    const gasReveal = THREE.MathUtils.smoothstep(
-      cosmicPosition,
-      companion.galaxyBirthStart - 38,
-      companion.galaxyBirthStart - 12
-    );
-    const gasIonized = THREE.MathUtils.smoothstep(
-      cosmicPosition,
-      companion.galaxyBirthStart + 22,
-      STELLAR_DAWN_END
-    );
-    const colorArray = companion.points.geometry.attributes.color.array;
-    for (let index = 0; index < companion.birthAt.length; index++) {
-      const offset = index * 3;
-      const born = THREE.MathUtils.smoothstep(
-        cosmicPosition,
-        companion.birthAt[index],
-        companion.birthAt[index] + 5.5
-      );
-      const alive = 1 - THREE.MathUtils.smoothstep(
-        cosmicPosition,
-        companion.deathAt[index],
-        companion.deathAt[index] + 22
-      );
-      const young = 1 - THREE.MathUtils.smoothstep(
-        cosmicPosition,
-        companion.birthAt[index] + 3,
-        companion.birthAt[index] + 18
-      );
-      const remnant = THREE.MathUtils.smoothstep(
-        cosmicPosition,
-        companion.deathAt[index],
-        companion.deathAt[index] + 10
-      ) * companion.remnantStrength[index] * remnantPersistence;
-      const livingLight = born * alive;
-      const gasLight = (1 - born) * gasReveal * (1 - gasIonized);
-      colorArray[offset] = companion.baseColors[offset] * livingLight * (1 + young * .28)
-        + remnant * .64
-        + gasLight * .055;
-      colorArray[offset + 1] = companion.baseColors[offset + 1] * livingLight * (1 + young * .52)
-        + remnant * .74
-        + gasLight * .14;
-      colorArray[offset + 2] = companion.baseColors[offset + 2] * livingLight * (1 + young * .95)
-        + remnant
-        + gasLight * .22;
-      if (fate.type === 'big-crunch' && fatePhase > 0) {
-        colorArray[offset] *= 1 + fatePhase * 1.4;
-        colorArray[offset + 1] *= 1 - fatePhase * .5;
-        colorArray[offset + 2] *= 1 - fatePhase * .72;
-      }
-    }
-    companion.points.geometry.attributes.color.needsUpdate = true;
-    companion.points.material.opacity = companion.points.material.userData.baseOpacity
-      * viewBoost
-      * fateSurvival;
-
-    companion.gas.material.opacity = gasReveal * (1 - gasIonized) * .38 * viewBoost * fateSurvival;
-    companion.gas.scale.setScalar(companion.radius * THREE.MathUtils.lerp(4.4, 3.2, gasIonized));
-    const assembled = THREE.MathUtils.smoothstep(
-      cosmicPosition,
-      companion.galaxyBirthStart + 20,
-      STELLAR_DAWN_END + 8
-    );
-    companion.coreEvolutionOpacity = companion.core.material.userData.baseOpacity
-      * viewBoost
-      * assembled
-      * stellarPopulation
-      * fateSurvival;
-    companion.core.material.opacity = companion.coreEvolutionOpacity;
-    if (prefersReducedMotion || !universeScaleView) {
-      updateLocalGalaxyParticlePositions(companion, performance.now(), false);
-    }
-  });
-
-  const activeRouteTraffic = [];
-  civilizationData.forEach((species, speciesIndex) => {
-    const route = localGroupRoutes[speciesIndex];
-    const ships = intergalacticMarkers[speciesIndex];
-    if (!route || !ships) return;
-    const externalIndex = simulationState?.externalGalaxyIndices?.[speciesIndex] || 0;
-    const externalPopulation = simulationState?.externalPopulations?.[speciesIndex] || 0;
-    const fleetState = simulationState?.fleetStates?.[speciesIndex] || 0;
-    const fleetTarget = simulationState?.fleetTargetGalaxyIndices?.[speciesIndex] || 0;
-    const routeIndex = externalIndex || fleetTarget;
-    const companion = routeIndex
-      ? localGalaxyGroup.companions[(routeIndex - 1) % localGalaxyGroup.companions.length]
-      : null;
-    const routeActive = intergalacticRouteOperational({
-      hasDestination: Boolean(companion),
-      civilizationActive: Boolean(simulationState?.active?.[speciesIndex]),
-      fleetState,
-      externalPopulation,
-      routesFormed,
-      fatePhase
-    });
-    route.visible = false;
-    if (!routeActive) {
-      ships.forEach((ship) => {
-        if (ship.userData.trafficActive) {
-          const disappearanceMode = fleetState === fleetStates.lost
-            ? 'explosion'
-            : ship.userData.defaultDisappearance;
-          const targetProgress = fleetState === fleetStates.returned ? 0 : null;
-          beginShipDisappearance(ship, disappearanceMode, targetProgress);
-        }
-        ship.userData.trafficActive = false;
-        if (!ship.userData.disappearance) ship.visible = false;
-      });
-      return;
-    }
-    ships.forEach((ship) => {
-      if (!ship.userData.disappearance) ship.visible = false;
-    });
-    const recordedProgress = simulationState.fleetProgress?.[speciesIndex] || 0;
-    const targetGalaxy = localGroupGalaxies.find((item) => (
-      item.galaxy.userData.companionIndex === companion.index
-      || item.points.userData.companionIndex === companion.index
-    ));
-    const initialFlight = externalPopulation <= .01;
-    activeRouteTraffic.push({
-      key: speciesIndex,
-      ship: ships[0],
-      targetGalaxy,
-      targetRadius: companion.radius,
-      fleetProgress: recordedProgress,
-      fleetDepartureAt: simulationState.fleetDepartureAt?.[speciesIndex] || 0,
-      fleetArrivalAt: simulationState.fleetArrivalAt?.[speciesIndex] || 0,
-      initialFlight,
-      isLost: fleetState === -1 && externalPopulation <= .01,
-      trafficSpeed: routeTrafficSpeedForIdentity(speciesIndex, 997)
-    });
-  });
-  intergalacticRouteAssignments = stableRouteAssignments(
-    activeRouteTraffic.map((traffic) => traffic.key),
-    intergalacticRouteAssignments,
-    routesPerVisibleShip
-  );
-  const routeTrafficByKey = new Map(activeRouteTraffic.map((traffic) => [
-    traffic.key,
-    traffic
-  ]));
-  intergalacticRouteAssignments.forEach((routeKey) => {
-    const traffic = routeTrafficByKey.get(routeKey);
-    if (!traffic) return;
-    const { ship } = traffic;
-    ship.userData.targetGalaxy = traffic.targetGalaxy;
-    ship.userData.targetRadius = traffic.targetRadius;
-    ship.userData.fleetProgress = traffic.fleetProgress;
-    ship.userData.fleetDepartureAt = traffic.fleetDepartureAt;
-    ship.userData.fleetArrivalAt = traffic.fleetArrivalAt;
-    ship.userData.isInitialFlight = traffic.initialFlight;
-    ship.userData.isLost = traffic.isLost;
-    ship.userData.trafficSpeed = traffic.trafficSpeed;
-    if (!ship.userData.trafficActive || ship.userData.disappearanceComplete) {
-      resetShipDisappearance(ship);
-    }
-    ship.userData.trafficActive = true;
-    ship.visible = shipHighlightEnabled && universeScaleView;
-    updateIntergalacticShipNavigationPath(ship);
-    updateIntergalacticShipAppearance(ship);
-  });
+  keyboardStarMarker.position.fromArray(positions, session.view.keyboardStarIndex * 3);
+  keyboardStarMarker.visible = session.mode === 'explorer' && !session.view.universeScale && session.timeline.position >= 250;
 }
 
 function updateIntergalacticShipNavigationPath(ship) {
@@ -4654,14 +2458,14 @@ function updateIntergalacticShipNavigationPath(ship) {
 function updateIntergalacticShipPosition(ship) {
   if (!ship.visible || !ship.userData.routeCurve) return;
   let progress = fleetProgress(
-    cosmicPosition,
+    session.timeline.position,
     ship.userData.fleetDepartureAt,
     ship.userData.fleetArrivalAt
   );
   let direction = 1;
   if (!ship.userData.isInitialFlight) {
     const traffic = shuttleTrafficAt(
-      cosmicPosition,
+      session.timeline.position,
       ship.userData.trafficPhase,
       ship.userData.trafficSpeed
     );
@@ -4691,17 +2495,17 @@ function updateLogisticsShipNavigationPath(ship) {
 }
 
 function updateVisibleShipsForFrame(now) {
-  if (shipHighlightEnabled && !universeScaleView) {
-    syncCivilizationHosts({
+  if (session.view.shipHighlight && !session.view.universeScale) {
+    explorer.syncCivilizationHosts({
       clickableStars,
       stellarRemnants,
       remnantDynamics,
-      cosmicPosition,
+      cosmicPosition: session.timeline.position,
       civilizationData,
       civilizationGroups
     });
   }
-  intergalacticMarkers.forEach((ships) => ships.forEach((ship) => {
+  localGroupState.shipMarkers.forEach((ships) => ships.forEach((ship) => {
     if (updateShipDisappearance(ship, now)) return;
     if (!ship.visible) return;
     updateIntergalacticShipPosition(ship);
@@ -4718,7 +2522,7 @@ function updateVisibleShipsForFrame(now) {
 function updateRouteTrafficShipPosition(ship) {
   if (!ship.visible || !ship.userData.routeCurve) return;
   const traffic = shuttleTrafficAt(
-    cosmicPosition,
+    session.timeline.position,
     ship.userData.trafficPhase,
     ship.userData.trafficSpeed
   );
@@ -4726,10 +2530,10 @@ function updateRouteTrafficShipPosition(ship) {
 }
 
 function updateIntergalacticShipAppearance(ship) {
-  const targetMix = shipHighlightEnabled ? 1 : 0;
+  const targetMix = session.view.shipHighlight ? 1 : 0;
   const highlightMix = targetMix;
   const lost = ship.userData.isLost;
-  const elapsed = cosmicPosition * .1;
+  const elapsed = session.timeline.position * .1;
   const enginePulse = prefersReducedMotion
     ? 1
     : .82 + Math.sin(elapsed * 4.2 + ship.userData.pulsePhase) * .18;
@@ -4759,102 +2563,54 @@ function updateIntergalacticShipAppearance(ship) {
   ship.userData.highlightMaterial.rotation = prefersReducedMotion ? 0 : elapsed * .22;
 }
 
-function updateLocalGalaxyParticlePositions(companion, now, motionEnabled) {
-  const elapsed = now * .001;
-  const positions = companion.points.geometry.attributes.position.array;
-  for (let index = 0; index < companion.radii.length; index++) {
-    const offset = index * 3;
-    const normalizedRadius = companion.radii[index] / companion.radius;
-    const angularSpeed = companion.rotationSpeed * (
-      .48 + 1.05 / (.32 + Math.max(.14, normalizedRadius))
-    );
-    const phase = companion.phases[index];
-    const assembly = THREE.MathUtils.smoothstep(
-      cosmicPosition,
-      companion.birthAt[index] - 7,
-      Math.min(STELLAR_DAWN_END, companion.birthAt[index] + 38)
-    );
-    const settledRadius = companion.radii[index] * (
-      1 + (motionEnabled ? Math.sin(elapsed * .24 + phase) * companion.radialWobble : 0)
-    );
-    const radius = THREE.MathUtils.lerp(companion.formationRadii[index], settledRadius, assembly);
-    const settledAngle = companion.angles[index]
-      + (motionEnabled ? elapsed * angularSpeed : 0);
-    const angle = THREE.MathUtils.lerp(companion.formationAngles[index], settledAngle, assembly);
-    positions[offset] = Math.cos(angle) * radius;
-    positions[offset + 1] = THREE.MathUtils.lerp(
-      companion.formationVerticals[index],
-      companion.verticals[index],
-      assembly
-    ) + (motionEnabled ? Math.sin(elapsed * .34 + phase) * companion.radius * .012 : 0);
-    positions[offset + 2] = Math.sin(angle) * radius * companion.flattening;
-  }
-  companion.points.geometry.attributes.position.needsUpdate = true;
-}
-
-function animateLocalGroupGalaxies(now) {
-  if (!universeScaleView || isUniverseScaleTransition() || !localGroupGroup.visible) return;
-  const elapsed = now * .001;
-  if (!prefersReducedMotion) {
-    localGroupGalaxies.forEach((companion) => {
-      updateLocalGalaxyParticlePositions(companion, now, true);
-      const pulse = 1 + Math.sin(elapsed * .72 + companion.pulsePhase) * .035;
-      companion.core.scale.setScalar(companion.radius * 1.68 * pulse);
-      companion.core.material.opacity = (companion.coreEvolutionOpacity || 0)
-        * (.92 + Math.sin(elapsed * .72 + companion.pulsePhase) * .08);
-      companion.gas.material.rotation = elapsed * companion.rotationSpeed * .08;
-    });
-  }
-}
-
 function updateCosmicTime(value, force = false) {
-  currentEras ||= erasForUniverse(universe);
-  const timelineState = createCosmicTimelineState(value, universe, currentEras);
-  cosmicPosition = timelineState.position;
-  renderTimelineHeader(timelineState, timelineViewport);
+  session.timeline.eras ||= explorer.erasForUniverse(universe);
+  const timelineState = explorer.createCosmicTimelineState(value, universe, session.timeline.eras);
+  session.timeline.position = timelineState.position;
+  explorer.renderTimelineHeader(timelineState, session.timeline.viewport);
 
-  if (!clickableStars || galaxyHydratedForSeed !== universe.seed) return;
+  if (!clickableStars || session.hydration.hydratedSeed !== universe.seed) return;
 
-  updateEpochVisuals(cosmicPosition, timelineVisualContext());
-  const simulationState = civilizationSnapshotAt(civilizationSimulation, cosmicPosition);
-  const civilizationSnapshotChanged = force || simulationState !== lastCivilizationSnapshot;
+  explorer.updateEpochVisuals(session.timeline.position, timelineVisualContext());
+  const simulationState = explorer.civilizationSnapshotAt(civilizationSimulation, session.timeline.position);
+  const civilizationSnapshotChanged = force || simulationState !== session.timeline.lastCivilizationSnapshot;
   if (civilizationSnapshotChanged) {
-    lastCivilizationSnapshot = simulationState;
-    applyCivilizationSnapshot(simulationState, {
+    session.timeline.lastCivilizationSnapshot = simulationState;
+    explorer.applyCivilizationSnapshot(simulationState, {
       civilizationSimulation,
       civilizationData,
       civilizationGroups
     });
-    civilizationRuntimeState = deriveCivilizationRuntime(
-      cosmicPosition,
+    civilizationRuntimeState = explorer.deriveCivilizationRuntime(
+      session.timeline.position,
       simulationState,
       civilizationData,
       cosmicEvents
     );
-    renderCivilizationRows({
-      position: cosmicPosition,
+    explorer.renderCivilizationRows({
+      position: session.timeline.position,
       simulationState,
       runtimeState: civilizationRuntimeState,
       civilizationData
     });
     const civilizationPanelCollapsed = !$('#civilization-panel').classList.contains('is-expanded');
-    if (!civilizationPanelCollapsed) organizeCivilizationLegend(simulationState, civilizationData);
-    activeSpeciesCount = civilizationRuntimeState.filter((state) => state.alive).length;
-    ascendedSpeciesCount = civilizationRuntimeState.filter((state) => state.ascended).length;
-    activeCivilizationRelationship = findDominantRelationship(
+    if (!civilizationPanelCollapsed) explorer.organizeCivilizationLegend(simulationState, civilizationData);
+    session.civilization.activeSpeciesCount = civilizationRuntimeState.filter((state) => state.alive).length;
+    session.civilization.ascendedSpeciesCount = civilizationRuntimeState.filter((state) => state.ascended).length;
+    session.civilization.activeRelationship = explorer.findDominantRelationship(
       simulationState,
       civilizationRuntimeState,
       civilizationData.length
     );
-    if (selectedChronicleIndex !== null) openCivilizationChronicle(selectedChronicleIndex);
-    if (observerSpeciesIndex !== null) updateObserverMarkers();
+    if (session.civilization.selectedChronicleIndex !== null) openCivilizationChronicle(session.civilization.selectedChronicleIndex);
+    if (session.civilization.observerSpeciesIndex !== null) updateObserverMarkers();
   }
-  updateCosmicWebVisuals(cosmicPosition);
-  syncCivilizationHosts({
+  updateCosmicWebVisuals(session.timeline.position);
+  explorer.syncCivilizationHosts({
     clickableStars,
     stellarRemnants,
     remnantDynamics,
-    cosmicPosition,
+    cosmicPosition: session.timeline.position,
     civilizationData,
     civilizationGroups
   });
@@ -4863,20 +2619,20 @@ function updateCosmicTime(value, force = false) {
   updateLogisticsVisuals(simulationState);
   updateKeyboardStarMarker();
   updateLocalGroupVisuals(simulationState);
-  const activeEvent = updateCosmicEvents(cosmicPosition, timelineVisualContext());
+  const activeEvent = explorer.updateCosmicEvents(session.timeline.position, timelineVisualContext());
   const observedEvent = activeEvent && observerCanSeeEvent(activeEvent) ? activeEvent : null;
   if (activeEvent && !observedEvent) activeEvent.group.visible = false;
-  const narrative = selectTimelineNarrative({
-    position: cosmicPosition,
+  const narrative = explorer.selectTimelineNarrative({
+    position: session.timeline.position,
     label: timelineState.label,
     universe,
     activeEvent: observedEvent,
-    activeRelationship: activeCivilizationRelationship,
-    ascendedSpecies: ascendedSpeciesCount,
-    activeSpecies: activeSpeciesCount,
+    activeRelationship: session.civilization.activeRelationship,
+    ascendedSpecies: session.civilization.ascendedSpeciesCount,
+    activeSpecies: session.civilization.activeSpeciesCount,
     civilizationData
   });
-  if (observerSpeciesIndex !== null && observedEvent && observedEvent.targetSpeciesIndex !== observerSpeciesIndex) {
+  if (session.civilization.observerSpeciesIndex !== null && observedEvent && observedEvent.targetSpeciesIndex !== session.civilization.observerSpeciesIndex) {
     const confidence = Math.round(THREE.MathUtils.clamp(
       1 - observerDelayForEvent(observedEvent) / 5e5,
       .22,
@@ -4884,56 +2640,53 @@ function updateCosmicTime(value, force = false) {
     ) * 100);
     narrative.text = `延迟观测 · 置信度 ${confidence}% · ${narrative.text}`;
   }
-  renderTimelineEvent(narrative, force);
+  explorer.renderTimelineEvent(narrative, force);
 }
 
 function selectKeyboardStar(direction) {
-  if (mode !== 'explorer' || universeScaleView || !clickableStars || cosmicPosition < 250) return;
+  if (session.mode !== 'explorer' || session.view.universeScale || !clickableStars || session.timeline.position < 250) return;
   const count = starDeathThresholds.length;
-  let candidate = keyboardStarIndex < 0
+  let candidate = session.view.keyboardStarIndex < 0
     ? (direction < 0 ? count : -1)
-    : keyboardStarIndex;
+    : session.view.keyboardStarIndex;
   for (let attempt = 0; attempt < count; attempt++) {
     candidate = (candidate + direction + count) % count;
-    if (cosmicPosition >= stellarPopulation.birthAt[candidate]
-      && cosmicPosition < starDeathThresholds[candidate]) break;
+    if (session.timeline.position >= stellarPopulation.birthAt[candidate]
+      && session.timeline.position < starDeathThresholds[candidate]) break;
   }
-  keyboardStarIndex = candidate;
+  session.view.keyboardStarIndex = candidate;
   updateKeyboardStarMarker();
   $('#star-navigation-status').textContent = `恒星 RU-${String(candidate).padStart(5, '0')} 已获得键盘焦点，按回车查看详情。`;
 }
 
 function animate(now) {
-  animationFrameId = null;
-  if (pageDisposed || document.hidden) return;
-  animationFrameId = requestAnimationFrame(animate);
   const delta = Math.min(0.05, (now - lastFrame) / 1000);
   lastFrame = now;
   updateTransition(now);
   smoothedPointer.lerp(pointer, 0.04);
 
-  if (mode === 'generator' && universeGroup.visible && !prefersReducedMotion) {
+  if (session.mode === 'generator' && universeGroup.visible && !prefersReducedMotion) {
     universeGroup.rotation.y += 0.00045;
     universeGroup.rotation.x = 0.15 + smoothedPointer.y * 0.045;
     universeGroup.position.x = smoothedPointer.x * 0.42;
     universeGroup.position.y = smoothedPointer.y * 0.25;
   }
-  if (mode === 'explorer') {
-    const timelineAdvancing = timePlaying && !transition;
+  if (session.mode === 'explorer') {
+    const timelineAdvancing = session.timeline.playing && !session.transition;
     if (timelineAdvancing) {
       pulsarAnimationTimeMs += delta * 1000;
       advanceCosmicTime(delta);
       let reachedTimelineEnd = false;
-      if (cosmicPosition >= 1000) {
-        cosmicPosition = 1000;
-        timePlaying = false;
+      if (session.timeline.position >= 1000) {
+        session.timeline.position = 1000;
+        session.timeline.playing = false;
         reachedTimelineEnd = true;
         $('#toggle-time').textContent = '▶';
         $('#toggle-time').setAttribute('aria-label', '播放时间');
       }
       if (reachedTimelineEnd || now - lastTimelineUpdateAt >= timelineUpdateIntervalMs) {
         lastTimelineUpdateAt = now;
-        updateCosmicTime(cosmicPosition);
+        updateCosmicTime(session.timeline.position);
       }
     }
     updateVisibleShipsForFrame(now);
@@ -4951,11 +2704,11 @@ function animate(now) {
     if (!prefersReducedMotion) {
       blackHoleRemnants.forEach((hole, index) => {
         if (!hole.visible) return;
-        animateBlackHoleVisual(hole, now, hole.userData.spinDirection || (index % 2 ? -1 : 1));
+        explorer.animateBlackHoleVisual(hole, now, hole.userData.spinDirection || (index % 2 ? -1 : 1));
         hole.userData.hawkingGlow.material.rotation = now * (.000025 + index * .000001);
       });
     }
-    animateCosmicEvents(now, {
+    explorer.animateCosmicEvents(now, {
       cosmicEventGroup,
       prefersReducedMotion,
       cosmicEvents,
@@ -4965,20 +2718,20 @@ function animate(now) {
     });
     if (!controls.enabled && !isUniverseScaleTransition()) galaxyGroup.rotation.y += 0.0003;
     animateLocalGroupGalaxies(now);
-    if (universeScaleView
+    if (session.view.universeScale
       && cosmicWebGroup.visible
       && !isUniverseScaleTransition()
       && !prefersReducedMotion) {
       updateCosmicWebMotion(now);
     }
-    if (universeScaleView
+    if (session.view.universeScale
       && cosmicWebGroup.visible
       && !isUniverseScaleTransition()
       && !prefersReducedMotion) {
       cosmicWebGroup.rotation.y += .000055;
       const locatorPulse = 3.2 + Math.sin(now * .0016) * .28;
-      cosmicWebVisual?.locator.scale.setScalar(locatorPulse);
-      cosmicCivilizationVisual?.travelPulses.forEach((pulse, index) => {
+      cosmicWebState.visual?.locator.scale.setScalar(locatorPulse);
+      cosmicWebState.civilizationVisual?.travelPulses.forEach((pulse, index) => {
         if (!pulse.visible) return;
         const breath = 1 + Math.sin(now * .004 + index * .7) * .07;
         pulse.scale.setScalar((pulse.userData.baseScale || 1) * breath);
@@ -5001,22 +2754,23 @@ function animate(now) {
   renderer.render(scene, camera);
 }
 
+const frameLoop = createFrameLoop(animate);
+
 function startAnimation() {
-  if (pageDisposed || document.hidden || animationFrameId !== null) return;
+  if (pageDisposed) return;
   lastFrame = performance.now();
-  animationFrameId = requestAnimationFrame(animate);
+  frameLoop.start();
 }
 
 function stopAnimation() {
-  if (animationFrameId === null) return;
-  cancelAnimationFrame(animationFrameId);
-  animationFrameId = null;
+  frameLoop.stop();
 }
 
 function disposePageResources() {
   if (pageDisposed) return;
   pageDisposed = true;
-  stopAnimation();
+  frameLoop.dispose();
+  timelineController.dispose();
   if (timelineMarkerResizeFrame !== null) {
     cancelAnimationFrame(timelineMarkerResizeFrame);
     timelineMarkerResizeFrame = null;
@@ -5063,7 +2817,7 @@ window.addEventListener('pointermove', (event) => {
 });
 
 document.addEventListener('pointerdown', () => {
-  if (!immersiveMode) return;
+  if (!session.view.immersive) return;
   suppressImmersiveCanvasClick = showImmersiveUi();
 }, { capture: true });
 
@@ -5083,7 +2837,7 @@ window.addEventListener('resize', () => {
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   cancelAnimationFrame(timelineMarkerResizeFrame);
   timelineMarkerResizeFrame = requestAnimationFrame(() => {
-    if (mode === 'explorer' && cosmicEvents.length > 0) refreshTimelineViewport();
+    if (session.mode === 'explorer' && cosmicEvents.length > 0) refreshTimelineViewport();
   });
 });
 
@@ -5096,14 +2850,14 @@ canvas.addEventListener('click', (event) => {
 });
 canvas.addEventListener('keydown', (event) => {
   if (!['ArrowLeft', 'ArrowRight', 'Home', 'End', 'Enter', ' '].includes(event.key)) return;
-  if (mode !== 'explorer') return;
+  if (session.mode !== 'explorer') return;
   event.preventDefault();
   event.stopPropagation();
   if (event.key === 'ArrowLeft') selectKeyboardStar(-1);
   if (event.key === 'ArrowRight') selectKeyboardStar(1);
-  if (event.key === 'Home') { keyboardStarIndex = -1; selectKeyboardStar(1); }
-  if (event.key === 'End') { keyboardStarIndex = 0; selectKeyboardStar(-1); }
-  if ((event.key === 'Enter' || event.key === ' ') && keyboardStarIndex >= 0) showStarInspector(keyboardStarIndex);
+  if (event.key === 'Home') { session.view.keyboardStarIndex = -1; selectKeyboardStar(1); }
+  if (event.key === 'End') { session.view.keyboardStarIndex = 0; selectKeyboardStar(-1); }
+  if ((event.key === 'Enter' || event.key === ' ') && session.view.keyboardStarIndex >= 0) showStarInspector(session.view.keyboardStarIndex);
 });
 $('#regenerate-top').addEventListener('click', regenerate);
 $('#enter-universe').addEventListener('click', enterUniverse);
@@ -5111,7 +2865,7 @@ $('#compare-universes').addEventListener('click', () => toggleMultiverseLab());
 $('#close-multiverse').addEventListener('click', () => toggleMultiverseLab(false));
 $('#multiverse-list').addEventListener('click', (event) => {
   const candidate = event.target.closest('[data-seed]');
-  if (!candidate || mode !== 'generator') return;
+  if (!candidate || session.mode !== 'generator') return;
   toggleMultiverseLab(false);
   installUniverse(createUniverse(candidate.dataset.seed));
 });
@@ -5119,16 +2873,16 @@ $('#close-inspector').addEventListener('click', () => $('#star-inspector').class
 $('#close-chronicle').addEventListener('click', closeCivilizationChronicle);
 $('#toggle-universe-scale').addEventListener('click', toggleUniverseScaleView);
 $('#toggle-fullscreen').addEventListener('click', toggleFullscreen);
-$('#toggle-immersive').addEventListener('click', () => setImmersiveMode(!immersiveMode));
+$('#toggle-immersive').addEventListener('click', () => setImmersiveMode(!session.view.immersive));
 document.addEventListener('fullscreenchange', syncFullscreenState);
 document.addEventListener('webkitfullscreenchange', syncFullscreenState);
 $('#toggle-ship-highlight').addEventListener('click', (event) => {
-  shipHighlightEnabled = !shipHighlightEnabled;
-  event.currentTarget.classList.toggle('is-active', shipHighlightEnabled);
-  event.currentTarget.setAttribute('aria-pressed', String(shipHighlightEnabled));
-  updateLogisticsVisuals(lastCivilizationSnapshot);
-  updateLocalGroupVisuals(lastCivilizationSnapshot);
-  if (!shipHighlightEnabled) return;
+  session.view.shipHighlight = !session.view.shipHighlight;
+  event.currentTarget.classList.toggle('is-active', session.view.shipHighlight);
+  event.currentTarget.setAttribute('aria-pressed', String(session.view.shipHighlight));
+  updateLogisticsVisuals(session.timeline.lastCivilizationSnapshot);
+  updateLocalGroupVisuals(session.timeline.lastCivilizationSnapshot);
+  if (!session.view.shipHighlight) return;
   forEachShipMarker((ship) => {
     if (ship.visible) updateIntergalacticShipAppearance(ship);
   });
@@ -5172,14 +2926,14 @@ $('#bookmark-cosmic-time').addEventListener('click', () => {
   } catch {
     bookmarks = [];
   }
-  bookmarks.unshift({ seed: universe.seed, position: Number(cosmicPosition.toFixed(3)), savedAt: new Date().toISOString() });
+  bookmarks.unshift({ seed: universe.seed, position: Number(session.timeline.position.toFixed(3)), savedAt: new Date().toISOString() });
   localStorage.setItem(key, JSON.stringify(bookmarks.slice(0, 20)));
   $('#chronicle-status').textContent = '当前宇宙时刻已保存在本机';
 });
 $('#copy-universe-link').addEventListener('click', async () => {
   const url = new URL(window.location.href);
   url.searchParams.set('seed', universe.seed);
-  url.searchParams.set('t', cosmicPosition.toFixed(3));
+  url.searchParams.set('t', session.timeline.position.toFixed(3));
   try {
     await navigator.clipboard.writeText(url.toString());
     $('#chronicle-status').textContent = '可回放链接已复制';
@@ -5193,8 +2947,8 @@ $('#export-universe-history').addEventListener('click', () => {
     civilizationData,
     cosmicEvents,
     runtimeState: civilizationRuntimeState,
-    localGroup: localGalaxyGroup,
-    cosmicCivilizations: cosmicCivilizationPlan
+    localGroup: localGroupState.model,
+    cosmicCivilizations: cosmicWebState.civilizationPlan
   });
   const blobUrl = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }));
   const link = document.createElement('a');
@@ -5208,281 +2962,47 @@ $('#toggle-civilizations').addEventListener('click', toggleCivilizations);
 $('#toggle-galaxy-menu').addEventListener('click', () => {
   setGalaxyMenuOpen($('#galaxy-submenu').hidden);
 });
-$('#close-timeline-event-detail').addEventListener('click', closeTimelineEventDetail);
-$('#toggle-time').addEventListener('click', () => {
-  const willPlay = !timePlaying;
-  if (willPlay && timelineViewportIsZoomed()) {
-    timelineViewport = { start: 0, end: 1000 };
-    refreshTimelineViewport();
-  }
-  if (cosmicPosition >= 1000) updateCosmicTime(0, true);
-  timePlaying = !timePlaying;
-  if (timePlaying) lastTimelineUpdateAt = 0;
-  $('#toggle-time').textContent = timePlaying ? 'Ⅱ' : '▶';
-  $('#toggle-time').setAttribute('aria-label', timePlaying ? '暂停时间' : '播放时间');
+const timelineController = createTimelineController({
+  compactLayout: compactCivilizationLayout,
+  dom,
+  getDependencies: () => explorer,
+  getEvents: () => cosmicEvents,
+  getUniverse: () => universe,
+  onCloseDetail: closeTimelineEventDetail,
+  onFilterChange: renderCosmicEventMarkers,
+  onPlayStart: () => { lastTimelineUpdateAt = 0; },
+  onPositionChange: updateCosmicTime,
+  onViewportChange: refreshTimelineViewport,
+  session,
+  updateFilterToggle: updateTimelineFilterToggle
 });
-const timelineInput = $('#cosmic-timeline');
-const timelineWrap = timelineInput.closest('.range-wrap');
-const timelineFilterToggle = $('#timeline-filter-toggle');
-const timelineFilterMenu = $('#timeline-filter-menu');
-let timelinePointerId = null;
-let timelineSnapTarget = null;
 
-function setTimelineFilterMenuOpen(open) {
-  timelineFilterMenu.hidden = !open;
-  timelineFilterToggle.setAttribute('aria-expanded', String(open));
-  if (open) {
-    closeTimelineEventDetail();
-    timelineFilterMenu.querySelector('[aria-checked="true"]')?.focus({ preventScroll: true });
-  }
-}
-
-timelineFilterToggle.addEventListener('click', () => {
-  setTimelineFilterMenuOpen(timelineFilterMenu.hidden);
-});
 document.addEventListener('pointerdown', (event) => {
   if (!$('#galaxy-submenu').hidden && !event.target.closest('.galaxy-menu')) {
     setGalaxyMenuOpen(false);
   }
-  if (!timelineFilterMenu.hidden && !event.target.closest('.timeline-filter')) {
-    setTimelineFilterMenuOpen(false);
-  }
 });
-timelineFilterMenu.querySelectorAll('[data-event-filter]').forEach((button) => {
-  button.addEventListener('click', () => {
-    timelineEventFilter = button.dataset.eventFilter;
-    timelineFilterMenu.querySelectorAll('[data-event-filter]').forEach((item) => {
-      item.setAttribute('aria-checked', String(item === button));
-    });
-    updateTimelineFilterToggle(timelineEventFilter);
-    setTimelineFilterMenuOpen(false);
-    renderCosmicEventMarkers();
-    timelineFilterToggle.focus({ preventScroll: true });
-  });
-});
-$('#toggle-timeline-snap').addEventListener('click', (event) => {
-  timelineSnapEnabled = !timelineSnapEnabled;
-  event.currentTarget.classList.toggle('is-active', timelineSnapEnabled);
-  event.currentTarget.setAttribute('aria-pressed', String(timelineSnapEnabled));
-});
-$('#timeline-zoom-reset').addEventListener('click', () => {
-  timelineViewport = { start: 0, end: 1000 };
-  refreshTimelineViewport();
-});
-
-function resetTimelineSnapTarget() {
-  timelineSnapTarget = null;
-  document.querySelectorAll('.event-marker.is-snap-target').forEach((marker) => {
-    marker.classList.remove('is-snap-target');
-  });
-}
-
-function updateTimelineSnapTarget(position, trackWidth) {
-  resetTimelineSnapTarget();
-  if (!timelineSnapEnabled || !nearestTimelineEvent) return null;
-  const tolerance = (timelineViewport.end - timelineViewport.start)
-    / Math.max(1, trackWidth)
-    * (compactCivilizationLayout.matches ? 18 : 12);
-  timelineSnapTarget = nearestTimelineEvent(filteredTimelineEvents(), position, tolerance);
-  if (!timelineSnapTarget) return null;
-  const eventIndex = cosmicEvents.indexOf(timelineSnapTarget.event);
-  document.querySelectorAll('.event-marker').forEach((marker) => {
-    const indices = marker.dataset.eventIndices
-      ? marker.dataset.eventIndices.split(',').map(Number)
-      : [Number(marker.dataset.eventIndex)];
-    if (indices.includes(eventIndex)) marker.classList.add('is-snap-target');
-  });
-  return timelineSnapTarget;
-}
-
-function beginTimelineFocus() {
-  timelineWrap.classList.add('is-scrubbing');
-  focusTimelineScale(Number(timelineInput.value), timelineViewport);
-}
-
-function endTimelineFocus() {
-  if (!timelineWrap.classList.contains('is-scrubbing')) return;
-  timelineWrap.classList.remove('is-scrubbing');
-  resetTimelineScaleFocus();
-}
-
-function pauseTimelineForScrubbing() {
-  timePlaying = false;
-  $('#toggle-time').textContent = '▶';
-  $('#toggle-time').setAttribute('aria-label', '播放时间');
-}
-
-function updateTimelineFromPointer(event) {
-  const bounds = timelineWrap.getBoundingClientRect();
-  if (bounds.width <= 0) return;
-  const progress = THREE.MathUtils.clamp((event.clientX - bounds.left) / bounds.width, 0, 1);
-  const position = Math.round(timelinePositionAtPercent(progress * 100, timelineViewport) * 10) / 10;
-  updateCosmicTime(position, true);
-  focusTimelineScale(position, timelineViewport);
-  const snapTarget = updateTimelineSnapTarget(position, bounds.width);
-  if (snapTarget) {
-    $('#timeline-scrub-value').textContent = `吸附 · ${cosmicTimeLabel(snapTarget.position, universe)}`;
-  }
-  return snapTarget;
-}
-
-function beginTimelineScrub(event) {
-  if (event.button !== 0 || event.target.closest('.event-marker, [data-timeline-control]')) return;
-  event.preventDefault();
-  closeTimelineEventDetail();
-  timelinePointerId = event.pointerId;
-  timelineWrap.setPointerCapture(event.pointerId);
-  timelineInput.focus({ preventScroll: true });
-  timelineWrap.classList.remove('is-keyboard-focus');
-  pauseTimelineForScrubbing();
-  beginTimelineFocus();
-  updateTimelineFromPointer(event);
-}
-
-function moveTimelineScrub(event) {
-  if (event.pointerId !== timelinePointerId) return;
-  updateTimelineFromPointer(event);
-}
-
-function endTimelineScrub(event, allowSnap = true) {
-  if (event.pointerId !== timelinePointerId) return;
-  const snapTarget = allowSnap ? updateTimelineFromPointer(event) : null;
-  if (snapTarget) updateCosmicTime(snapTarget.position, true);
-  timelinePointerId = null;
-  if (timelineWrap.hasPointerCapture(event.pointerId)) {
-    timelineWrap.releasePointerCapture(event.pointerId);
-  }
-  resetTimelineSnapTarget();
-  endTimelineFocus();
-}
-
-timelineWrap.addEventListener('pointerdown', beginTimelineScrub);
-timelineWrap.addEventListener('pointermove', moveTimelineScrub);
-timelineWrap.addEventListener('pointerup', endTimelineScrub);
-timelineWrap.addEventListener('pointercancel', (event) => endTimelineScrub(event, false));
-timelineWrap.addEventListener('lostpointercapture', (event) => {
-  if (event.pointerId !== timelinePointerId) return;
-  timelinePointerId = null;
-  resetTimelineSnapTarget();
-  endTimelineFocus();
-});
-timelineWrap.addEventListener('wheel', (event) => {
-  if (event.target.closest('[data-timeline-control]')) return;
-  event.preventDefault();
-  closeTimelineEventDetail();
-  const bounds = timelineWrap.getBoundingClientRect();
-  const percent = THREE.MathUtils.clamp((event.clientX - bounds.left) / bounds.width, 0, 1) * 100;
-  const anchor = timelinePositionAtPercent(percent, timelineViewport);
-  const scale = Math.exp(THREE.MathUtils.clamp(event.deltaY, -240, 240) * .0024);
-  timelineViewport = zoomTimelineViewport(
-    timelineViewport,
-    anchor,
-    scale,
-    compactCivilizationLayout.matches ? 80 : 55
-  );
-  refreshTimelineViewport();
-}, { passive: false });
-timelineWrap.addEventListener('dblclick', (event) => {
-  if (event.target.closest('[data-timeline-control], .event-marker')) return;
-  timelineViewport = { start: 0, end: 1000 };
-  refreshTimelineViewport();
-});
-timelineInput.addEventListener('focus', () => {
-  if (timelinePointerId === null) timelineWrap.classList.add('is-keyboard-focus');
-});
-timelineInput.addEventListener('keydown', (event) => {
-  if (['ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown'].includes(event.key)) {
-    beginTimelineFocus();
-  }
-});
-timelineInput.addEventListener('keyup', endTimelineFocus);
-timelineInput.addEventListener('blur', () => {
-  timelineWrap.classList.remove('is-keyboard-focus');
-  endTimelineFocus();
-});
-timelineInput.addEventListener('input', (event) => {
-  pauseTimelineForScrubbing();
-  updateCosmicTime(event.target.value, true);
-  if (timelineWrap.classList.contains('is-scrubbing')) {
-    focusTimelineScale(Number(event.target.value), timelineViewport);
-  }
-});
-const speedControl = $('#speed-control');
-const speedToggle = $('#speed-toggle');
-const speedInput = $('#time-speed');
-
-function updateSpeedToggleLabel() {
-  const action = speedControl.classList.contains('is-collapsed') ? '展开' : '收起';
-  const currentSpeed = $('#time-speed-value').textContent.slice(0, -1);
-  speedToggle.setAttribute('aria-label', `${action}时间倍率调节，当前 ${currentSpeed} 倍`);
-}
-
-function setSpeedControlOpen(open, restoreFocus = false) {
-  speedControl.classList.toggle('is-collapsed', !open);
-  speedToggle.setAttribute('aria-expanded', String(open));
-  $('#speed-slider-panel').setAttribute('aria-hidden', String(!open));
-  updateSpeedToggleLabel();
-  if (open) speedInput.focus({ preventScroll: true });
-  if (!open && restoreFocus) speedToggle.focus({ preventScroll: true });
-}
-
-function updateTimeSpeed(exponent, snap = true) {
-  const nextExponent = THREE.MathUtils.clamp(
-    snap ? snapSpeedExponent(exponent) : Number(exponent),
-    speedExponentMin,
-    speedExponentMax
-  );
-  timeSpeed = speedFromExponent(nextExponent);
-  const label = formatTimeSpeed(timeSpeed);
-  speedInput.value = String(nextExponent);
-  speedInput.style.setProperty('--speed-progress', `${(nextExponent - speedExponentMin) / (speedExponentMax - speedExponentMin) * 100}%`);
-  speedInput.setAttribute('aria-valuetext', `${label.slice(0, -1)} 倍`);
-  $('#time-speed-value').textContent = label;
-  updateSpeedToggleLabel();
-  speedControl.querySelectorAll('[data-speed-label-exponent]').forEach((marker) => {
-    marker.classList.toggle('is-active', Number(marker.dataset.speedLabelExponent) === nextExponent);
-  });
-}
-
-speedToggle.addEventListener('click', () => {
-  const open = speedControl.classList.contains('is-collapsed');
-  setSpeedControlOpen(open, !open);
-});
-speedInput.addEventListener('input', (event) => updateTimeSpeed(event.target.value));
-speedInput.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape') {
-    event.stopPropagation();
-    setSpeedControlOpen(false, true);
-  }
-});
-speedControl.querySelectorAll('[data-speed-exponent]').forEach((marker) => {
-  marker.addEventListener('click', () => {
-    updateTimeSpeed(marker.dataset.speedExponent, false);
-    speedInput.focus({ preventScroll: true });
-  });
-});
-updateTimeSpeed(speedInput.value, false);
 document.addEventListener('keydown', (event) => {
-  if (immersiveMode) showImmersiveUi();
-  if (event.key.toLowerCase() === 'r' && mode === 'generator') regenerate();
-  if (event.key === 'Escape' && mode === 'generator' && $('#multiverse-lab').classList.contains('is-open')) {
+  if (session.view.immersive) showImmersiveUi();
+  if (event.key.toLowerCase() === 'r' && session.mode === 'generator') regenerate();
+  if (event.key === 'Escape' && session.mode === 'generator' && $('#multiverse-lab').classList.contains('is-open')) {
     toggleMultiverseLab(false);
     return;
   }
-  if (event.key === 'Escape' && mode === 'explorer') {
+  if (event.key === 'Escape' && session.mode === 'explorer') {
     if (!$('#galaxy-submenu').hidden) {
       setGalaxyMenuOpen(false);
       $('#toggle-galaxy-menu').focus({ preventScroll: true });
       return;
     }
-    if (immersiveMode) {
+    if (session.view.immersive) {
       setImmersiveMode(false);
       $('#toggle-galaxy-menu').focus({ preventScroll: true });
       return;
     }
-    if (!timelineFilterMenu.hidden) {
-      setTimelineFilterMenuOpen(false);
-      timelineFilterToggle.focus({ preventScroll: true });
+    if (timelineController.isFilterMenuOpen()) {
+      timelineController.setFilterMenuOpen(false);
+      $('#timeline-filter-toggle').focus({ preventScroll: true });
       return;
     }
     if (!$('#timeline-event-detail').hidden) {
