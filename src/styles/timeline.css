@@ -27,6 +27,7 @@
 .timeline-tool-button:active { transform: scale(.96); }
 .timeline-tool-button.is-active { color: var(--accent); border-color: rgba(216,255,95,.4); background: rgba(216,255,95,.07); }
 .timeline-filter-toggle {
+  position: relative;
   display: inline-grid;
   width: 30px;
   padding: 6px;
@@ -44,6 +45,17 @@
 }
 .timeline-filter-toggle:hover .timeline-filter-icon,
 .timeline-filter-toggle:focus-visible .timeline-filter-icon { transform: rotate(8deg) scale(1.06); }
+.timeline-filter-toggle.is-active::after {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 6px rgba(216,255,95,.8);
+  content: '';
+}
 .timeline-snap-toggle { display: inline-grid; place-items: center; width: 30px; padding: 6px; }
 .timeline-snap-icon {
   width: 16px;
@@ -83,7 +95,10 @@
   z-index: 12;
   bottom: calc(100% + 8px);
   left: 0;
-  width: 220px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  width: 174px;
   padding: 6px;
   border: 1px solid rgba(241,238,231,.14);
   border-radius: 12px;
@@ -98,7 +113,7 @@
 .timeline-filter-menu button {
   position: relative;
   display: inline-grid;
-  width: 48px;
+  width: auto;
   min-height: 44px;
   padding: 7px;
   align-items: center;
@@ -115,8 +130,12 @@
 .timeline-filter-menu button:hover,
 .timeline-filter-menu button:focus-visible { background: rgba(241,238,231,.07); color: var(--ink); transform: translateY(-2px); }
 .timeline-filter-menu button:focus-visible { outline: 1px solid rgba(216,255,95,.7); outline-offset: -1px; }
-.timeline-filter-menu button[aria-checked="true"] { background: rgba(216,255,95,.1); color: var(--accent); }
-.timeline-filter-menu button[aria-checked="true"] .timeline-filter-icon { filter: drop-shadow(0 0 5px rgba(216,255,95,.88)); }
+.timeline-filter-menu button[aria-pressed="true"] {
+  background: rgba(216,255,95,.1);
+  box-shadow: inset 0 0 0 1px rgba(216,255,95,.32);
+  color: var(--accent);
+}
+.timeline-filter-menu button[aria-pressed="true"] .timeline-filter-icon { filter: drop-shadow(0 0 5px rgba(216,255,95,.88)); }
 .timeline-filter-menu small {
   position: absolute;
   right: 4px;
@@ -530,4 +549,3 @@
   from { opacity: 0; transform: translateY(6px) scale(.985); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
-

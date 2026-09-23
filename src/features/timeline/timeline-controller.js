@@ -5,6 +5,10 @@ import {
   speedExponentMin,
   speedFromExponent
 } from '../../ui/speed-control.js';
+import {
+  timelineEventMatchesFilters,
+  toggleTimelineEventFilter
+} from '../../ui/timeline-filters.js';
 
 const clamp = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, value));
 
@@ -41,13 +45,9 @@ export function createTimelineController({
   }
 
   function filteredEvents() {
-    return getEvents().filter((event) => {
-      const filter = session.timeline.eventFilter;
-      if (filter === 'astro') return event.category !== 'civilization';
-      if (filter === 'civilization') return event.category === 'civilization';
-      if (filter === 'speculative') return event.confidence === 'science-fiction';
-      return true;
-    });
+    return getEvents().filter((event) => (
+      timelineEventMatchesFilters(event, session.timeline.eventFilters)
+    ));
   }
 
   function isViewportZoomed() {
@@ -59,7 +59,7 @@ export function createTimelineController({
     timelineFilterToggle.setAttribute('aria-expanded', String(open));
     if (open) {
       onCloseDetail();
-      timelineFilterMenu.querySelector('[aria-checked="true"]')?.focus({ preventScroll: true });
+      timelineFilterMenu.querySelector('[aria-pressed="true"]')?.focus({ preventScroll: true });
     }
   }
 
@@ -214,14 +214,16 @@ export function createTimelineController({
   });
   timelineFilterMenu.querySelectorAll('[data-event-filter]').forEach((button) => {
     listen(button, 'click', () => {
-      session.timeline.eventFilter = button.dataset.eventFilter;
+      session.timeline.eventFilters = toggleTimelineEventFilter(
+        session.timeline.eventFilters,
+        button.dataset.eventFilter
+      );
       timelineFilterMenu.querySelectorAll('[data-event-filter]').forEach((item) => {
-        item.setAttribute('aria-checked', String(item === button));
+        const selected = session.timeline.eventFilters.includes(item.dataset.eventFilter);
+        item.setAttribute('aria-pressed', String(selected));
       });
-      updateFilterToggle(session.timeline.eventFilter);
-      setFilterMenuOpen(false);
+      updateFilterToggle(session.timeline.eventFilters);
       onFilterChange();
-      timelineFilterToggle.focus({ preventScroll: true });
     });
   });
   listen(query('#toggle-timeline-snap'), 'click', (event) => {

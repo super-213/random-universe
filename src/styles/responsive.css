@@ -147,9 +147,9 @@
     right: auto;
     bottom: calc(env(safe-area-inset-bottom) + 210px);
     left: 16px;
-    width: min(260px, calc(100vw - 32px));
+    width: min(210px, calc(100vw - 32px));
   }
-  .timeline-filter-menu button { width: 58px; min-height: 52px; padding: 10px; font-size: 9px; }
+  .timeline-filter-menu button { width: auto; min-height: 52px; padding: 10px; font-size: 9px; }
   .timeline-filter-menu .timeline-filter-icon { width: 21px; height: 21px; }
   .speed-control { grid-area: speed; margin-left: 0; }
   .speed-toggle {

@@ -1,3 +1,5 @@
+import { timelineEventFilterKeys } from '../ui/timeline-filters.js';
+
 export function createExplorerSession() {
   return {
     mode: 'generator',
@@ -7,7 +9,7 @@ export function createExplorerSession() {
       playing: false,
       speed: 10,
       viewport: { start: 0, end: 1000 },
-      eventFilter: 'all',
+      eventFilters: [...timelineEventFilterKeys],
       snapEnabled: true,
       eras: null,
       lastCivilizationSnapshot: null

@@ -5,6 +5,12 @@ import { createFrameLoop } from './frame-loop.js';
 import { createExplorerSession } from './explorer-session.js';
 import { createGalaxyHydrator } from '../features/galaxy/galaxy-hydrator.js';
 import { createTimelineController } from '../features/timeline/timeline-controller.js';
+import {
+  allTimelineEventFiltersSelected,
+  timelineEventFilterFor,
+  timelineEventFilterKeys,
+  timelineEventMatchesFilters
+} from '../ui/timeline-filters.js';
 import { createSeededRandom } from '../domain/random.js';
 import { createUniverse } from '../domain/universe.js';
 import { cosmicGalaxyPositionAt, createCosmicWebModel } from '../domain/cosmic-web.js';
@@ -1101,37 +1107,38 @@ export async function createExplorerApp() {
     speculative: { zh: '科幻假设', en: 'Speculative events' }
   };
   
-  function updateTimelineFilterToggle(filter) {
-    const label = timelineFilterLabels[filter];
+  function updateTimelineFilterToggle(filters) {
+    const selectedFilters = timelineEventFilterKeys.filter((filter) => filters.includes(filter));
+    const allSelected = allTimelineEventFiltersSelected(selectedFilters);
+    const selectedLabels = selectedFilters.map((filter) => timelineFilterLabels[filter]);
+    const label = allSelected
+      ? timelineFilterLabels.all
+      : selectedLabels.length === 0
+        ? { zh: '未选择事件', en: 'No events selected' }
+        : selectedLabels.length === 1
+          ? selectedLabels[0]
+          : { zh: `已选 ${selectedLabels.length} 类事件`, en: `${selectedLabels.length} event types selected` };
     const timelineFilterToggle = dom.byId['timeline-filter-toggle'];
-    const sourceIcon = document.querySelector(`[data-event-filter="${filter}"] .timeline-filter-icon`);
-    const currentIcon = timelineFilterToggle.querySelector('.timeline-filter-icon');
-    if (sourceIcon && currentIcon) currentIcon.replaceWith(sourceIcon.cloneNode(true));
     timelineFilterToggle.querySelector('[data-timeline-filter-label]').textContent = label.zh;
     timelineFilterToggle.setAttribute('aria-label', `筛选事件：${label.zh}`);
     timelineFilterToggle.title = `${label.zh} / ${label.en}`;
-  }
-  
-  function timelineEventMatchesFilter(event, filter = session.timeline.eventFilter) {
-    if (filter === 'astro') return event.category !== 'civilization';
-    if (filter === 'civilization') return event.category === 'civilization';
-    if (filter === 'speculative') return event.confidence === 'science-fiction';
-    return true;
+    timelineFilterToggle.classList.toggle('is-active', !allSelected);
   }
   
   function filteredTimelineEvents() {
-    return cosmicEvents.filter((event) => timelineEventMatchesFilter(event));
+    return cosmicEvents.filter((event) => (
+      timelineEventMatchesFilters(event, session.timeline.eventFilters)
+    ));
   }
   
   function renderTimelineFilterCounts() {
     document.querySelectorAll('[data-event-filter]').forEach((button) => {
-      const count = cosmicEvents.filter((event) => timelineEventMatchesFilter(
-        event,
-        button.dataset.eventFilter
-      )).length;
+      const filter = button.dataset.eventFilter;
+      const count = cosmicEvents.filter((event) => timelineEventFilterFor(event) === filter).length;
       const countElement = button.querySelector('small');
       if (countElement) countElement.textContent = String(count);
     });
+    updateTimelineFilterToggle(session.timeline.eventFilters);
   }
   
   function timelineViewportIsZoomed() {
