@@ -27,7 +27,10 @@ import {
   STELLAR_DAWN_END,
   STELLAR_DAWN_START
 } from '../src/domain/stellar-dawn.js';
-import { createStellarPopulation } from '../src/domain/stellar-population.js';
+import {
+  createStellarPopulation,
+  galacticNuclearRisk
+} from '../src/domain/stellar-population.js';
 import { createStellarGravityState } from '../src/simulation/black-hole-gravity.js';
 import {
   buildCivilizationSimulation,
@@ -494,6 +497,47 @@ test('stellar entities share formation, lifetime, spectrum, planets, and remnant
     const expectedRemnant = first.massSolar[index] < 8 ? 1 : first.massSolar[index] < 25 ? 2 : 3;
     assert.equal(first.remnantTypes[index], expectedRemnant);
   }
+});
+
+test('galactic nuclear risk falls with distance and expands for an active nucleus', () => {
+  const distances = [0, .5, 1, 2, 4.2, 8];
+  const quietRisk = distances.map((distance) => galacticNuclearRisk(distance, false));
+  const activeRisk = distances.map((distance) => galacticNuclearRisk(distance, true));
+
+  assert.ok(quietRisk[0] > .98);
+  assert.equal(activeRisk[0], 1);
+  assert.equal(quietRisk.at(-1), 0);
+  assert.equal(activeRisk.at(-1), 0);
+  for (let index = 1; index < distances.length; index++) {
+    assert.ok(quietRisk[index] <= quietRisk[index - 1]);
+    assert.ok(activeRisk[index] <= activeRisk[index - 1]);
+  }
+  assert.ok(activeRisk[1] > quietRisk[1]);
+  assert.ok(activeRisk[2] > quietRisk[2]);
+  assert.ok(activeRisk[3] > quietRisk[3]);
+});
+
+test('stellar habitability includes deterministic galactic nuclear risk', () => {
+  const universe = createUniverse(seedFor(318));
+  const positions = new Float32Array([
+    0, 0, 0,
+    .5, 0, 0,
+    1, 0, 0,
+    2, 0, 0,
+    4.2, 0, 0,
+    8, 0, 0
+  ]);
+  const quiet = createStellarPopulation({ ...universe, activeNucleus: false }, positions);
+  const active = createStellarPopulation({ ...universe, activeNucleus: true }, positions);
+
+  assert.ok(quiet.nuclearRisk[0] > .98);
+  assert.equal(active.nuclearRisk[0], 1);
+  assert.equal(active.habitability[0], 0);
+  for (let index = 0; index < active.habitability.length; index++) {
+    assert.ok(active.habitability[index] <= quiet.habitability[index]);
+  }
+  assert.equal(active.nuclearRisk.at(-1), 0);
+  assert.equal(active.habitability.at(-1), quiet.habitability.at(-1));
 });
 
 test('dynamic dark energy participates in the calculated present age', () => {

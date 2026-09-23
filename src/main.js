@@ -51,6 +51,7 @@ const timelineUpdateIntervalMs = 1000 / 30;
 const coordinateUpdateIntervalMs = 100;
 const maxLogisticsRoutesPerSpecies = 12;
 const routesPerVisibleShip = 5;
+const maxCivilizationNuclearRisk = .86;
 const maxLogisticsShipsPerSpecies = Math.ceil(
   maxLogisticsRoutesPerSpecies / routesPerVisibleShip
 );
@@ -1397,6 +1398,7 @@ function buildCivilizations() {
       if (seenHostStars.has(sourceIndex)) return false;
       const viable = stellarPopulation.planetCounts[sourceIndex] > 0
         && stellarPopulation.habitability[sourceIndex] > .015
+        && stellarPopulation.nuclearRisk[sourceIndex] < maxCivilizationNuclearRisk
         && stellarPopulation.birthAt[sourceIndex] <= 390
         && stellarPopulation.deathAt[sourceIndex] > 520;
       if (viable) seenHostStars.add(sourceIndex);
@@ -1408,10 +1410,27 @@ function buildCivilizations() {
       .filter((remnantIndex) => {
         const sourceIndex = remnantDynamics.sourceIndices[remnantIndex];
         return stellarPopulation.birthAt[sourceIndex] <= 390
+          && stellarPopulation.nuclearRisk[sourceIndex] < maxCivilizationNuclearRisk
           && stellarPopulation.deathAt[sourceIndex] > 520;
       });
   if (fallbackCandidates.length === 0) {
-    fallbackCandidates = Array.from({ length: remnantCount }, (_, remnantIndex) => remnantIndex);
+    const candidates = Array.from({ length: remnantCount }, (_, remnantIndex) => remnantIndex);
+    const nuclearSafeCandidates = candidates.filter((remnantIndex) => {
+      const sourceIndex = remnantDynamics.sourceIndices[remnantIndex];
+      return stellarPopulation.nuclearRisk[sourceIndex] < maxCivilizationNuclearRisk;
+    });
+    if (nuclearSafeCandidates.length > 0) {
+      fallbackCandidates = nuclearSafeCandidates;
+    } else {
+      fallbackCandidates = [candidates.reduce((safest, candidate) => {
+        const safestSource = remnantDynamics.sourceIndices[safest];
+        const candidateSource = remnantDynamics.sourceIndices[candidate];
+        return stellarPopulation.nuclearRisk[candidateSource]
+          < stellarPopulation.nuclearRisk[safestSource]
+          ? candidate
+          : safest;
+      })];
+    }
   }
   const habitatCount = Math.min(720, fallbackCandidates.length);
   const habitatRemnantIndices = new Uint16Array(habitatCount);

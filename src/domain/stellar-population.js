@@ -3,6 +3,19 @@ import { createSeededRandom } from './random.js';
 
 const clamp = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, value));
 
+function smoothstep(value, minimum, maximum) {
+  const progress = clamp((value - minimum) / (maximum - minimum), 0, 1);
+  return progress * progress * (3 - 2 * progress);
+}
+
+export function galacticNuclearRisk(radius, activeNucleus = false) {
+  const distance = Math.max(0, Number.isFinite(radius) ? radius : 0);
+  const coreRadius = activeNucleus ? .8 : .18;
+  const influenceRadius = activeNucleus ? 4.2 : 1.8;
+  const peakRisk = activeNucleus ? 1 : .985;
+  return peakRisk * (1 - smoothstep(distance, coreRadius, influenceRadius));
+}
+
 function samplePowerLaw(random, minimum, maximum, alpha) {
   const exponent = 1 - alpha;
   const lower = minimum ** exponent;
@@ -133,6 +146,7 @@ export function createStellarPopulation(universe, positions, {
   const metallicity = new Float32Array(count);
   const planetCounts = new Uint8Array(count);
   const habitability = new Float32Array(count);
+  const nuclearRisk = new Float32Array(count);
   const lifeSignals = new Uint8Array(count);
   const remnantTypes = new Uint8Array(count);
   const colors = new Float32Array(count * 3);
@@ -165,9 +179,10 @@ export function createStellarPopulation(universe, positions, {
     const planets = planetCountFor(random, mass, localMetallicity, universe.chemistryStability);
     const ageWindow = clamp(lifetime / 5e9, 0, 1);
     const massWindow = Math.exp(-(((Math.log10(mass) - Math.log10(.86)) / .42) ** 2));
+    const localNuclearRisk = galacticNuclearRisk(radius, universe.activeNucleus);
     const habitable = clamp(
       massWindow * ageWindow * localMetallicity * universe.chemistryStability
-        * (planets > 0 ? 1 : 0),
+        * (planets > 0 ? 1 : 0) * (1 - localNuclearRisk),
       0,
       1
     );
@@ -184,6 +199,7 @@ export function createStellarPopulation(universe, positions, {
     metallicity[index] = localMetallicity;
     planetCounts[index] = planets;
     habitability[index] = habitable;
+    nuclearRisk[index] = localNuclearRisk;
     lifeSignals[index] = random() < universe.lifeProbability * habitable ? 1 : 0;
     remnantTypes[index] = mass < 8 ? 1 : mass < 25 ? 2 : 3;
     colors[index * 3] = red * brightness;
@@ -201,6 +217,7 @@ export function createStellarPopulation(universe, positions, {
     metallicity,
     planetCounts,
     habitability,
+    nuclearRisk,
     lifeSignals,
     remnantTypes,
     colors
