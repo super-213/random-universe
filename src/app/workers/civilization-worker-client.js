@@ -1,4 +1,4 @@
-import { buildCivilizationSimulation } from './civilization.js';
+import { buildCivilizationSimulation } from '../../simulation/civilization.js';
 
 function simulationPayload({ universe, civilizationData, civilizationSimulation, cosmicEvents }) {
   return {

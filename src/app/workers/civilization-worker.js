@@ -1,4 +1,4 @@
-import { buildCivilizationSimulation } from './civilization.js';
+import { buildCivilizationSimulation } from '../../simulation/civilization.js';
 
 function collectTransferables(value, buffers = new Set()) {
   if (!value || typeof value !== 'object') return buffers;
