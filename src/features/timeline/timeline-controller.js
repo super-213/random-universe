@@ -16,6 +16,7 @@ export function createTimelineController({
   getUniverse,
   onCloseDetail,
   onFilterChange,
+  onPlaybackChange = () => {},
   onPlayStart,
   onPositionChange,
   onViewportChange,
@@ -64,6 +65,7 @@ export function createTimelineController({
 
   function pause() {
     session.timeline.playing = false;
+    onPlaybackChange(false);
     query('#toggle-time').textContent = '▶';
     query('#toggle-time').setAttribute('aria-label', '播放时间');
   }
@@ -199,6 +201,7 @@ export function createTimelineController({
     }
     if (session.timeline.position >= 1000) onPositionChange(0, true);
     session.timeline.playing = !session.timeline.playing;
+    onPlaybackChange(session.timeline.playing);
     if (session.timeline.playing) onPlayStart();
     query('#toggle-time').textContent = session.timeline.playing ? 'Ⅱ' : '▶';
     query('#toggle-time').setAttribute('aria-label', session.timeline.playing ? '暂停时间' : '播放时间');

@@ -323,12 +323,13 @@ export function createCosmicWebSystem({
 
   }
 
-  function updateCosmicWebMotion(now, force = false) {
+  function updateCosmicWebMotion(now, force = false, advance = true) {
     if (!state.model || !state.visual) return;
     if (!force && now - state.lastFlowUpdateAt < 50) return;
     const elapsed = state.lastFlowUpdateAt > 0 ? now - state.lastFlowUpdateAt : 0;
     state.lastFlowUpdateAt = now;
-    if (!prefersReducedMotion) state.flowTime += Math.min(.12, elapsed * .001);
+    if (!force && !advance) return;
+    if (advance && !prefersReducedMotion) state.flowTime += Math.min(.12, elapsed * .001);
     for (let index = 0; index < state.model.galaxyCount; index++) {
       cosmicGalaxyPositionAt(
         state.model,

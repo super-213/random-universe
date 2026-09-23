@@ -457,8 +457,11 @@ export function createLocalGroupSystem({
     companion.points.geometry.attributes.position.needsUpdate = true;
   }
 
-  function animateLocalGroupGalaxies(now) {
-    if (!getSession().view.universeScale || isUniverseScaleTransition() || !group.visible) return;
+  function animateLocalGroupGalaxies(now, motionActive = true) {
+    if (!motionActive
+      || !getSession().view.universeScale
+      || isUniverseScaleTransition()
+      || !group.visible) return;
     const elapsed = now * .001;
     if (!prefersReducedMotion) {
       state.galaxies.forEach((companion) => {

@@ -86,6 +86,7 @@ button:disabled { cursor: progress; }
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 140 140' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.95'/%3E%3C/svg%3E");
   animation: grain-shift 0.25s steps(2) infinite;
 }
+.is-universe-scale-view.is-time-paused .grain { animation-play-state: paused; }
 
 .site-header {
   position: fixed;

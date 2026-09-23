@@ -1745,6 +1745,7 @@ function finishGalaxyHydration(seed, hydrated) {
   updateCosmicTime(session.timeline.position, true);
   explorer.restartTimelineScaleIntro();
   session.timeline.playing = session.timeline.position === 0;
+  syncTimelinePlaybackState();
   lastTimelineUpdateAt = 0;
   $('#toggle-time').textContent = session.timeline.playing ? 'Ⅱ' : '▶';
   $('#toggle-time').setAttribute('aria-label', session.timeline.playing ? '暂停时间' : '播放时间');
@@ -1813,6 +1814,7 @@ async function enterUniverse() {
   $('#cosmic-timeline').value = session.timeline.position;
   updateCosmicTime(session.timeline.position, true);
   session.timeline.playing = alreadyHydrated && session.timeline.position === 0;
+  syncTimelinePlaybackState();
   lastTimelineUpdateAt = 0;
   $('#toggle-time').textContent = session.timeline.playing ? 'Ⅱ' : '▶';
   $('#toggle-time').setAttribute('aria-label', session.timeline.playing ? '暂停时间' : '播放时间');
@@ -1857,6 +1859,7 @@ function leaveUniverse() {
   $('#regenerate-top').style.opacity = '';
   $('#regenerate-top').style.pointerEvents = '';
   session.timeline.playing = false;
+  syncTimelinePlaybackState();
   $('#toggle-time').textContent = '▶';
   $('#toggle-time').setAttribute('aria-label', '播放时间');
   controls.enabled = false;
@@ -2032,6 +2035,13 @@ function showStarInspector(index) {
 
 function advanceCosmicTime(deltaSeconds) {
   session.timeline.position += deltaSeconds * explorer.timelineUnitsPerSecond(session.timeline.position) * session.timeline.speed;
+}
+
+function syncTimelinePlaybackState() {
+  document.body.classList.toggle(
+    'is-time-paused',
+    session.mode === 'explorer' && !session.timeline.playing
+  );
 }
 
 function renderUniverseScaleStatus(timeLabel, force = false) {
@@ -2252,7 +2262,7 @@ function toggleUniverseScaleView() {
     target: new THREE.Vector3(),
     detailQuaternion: detailGroup.quaternion.clone()
   };
-  updateCosmicWebMotion(performance.now(), true);
+  updateCosmicWebMotion(performance.now(), true, false);
   const alignedCosmicPosition = cosmicWebAlignedPosition();
   if (session.view.universeScale && mixStart <= .001) {
     cosmicWebGroup.position.copy(alignedCosmicPosition);
@@ -2757,6 +2767,7 @@ function animate(now) {
   }
   if (session.mode === 'explorer') {
     const timelineAdvancing = session.timeline.playing && !session.transition;
+    const simulationMotionActive = !session.view.universeScale || timelineAdvancing;
     if (timelineAdvancing) {
       pulsarAnimationTimeMs += delta * 1000;
       advanceCosmicTime(delta);
@@ -2764,6 +2775,7 @@ function animate(now) {
       if (session.timeline.position >= 1000) {
         session.timeline.position = 1000;
         session.timeline.playing = false;
+        syncTimelinePlaybackState();
         reachedTimelineEnd = true;
         $('#toggle-time').textContent = '▶';
         $('#toggle-time').setAttribute('aria-label', '播放时间');
@@ -2773,19 +2785,19 @@ function animate(now) {
         updateCosmicTime(session.timeline.position);
       }
     }
-    updateVisibleShipsForFrame(now);
+    if (simulationMotionActive) updateVisibleShipsForFrame(now);
     if (!isUniverseScaleTransition()) controls.update();
     epochEffectsGroup.position.set(0, 0, 0);
-    if (heatDeathGroup.visible && !prefersReducedMotion) {
+    if (heatDeathGroup.visible && !prefersReducedMotion && simulationMotionActive) {
       coldPhotons.rotation.y += .000035;
       coldPhotons.rotation.x += .000009;
     }
-    if (cosmicFateGroup.visible && !prefersReducedMotion) {
+    if (cosmicFateGroup.visible && !prefersReducedMotion && simulationMotionActive) {
       fateBubble.rotation.y += .0014;
       fateBubble.rotation.x -= .0007;
       fateGlow.material.rotation = now * .00008;
     }
-    if (!prefersReducedMotion) {
+    if (!prefersReducedMotion && simulationMotionActive) {
       blackHoleRemnants.forEach((hole, index) => {
         if (!hole.visible) return;
         explorer.animateBlackHoleVisual(hole, now, hole.userData.spinDirection || (index % 2 ? -1 : 1));
@@ -2800,18 +2812,21 @@ function animate(now) {
       pulsarAnimationTimeMs,
       timelineAdvancing
     });
-    if (!controls.enabled && !isUniverseScaleTransition()) galaxyGroup.rotation.y += 0.0003;
-    animateLocalGroupGalaxies(now);
+    if (!controls.enabled && !isUniverseScaleTransition() && simulationMotionActive) {
+      galaxyGroup.rotation.y += 0.0003;
+    }
+    animateLocalGroupGalaxies(now, timelineAdvancing);
     if (session.view.universeScale
       && cosmicWebGroup.visible
       && !isUniverseScaleTransition()
       && !prefersReducedMotion) {
-      updateCosmicWebMotion(now);
+      updateCosmicWebMotion(now, false, timelineAdvancing);
     }
     if (session.view.universeScale
       && cosmicWebGroup.visible
       && !isUniverseScaleTransition()
-      && !prefersReducedMotion) {
+      && !prefersReducedMotion
+      && timelineAdvancing) {
       cosmicWebGroup.rotation.y += .000055;
       const locatorPulse = 3.2 + Math.sin(now * .0016) * .28;
       cosmicWebState.visual?.locator.scale.setScalar(locatorPulse);
@@ -3055,6 +3070,7 @@ const timelineController = createTimelineController({
   getUniverse: () => universe,
   onCloseDetail: closeTimelineEventDetail,
   onFilterChange: renderCosmicEventMarkers,
+  onPlaybackChange: syncTimelinePlaybackState,
   onPlayStart: () => { lastTimelineUpdateAt = 0; },
   onPositionChange: updateCosmicTime,
   onViewportChange: refreshTimelineViewport,
