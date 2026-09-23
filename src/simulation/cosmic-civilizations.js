@@ -230,3 +230,29 @@ export function cosmicCivilizationStateAt(plan, position) {
     operational
   };
 }
+
+export function cosmicCivilizationSummaryAt(plan, position) {
+  const state = cosmicCivilizationStateAt(plan, position);
+  if (!state.operational || position < plan.civilizationStartAt) {
+    return { civilizations: 0, occupiedGalaxies: 0, fleets: 0, state };
+  }
+
+  const civilizationGalaxies = new Set();
+  const occupiedGalaxies = new Set();
+  plan.routes.forEach((route) => {
+    if (position < route.departureAt) return;
+    civilizationGalaxies.add(route.sourceIndex);
+    occupiedGalaxies.add(route.sourceIndex);
+    const arrivedSafely = position >= route.arrivalAt
+      && (!Number.isFinite(route.failureAt) || route.failureAt >= route.arrivalAt)
+      && position < route.trafficEndAt;
+    if (arrivedSafely) occupiedGalaxies.add(route.targetIndex);
+  });
+
+  return {
+    civilizations: civilizationGalaxies.size,
+    occupiedGalaxies: occupiedGalaxies.size,
+    fleets: state.active.length + state.traffic.length,
+    state
+  };
+}

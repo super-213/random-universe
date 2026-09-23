@@ -167,7 +167,14 @@ export function renderCivilizationRows({ position, simulationState, runtimeState
   setText(cachedElement('civilizationSpeciesCount', '#civilization-species-count'), `${activeSpecies} 种`);
   setText(cachedElement('civilizationDomainCount', '#civilization-domain-count'), `${occupiedDomains} 域`);
   setText(cachedElement('civilizationPopulationCount', '#civilization-population-count'), `${totalPopulation.toFixed(1)} 万亿`);
+  const speciesStat = cachedElement('civilizationSpeciesStat', '#civilization-species-stat');
+  const domainStat = cachedElement('civilizationDomainStat', '#civilization-domain-stat');
+  const populationStat = cachedElement('civilizationPopulationStat', '#civilization-population-stat');
+  if (speciesStat) speciesStat.title = '种群数量';
+  if (domainStat) domainStat.title = '星域数量';
+  if (populationStat) populationStat.title = '人口数量';
   const toggle = cachedElement('civilizationToggle', '#toggle-civilizations');
+  toggle?.removeAttribute('aria-disabled');
   toggle?.setAttribute(
     'aria-label',
     activeSpecies > 0
@@ -217,4 +224,17 @@ export function renderTimelineEvent(event, force = false) {
   requestAnimationFrame(() => feed.classList.add('is-visible'));
   clearTimeout(eventFadeTimer);
   eventFadeTimer = setTimeout(() => feed.classList.remove('is-visible'), 3200);
+}
+
+export function renderPersistentTimelineEvent(event, force = false) {
+  const feed = $('#event-feed');
+  if (!feed) return;
+  clearTimeout(eventFadeTimer);
+  eventFadeTimer = null;
+  if (event.key !== lastEventKey || force) {
+    lastEventKey = event.key;
+    $('#event-year').textContent = event.time;
+    $('#event-text').textContent = event.text;
+  }
+  feed.classList.add('is-visible');
 }

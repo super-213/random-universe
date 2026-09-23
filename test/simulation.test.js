@@ -76,6 +76,7 @@ import {
   visibleShipCountForRoutes
 } from '../src/simulation/intergalactic-travel.js';
 import {
+  cosmicCivilizationSummaryAt,
   cosmicCivilizationStateAt,
   createCosmicCivilizationPlan
 } from '../src/simulation/cosmic-civilizations.js';
@@ -171,6 +172,24 @@ test('observable-universe civilizations always produce deterministic intergalact
   assert.equal(finalActivity.pulses.length, 0);
   assert.equal(finalActivity.activityOpacity, 0);
   assert.equal(finalActivity.operational, false);
+});
+
+test('observable-universe summary reports civilizations, occupied galaxies, and active fleets', () => {
+  const universe = createUniverse(seedFor(74));
+  const web = createCosmicWebModel(universe, { galaxyCount: 720, clusterCount: 16 });
+  const plan = createCosmicCivilizationPlan(universe, web, { routeCount: 44 });
+  const firstDeparture = Math.min(...plan.routes.map((route) => route.departureAt));
+  const active = cosmicCivilizationSummaryAt(plan, firstDeparture + .5);
+
+  assert.ok(active.civilizations > 0);
+  assert.ok(active.occupiedGalaxies >= active.civilizations);
+  assert.equal(active.fleets, active.state.active.length + active.state.traffic.length);
+  assert.deepEqual(cosmicCivilizationSummaryAt(plan, 1000), {
+    civilizations: 0,
+    occupiedGalaxies: 0,
+    fleets: 0,
+    state: cosmicCivilizationStateAt(plan, 1000)
+  });
 });
 
 test('time speed uses a logarithmic range with deliberate snap points', () => {

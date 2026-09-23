@@ -11,12 +11,10 @@ export function createCosmicWebSystem({
   compactLayout,
   cosmicWebGroup,
   disposeGroup,
-  getActiveSpeciesCount,
   getDependencies,
   getPosition,
   getUniverse,
   prefersReducedMotion,
-  query,
   renderer,
   restoreDetailGroupToScene,
   scene,
@@ -184,7 +182,6 @@ export function createCosmicWebSystem({
     state.flowTime = 0;
     state.lastFlowUpdateAt = 0;
     state.shadersWarmed = false;
-    query('#universe-scale-structure').textContent = `${state.model.morphologyLabel} · ${state.model.clusterCount} 个超星系团节点 · 当前星系已标记`;
   }
 
   async function warmUniverseScaleShaders() {
@@ -265,14 +262,10 @@ export function createCosmicWebSystem({
     return target;
   }
 
-  function updateCosmicCivilizationVisuals(
-    position,
-    updateReadout = true,
-    civilizationsActive = getActiveSpeciesCount() > 0
-  ) {
+  function updateCosmicCivilizationVisuals(position) {
     if (!state.civilizationPlan || !state.civilizationVisual) return;
     const civilizationState = cosmicCivilizationStateAt(state.civilizationPlan, position);
-    const renderActivity = civilizationState.operational && civilizationsActive;
+    const renderActivity = civilizationState.operational;
     const active = renderActivity ? civilizationState.active : [];
     const arrived = renderActivity ? civilizationState.arrived : [];
     const traffic = renderActivity ? civilizationState.traffic : [];
@@ -328,30 +321,6 @@ export function createCosmicWebSystem({
     });
     applyCosmicWebOpacity();
 
-    if (!updateReadout) return;
-
-    if (position < state.civilizationPlan.civilizationStartAt) {
-      query('#universe-scale-activity').textContent = '全宇宙文明航行尚未出现';
-      query('#universe-scale-event').textContent = '';
-      return;
-    }
-    if (!renderActivity || (visibleTravel.length === 0 && civilizationState.latestEvent)) {
-      query('#universe-scale-activity').textContent = '星系际文明活动已终止 · 无在途航行器';
-      query('#universe-scale-event').textContent = '';
-      return;
-    }
-    query('#universe-scale-activity').textContent = `${visibleTravel.length} 艘星系际航行器在途 · ${arrived.length} 条航路持续通航 · ${civilizationState.failed.length} 次失联`;
-    const event = civilizationState.latestEvent;
-    if (!event) {
-      query('#universe-scale-event').textContent = '等待第一批跨星系文明完成启航条件';
-      return;
-    }
-    const source = `G-${String(event.route.sourceIndex).padStart(5, '0')}`;
-    const target = `G-${String(event.route.targetIndex).padStart(5, '0')}`;
-    const eventLabel = event.type === 'departure'
-      ? '启航'
-      : event.type === 'arrival' ? '抵达' : '失联';
-    query('#universe-scale-event').textContent = `最近事件 · ${event.route.modeLabel} ${eventLabel} · ${source} → ${target}`;
   }
 
   function updateCosmicWebMotion(now, force = false) {
@@ -376,7 +345,7 @@ export function createCosmicWebSystem({
       state.flowTime
     );
     state.visual.currentGalaxyAnchor.position.fromArray(locatorPosition);
-    updateCosmicCivilizationVisuals(getPosition(), false);
+    updateCosmicCivilizationVisuals(getPosition());
   }
 
   function updateCosmicWebVisuals(position) {
@@ -387,14 +356,12 @@ export function createCosmicWebSystem({
     const stellarLight = 1 - THREE.MathUtils.smoothstep(position, stellarEnd - 75, stellarEnd + 12);
     const remnantLight = THREE.MathUtils.smoothstep(position, stellarEnd - 24, stellarEnd + 18)
       * (1 - THREE.MathUtils.smoothstep(position, 900, 985));
-    let formedCount = 0;
     for (let index = 0; index < state.model.galaxyCount; index++) {
       const born = THREE.MathUtils.smoothstep(
         position,
         state.model.formationAt[index],
         state.model.formationAt[index] + 18
       );
-      if (position >= state.model.formationAt[index]) formedCount++;
       const brightness = born * (stellarLight + remnantLight * .075);
       const offset = index * 3;
       colors[offset] = state.visual.baseColors[offset] * brightness;
@@ -423,16 +390,6 @@ export function createCosmicWebSystem({
     }
     applyCosmicWebOpacity();
 
-    const countLabel = formedCount === 0
-      ? '宇宙网尚未形成'
-      : `${formedCount.toLocaleString('zh-CN')} / ${state.model.galaxyCount.toLocaleString('zh-CN')} 个代表性星系`;
-    query('#universe-scale-count').textContent = countLabel;
-    let eraLabel = '等待第一批星系形成';
-    if (formedCount > 0) eraLabel = `可观测直径约 ${state.model.observableDiameterBillionLightYears.toFixed(0)}0 亿光年 · 宇宙网形成中`;
-    if (formedCount === state.model.galaxyCount) eraLabel = `可观测直径约 ${state.model.observableDiameterBillionLightYears.toFixed(0)}0 亿光年 · 宇宙网已形成`;
-    if (stellarLight < .08) eraLabel = '恒星时代结束 · 星系只剩致密残骸';
-    if (finiteOutcome && fatePhase > 0) eraLabel = `${fate.label}正在改变整个可观测尺度`;
-    query('#universe-scale-era').textContent = eraLabel;
     updateCosmicCivilizationVisuals(position);
   }
 

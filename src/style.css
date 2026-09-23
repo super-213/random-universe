@@ -452,26 +452,36 @@ h1 strong {
 .galaxy-menu-action:hover,
 .galaxy-menu-action:focus-visible,
 .galaxy-menu-action[aria-pressed="true"] { background: rgba(216,255,95,.08); color: var(--accent); outline: none; }
-.universe-scale-readout {
+.universe-scale-back {
   position: absolute;
-  top: 19vh;
+  z-index: 13;
+  top: clamp(36px, 5.7vh, 68px);
   left: 3.4vw;
   display: grid;
-  gap: 3px;
-  padding-left: 10px;
-  border-left: 1px solid var(--accent);
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid rgba(241,238,231,.16);
+  border-radius: 50%;
+  background: rgba(5,5,8,.28);
+  color: var(--accent);
   opacity: 0;
-  transform: translateX(-8px);
-  transition: opacity .35s ease, transform .35s ease;
+  visibility: hidden;
+  transform: translateX(-6px);
+  transition: opacity .3s ease, transform .3s ease, visibility 0s .3s, border-color .2s ease;
   pointer-events: none;
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
-.is-universe-scale-view .universe-scale-readout { opacity: 1; transform: translateX(0); }
-.universe-scale-readout span { color: var(--muted); font: 8px "Space Mono", monospace; }
-.universe-scale-readout b { font: 400 13px var(--display-font); }
-.universe-scale-readout small { color: var(--muted); font-size: 8px; }
-.universe-scale-readout #universe-scale-activity { margin-top: 3px; color: rgba(216,255,95,.78); }
-.universe-scale-readout #universe-scale-event { max-width: 320px; line-height: 1.55; color: rgba(241,238,231,.7); }
-.universe-scale-readout .universe-scale-structure { max-width: 310px; margin-top: 3px; line-height: 1.55; opacity: .68; }
+.universe-scale-back svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.35; stroke-linecap: round; stroke-linejoin: round; }
+.universe-scale-back:hover,
+.universe-scale-back:focus-visible { border-color: var(--accent); outline: none; }
+.is-universe-scale-view .explorer-title { opacity: 0; visibility: hidden; transform: translateX(-8px); pointer-events: none; }
+.is-universe-scale-view .universe-scale-back { opacity: 1; visibility: visible; transform: translateX(0); transition-delay: 0s; pointer-events: auto; }
+.is-universe-scale-view .civilization-toggle-icon { display: none; }
+.is-universe-scale-view .civilization-toggle { cursor: default; }
 
 .coordinates {
   position: absolute;
@@ -554,6 +564,9 @@ h1 strong {
   opacity: .72;
   transition: opacity .2s ease;
 }
+.civilization-summary-stat .fleet-icon { display: none; }
+.is-universe-scale-view .civilization-summary-stat .population-icon { display: none; }
+.is-universe-scale-view .civilization-summary-stat .fleet-icon { display: block; }
 .civilization-toggle:hover .civilization-summary-stat svg,
 .civilization-toggle:focus-visible .civilization-summary-stat svg { opacity: 1; }
 .civilization-toggle b { font: 400 9px "Space Mono", monospace; }
@@ -1436,7 +1449,7 @@ h1 strong {
   .explorer-title .kicker { display: none; }
   .galaxy-submenu { min-width: 174px; }
   .galaxy-menu-action { padding: 12px 14px; font-size: 12px; }
-  .universe-scale-readout { top: calc(env(safe-area-inset-top) + 72px); left: 16px; }
+  .universe-scale-back { top: calc(env(safe-area-inset-top) + 16px); left: 16px; }
   .coordinates { display: none; }
   .era-readout {
     left: 16px;
@@ -1597,6 +1610,7 @@ h1 strong {
 @media (max-width: 800px) and (max-height: 700px) {
   .civilization-panel.is-expanded .civilization-legend { max-height: 34dvh; }
   .event-feed { display: none; }
+  .is-universe-scale-view .event-feed { display: flex; }
   .era-readout { bottom: calc(env(safe-area-inset-bottom) + 208px); }
   .time-console { bottom: calc(env(safe-area-inset-bottom) + 10px); }
   .star-inspector { bottom: calc(env(safe-area-inset-bottom) + 132px); }

@@ -48,6 +48,7 @@ export {
 export {
   focusTimelineScale,
   renderCivilizationRows,
+  renderPersistentTimelineEvent,
   renderTimelineEvent,
   renderTimelineHeader,
   renderTimelineScale,

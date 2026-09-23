@@ -28,8 +28,7 @@ import {
   stableRouteAssignments
 } from './simulation/intergalactic-travel.js';
 import {
-  cosmicCivilizationStateAt,
-  createCosmicCivilizationPlan
+  cosmicCivilizationSummaryAt
 } from './simulation/cosmic-civilizations.js';
 import {
   historyExportPayload,
@@ -160,12 +159,10 @@ const cosmicWebSystem = createCosmicWebSystem({
   compactLayout: compactCivilizationLayout,
   cosmicWebGroup,
   disposeGroup,
-  getActiveSpeciesCount: () => session.civilization.activeSpeciesCount,
   getDependencies: () => explorer,
   getPosition: () => session.timeline.position,
   getUniverse: () => universe,
   prefersReducedMotion,
-  query: $,
   renderer,
   restoreDetailGroupToScene,
   scene,
@@ -2037,10 +2034,66 @@ function advanceCosmicTime(deltaSeconds) {
   session.timeline.position += deltaSeconds * explorer.timelineUnitsPerSecond(session.timeline.position) * session.timeline.speed;
 }
 
+function renderUniverseScaleStatus(timeLabel, force = false) {
+  if (!session.view.universeScale || !cosmicWebState.civilizationPlan) return;
+  const summary = cosmicCivilizationSummaryAt(
+    cosmicWebState.civilizationPlan,
+    session.timeline.position
+  );
+  const { state } = summary;
+  const panel = $('#civilization-panel');
+  panel.style.setProperty('--cosmic-opacity', '1');
+  $('#civilization-species-count').textContent = `${summary.civilizations} 文明`;
+  $('#civilization-domain-count').textContent = `${summary.occupiedGalaxies} 星系`;
+  $('#civilization-population-count').textContent = `${summary.fleets} 艘`;
+  $('#civilization-species-stat').title = '全宇宙文明数量';
+  $('#civilization-domain-stat').title = '全宇宙已占据星系';
+  $('#civilization-population-stat').title = '星际航行舰队数量';
+  const toggle = $('#toggle-civilizations');
+  toggle.setAttribute('aria-disabled', 'true');
+  toggle.setAttribute(
+    'aria-label',
+    `整个可观测宇宙，${summary.civilizations} 个文明，${summary.occupiedGalaxies} 个已占据星系，${summary.fleets} 艘星际航行舰队`
+  );
+
+  let report = '全宇宙文明航行尚未出现';
+  if (!state.operational && session.timeline.position >= cosmicWebState.civilizationPlan.civilizationStartAt) {
+    report = `星际文明活动已终止 · ${state.failed.length} 次航行失联记录`;
+  } else if (state.operational && session.timeline.position >= cosmicWebState.civilizationPlan.civilizationStartAt) {
+    report = `${summary.fleets} 艘舰队航行中 · ${state.arrived.length} 条航路通航 · ${state.failed.length} 次失联`;
+    if (state.latestEvent) {
+      const { route, type } = state.latestEvent;
+      const eventLabel = type === 'departure' ? '启航' : type === 'arrival' ? '抵达' : '失联';
+      const source = `G-${String(route.sourceIndex).padStart(5, '0')}`;
+      const target = `G-${String(route.targetIndex).padStart(5, '0')}`;
+      report += ` · ${route.modeLabel}${eventLabel} ${source} → ${target}`;
+    }
+  }
+  explorer.renderPersistentTimelineEvent({
+    key: `universe-${summary.civilizations}-${summary.occupiedGalaxies}-${summary.fleets}-${state.latestEvent?.route.id || 'none'}-${state.latestEvent?.type || 'none'}`,
+    time: timeLabel,
+    text: report
+  }, force);
+}
+
+function restoreGalaxyCivilizationStatus() {
+  $('#civilization-species-stat').title = '种群数量';
+  $('#civilization-domain-stat').title = '星域数量';
+  $('#civilization-population-stat').title = '人口数量';
+  $('#toggle-civilizations').removeAttribute('aria-disabled');
+  if (!civilizationRuntimeState.length) return;
+  explorer.renderCivilizationRows({
+    position: session.timeline.position,
+    simulationState: session.timeline.lastCivilizationSnapshot,
+    runtimeState: civilizationRuntimeState,
+    civilizationData
+  });
+}
+
 
 
 function toggleCivilizations() {
-  if (session.mode !== 'explorer') return;
+  if (session.mode !== 'explorer' || session.view.universeScale) return;
   const panel = $('#civilization-panel');
   const expanded = !panel.classList.contains('is-expanded');
   panel.classList.toggle('is-expanded', expanded);
@@ -2173,6 +2226,13 @@ function toggleUniverseScaleView() {
     || (session.transition && !isUniverseScaleTransition())) return;
   session.view.universeScale = !session.view.universeScale;
   document.body.classList.toggle('is-universe-scale-view', session.view.universeScale);
+  if (session.view.universeScale) {
+    $('#civilization-panel').classList.remove('is-expanded');
+    $('#toggle-civilizations').setAttribute('aria-expanded', 'false');
+    $('#civilization-legend').setAttribute('aria-hidden', 'true');
+  } else {
+    restoreGalaxyCivilizationStatus();
+  }
   $('#toggle-universe-scale').setAttribute('aria-pressed', String(session.view.universeScale));
   $('#toggle-universe-scale').textContent = session.view.universeScale ? '返回当前星系' : '查看整个宇宙';
   setGalaxyMenuOpen(false);
@@ -2226,6 +2286,7 @@ function toggleUniverseScaleView() {
   camera.far = 360;
   camera.updateProjectionMatrix();
   hideScaleIncompatibleMarkers();
+  updateCosmicTime(session.timeline.position, true);
 }
 
 function closeCivilizationChronicle() {
@@ -2659,7 +2720,11 @@ function updateCosmicTime(value, force = false) {
     ) * 100);
     narrative.text = `延迟观测 · 置信度 ${confidence}% · ${narrative.text}`;
   }
-  explorer.renderTimelineEvent(narrative, force);
+  if (session.view.universeScale) {
+    renderUniverseScaleStatus(timelineState.label, force);
+  } else {
+    explorer.renderTimelineEvent(narrative, force);
+  }
 }
 
 function selectKeyboardStar(direction) {
@@ -2891,6 +2956,7 @@ $('#multiverse-list').addEventListener('click', (event) => {
 $('#close-inspector').addEventListener('click', () => $('#star-inspector').classList.remove('is-open'));
 $('#close-chronicle').addEventListener('click', closeCivilizationChronicle);
 $('#toggle-universe-scale').addEventListener('click', toggleUniverseScaleView);
+$('#universe-scale-back').addEventListener('click', toggleUniverseScaleView);
 $('#toggle-fullscreen').addEventListener('click', toggleFullscreen);
 $('#toggle-immersive').addEventListener('click', () => setImmersiveMode(!session.view.immersive));
 document.addEventListener('fullscreenchange', syncFullscreenState);
