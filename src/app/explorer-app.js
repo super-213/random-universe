@@ -72,7 +72,9 @@ export async function createExplorerApp() {
   const scene = new THREE.Scene();
   scene.fog = new THREE.FogExp2(0x050508, 0.008);
   const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 200);
-  camera.position.set(0, 0.5, 32);
+  const generatorCameraPosition = new THREE.Vector3(0, 0.5, 32);
+  const galaxyCameraPosition = new THREE.Vector3(-6, -12, 22);
+  camera.position.copy(generatorCameraPosition);
   
   let controls = null;
   let explorerLoadPromise = null;
@@ -1789,7 +1791,13 @@ export async function createExplorerApp() {
     lastTimelineUpdateAt = 0;
     $('#toggle-time').textContent = session.timeline.playing ? 'Ⅱ' : '▶';
     $('#toggle-time').setAttribute('aria-label', session.timeline.playing ? '暂停时间' : '播放时间');
-    session.transition = { type: 'enter', start: performance.now(), duration: prefersReducedMotion ? 1 : 2100 };
+    session.transition = {
+      type: 'enter',
+      start: performance.now(),
+      duration: prefersReducedMotion ? 1 : 2100,
+      cameraStart: camera.position.clone(),
+      cameraEnd: galaxyCameraPosition.clone()
+    };
   
     if (alreadyHydrated) {
       explorer.restartTimelineScaleIntro();
@@ -1845,7 +1853,13 @@ export async function createExplorerApp() {
     localGroupGroup.visible = false;
     cosmicWebGroup.visible = false;
     scene.fog.density = .008;
-    session.transition = { type: 'leave', start: performance.now(), duration: prefersReducedMotion ? 1 : 1300 };
+    session.transition = {
+      type: 'leave',
+      start: performance.now(),
+      duration: prefersReducedMotion ? 1 : 1300,
+      cameraStart: camera.position.clone(),
+      cameraEnd: generatorCameraPosition.clone()
+    };
   }
   
   function easeOutExpo(t) { return t === 1 ? 1 : 1 - Math.pow(2, -10 * t); }
@@ -1916,15 +1930,15 @@ export async function createExplorerApp() {
       universeGroup.scale.setScalar(Math.max(0.001, 1 - e * 1.5));
       universeGroup.rotation.z += 0.018 * (1 - t);
       detailGroup.scale.setScalar(0.02 + easeOutExpo(t) * 0.98);
-      camera.position.z = 32 - e * 12;
-      camera.position.y = 0.5 + e * 4.2;
+      camera.position.lerpVectors(session.transition.cameraStart, session.transition.cameraEnd, e);
+      camera.lookAt(controls.target);
     }
     if (session.transition.type === 'leave') {
       const e = easeInOutCubic(t);
       detailGroup.scale.setScalar(1 - e * .96);
       universeGroup.scale.setScalar(e);
-      camera.position.z = 20 + e * 12;
-      camera.position.y = 4.7 - e * 4.2;
+      camera.position.lerpVectors(session.transition.cameraStart, session.transition.cameraEnd, e);
+      camera.lookAt(controls.target);
     }
     if (session.transition.type === 'universe-out' || session.transition.type === 'universe-in') {
       const e = easeInOutCubic(t);
