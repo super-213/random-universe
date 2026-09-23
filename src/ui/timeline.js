@@ -130,7 +130,6 @@ export function renderTimelineHeader(state, viewport) {
   }
   const viewportPercent = Math.max(0, Math.min(100, timelinePercentAt(state.position, viewport)));
   setStyle(cachedElement('progress', '#time-progress'), 'width', `${viewportPercent}%`);
-  setText(cachedElement('timelineValue', '#timeline-value'), state.label);
   const scrubValue = cachedElement('timelineScrubValue', '#timeline-scrub-value');
   setText(scrubValue, state.label);
   setStyle(scrubValue, 'left', `${viewportPercent}%`);

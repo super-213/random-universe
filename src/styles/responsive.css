@@ -111,9 +111,6 @@
     margin-bottom: 18px;
   }
   .timeline-head > span { display: none; }
-  .timeline-head > b {
-    display: none;
-  }
   .play-button {
     grid-area: play;
     width: 44px;

@@ -7,7 +7,6 @@
   transition: opacity .35s ease, transform .35s ease;
 }
 .timeline-head { display: flex; align-items: center; gap: 11px; margin-bottom: 26px; color: var(--muted); font-size: 9px; letter-spacing: .12em; }
-.timeline-head > b { color: var(--ink); font: 400 10px "Space Mono", monospace; letter-spacing: 0; }
 .play-button { display: grid; place-items: center; width: 32px; height: 32px; padding: 0 0 0 2px; border: 1px solid var(--line); border-radius: 50%; background: rgba(5,5,8,.4); color: var(--accent); cursor: pointer; font-size: 9px; }
 .timeline-tools { display: flex; align-items: center; gap: 6px; margin-left: auto; }
 .timeline-filter { position: relative; }
