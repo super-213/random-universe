@@ -24,7 +24,9 @@ function dimensionlessAge(omegaMatter, darkEnergyDensity, darkEnergy) {
     const midpointW = darkEnergyEquationOfState(
       midpointScaleFactor,
       darkEnergy.w0,
-      darkEnergy.wa
+      darkEnergy.wa,
+      darkEnergy.model,
+      darkEnergy.ripVariant
     );
     const nextDarkEnergyEvolution = darkEnergyEvolution
       * Math.exp(3 * (1 + midpointW) * logStep);

@@ -239,20 +239,34 @@ export function createLocalGroupSystem({
     const fatePhase = finiteOutcome
       ? THREE.MathUtils.smoothstep(getSession().timeline.position, fate.onsetAt, 1000)
       : 0;
+    const bouncePhase = fate.cyclicBounce
+      ? THREE.MathUtils.smoothstep(getSession().timeline.position, fate.bounceAt, 1000)
+      : 0;
+    const crunchPhase = fate.cyclicBounce
+      ? THREE.MathUtils.smoothstep(getSession().timeline.position, fate.onsetAt, fate.bounceAt)
+      : fatePhase;
+    const ripStrength = fate.type === 'little-rip' ? fate.ripStrength ?? 1 : 1;
 
     state.galaxies.forEach((companion) => {
       let fateSurvival = 1;
       companion.galaxy.position.fromArray(companion.basePosition);
       companion.galaxy.scale.setScalar(1);
-      if (fatePhase > 0 && fate.type === 'big-rip') {
-        const separation = 1 + Math.pow(fatePhase, 1.7) * 3.2;
+      if (fatePhase > 0 && (fate.type === 'big-rip' || fate.type === 'little-rip')) {
+        const separation = 1 + Math.pow(fatePhase, 1.7) * 3.2 * ripStrength;
         companion.galaxy.position.multiplyScalar(separation);
-        companion.galaxy.scale.setScalar(1 + Math.pow(fatePhase, 1.7) * 2.5);
-        fateSurvival = Math.pow(1 - fatePhase, .72);
+        companion.galaxy.scale.setScalar(1 + Math.pow(fatePhase, 1.7) * 2.5 * ripStrength);
+        fateSurvival = Math.pow(1 - fatePhase * ripStrength, .72);
       } else if (fatePhase > 0 && fate.type === 'big-crunch') {
-        const contraction = Math.max(.012, 1 - Math.pow(fatePhase, 1.35) * .988);
+        const collapsed = Math.max(.012, 1 - Math.pow(crunchPhase, 1.35) * .988);
+        const contraction = fate.cyclicBounce
+          ? THREE.MathUtils.lerp(collapsed, .72, Math.pow(bouncePhase, .68))
+          : collapsed;
         companion.galaxy.position.multiplyScalar(contraction);
         companion.galaxy.scale.setScalar(contraction);
+      } else if (fatePhase > 0 && fate.type === 'type-iii-singularity') {
+        const finiteExpansion = 1 + Math.log2(fate.singularityScaleFactor || 2) * .14 * fatePhase;
+        companion.galaxy.position.multiplyScalar(finiteExpansion);
+        companion.galaxy.scale.setScalar(1 + fatePhase * .18);
       } else if (fatePhase > 0 && fate.type === 'vacuum-decay') {
         const bubbleRadius = .18 + Math.pow(fatePhase, .58) * 36;
         const bubblePosition = getFateBubble()?.position || new THREE.Vector3();
@@ -305,9 +319,14 @@ export function createLocalGroupSystem({
           + remnant
           + gasLight * .22;
         if (fate.type === 'big-crunch' && fatePhase > 0) {
-          colorArray[offset] *= 1 + fatePhase * 1.4;
-          colorArray[offset + 1] *= 1 - fatePhase * .5;
-          colorArray[offset + 2] *= 1 - fatePhase * .72;
+          colorArray[offset] *= 1 + crunchPhase * 1.4 + bouncePhase * 1.8;
+          colorArray[offset + 1] *= 1 - crunchPhase * .5 + bouncePhase * 1.25;
+          colorArray[offset + 2] *= 1 - crunchPhase * .72 + bouncePhase * 2.2;
+        } else if (fate.type === 'type-iii-singularity' && fatePhase > 0) {
+          const energyRise = Math.pow(fatePhase, 2.4);
+          colorArray[offset] *= 1 + energyRise * 4.8;
+          colorArray[offset + 1] *= 1 + energyRise * 2.8;
+          colorArray[offset + 2] *= 1 + energyRise * 1.2;
         }
       }
       companion.points.geometry.attributes.color.needsUpdate = true;

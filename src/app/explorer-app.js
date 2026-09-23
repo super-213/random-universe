@@ -1038,7 +1038,9 @@ export async function createExplorerApp() {
   
     const fateColor = universe.cosmicFate.type === 'vacuum-decay'
       ? 0xc6a7ff
-      : universe.cosmicFate.type === 'big-rip' ? 0x80c8ff : 0xff805f;
+      : universe.cosmicFate.type === 'big-rip' || universe.cosmicFate.type === 'little-rip'
+        ? 0x80c8ff
+        : universe.cosmicFate.type === 'type-iii-singularity' ? 0xffc36b : 0xff805f;
     fateBubble = new THREE.Mesh(
       new THREE.SphereGeometry(1, 40, 24),
       new THREE.MeshBasicMaterial({
@@ -2372,9 +2374,12 @@ export async function createExplorerApp() {
   }
   
   function applyCivilizationVisuals(runtimeState) {
-    const fateFade = universe.cosmicFate.type === 'heat-death'
+    const rawFateFade = universe.cosmicFate.type === 'heat-death'
       ? 0
       : THREE.MathUtils.smoothstep(session.timeline.position, universe.cosmicFate.onsetAt, 995);
+    const fateFade = universe.cosmicFate.type === 'little-rip'
+      ? rawFateFade * (universe.cosmicFate.ripStrength ?? 1)
+      : rawFateFade;
     runtimeState.forEach((state, index) => {
       const group = civilizationGroups[index];
       const species = civilizationData[index];

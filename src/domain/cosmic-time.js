@@ -240,12 +240,37 @@ export function selectTimelineNarrative({
           : '幽灵暗能量密度持续上升，星系团与星系开始逐层解束缚'
       };
     }
+    if (fate.type === 'little-rip') {
+      const terminal = position >= 995;
+      const pseudo = fate.ripVariant === 'pseudo';
+      return {
+        key: `fate-little-rip-${pseudo ? 'pseudo' : terminal ? 'asymptotic' : 'unbinding'}`,
+        time: label,
+        text: pseudo
+          ? '伪撕裂变体的膨胀惯性力渐近有限上限，部分弱束缚结构已解体'
+          : terminal
+            ? '膨胀率不在任何有限时刻发散，但束缚结构已在渐近过程中逐层失效'
+            : '暗能量密度缓慢上升，星系团与星系在有限时间内开始解束缚'
+      };
+    }
+    if (fate.type === 'type-iii-singularity') {
+      const terminal = position >= 995;
+      return {
+        key: `fate-type-iii-${terminal ? 'terminal' : 'density-rise'}`,
+        time: label,
+        text: terminal
+          ? '尺度因子仍然有限，能量密度、压力与时空曲率却趋于发散'
+          : '宇宙尺度逐渐逼近有限上限，暗能量密度与高能辐射快速上升'
+      };
+    }
     const terminal = position >= 995;
     return {
       key: `fate-crunch-${terminal ? 'terminal' : 'turnaround'}`,
       time: label,
-      text: terminal
-        ? '坍缩使物质与辐射密度急剧升高，经典演化在高曲率阶段失效'
+      text: terminal && fate.cyclicBounce
+        ? '大坍缩进入高曲率阶段；高度推测的量子引力机制触发反弹与新一轮膨胀'
+        : terminal
+          ? '坍缩使物质与辐射密度急剧升高，经典演化在高曲率阶段失效'
         : '宇宙膨胀已经停止，大尺度距离开始反向缩小'
     };
   }
@@ -355,10 +380,15 @@ export function cosmicTimeLabel(position, universe) {
   if (position < 680) return `T+10^${(14 + (position - 650) / 30).toFixed(1)} yr`;
   if (position < 845) return `T+10^${Math.round(15 + (position - 680) / 165 * 25)} yr`;
   if (position < 950) return `T+10^${Math.round(40 + (position - 845) / 105 * (universe.blackHoleEvaporationExponent - 40))} yr`;
-  if (position >= 1000) return 'T→∞ · 渐近热寂';
+  if (position >= 1000) {
+    return fate?.type === 'little-rip'
+      ? `T→∞ · ${fate.ripVariant === 'pseudo' ? '伪撕裂' : '小撕裂'}`
+      : 'T→∞ · 渐近热寂';
+  }
   const exponent = timelinePositionToCosmicLogYears(position, universe);
   const exponentLabel = exponent < 1000 ? exponent.toFixed(0) : String(Math.round(exponent));
+  const asymptoticLabel = fate?.type === 'little-rip' ? '渐近撕裂' : '渐近';
   return position < 995
     ? `T+10^${exponentLabel} yr`
-    : `T+10^${exponentLabel} yr · 渐近`;
+    : `T+10^${exponentLabel} yr · ${asymptoticLabel}`;
 }

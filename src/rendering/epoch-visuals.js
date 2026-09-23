@@ -33,6 +33,8 @@ const heatDeathBackground = new THREE.Color(0x03050a);
 const currentBackground = new THREE.Color();
 const fateColors = {
   'big-rip': new THREE.Color(0x071324),
+  'little-rip': new THREE.Color(0x071523),
+  'type-iii-singularity': new THREE.Color(0x241407),
   'big-crunch': new THREE.Color(0x260806),
   'vacuum-decay': new THREE.Color(0x160a25)
 };
@@ -94,6 +96,15 @@ export function updateEpochVisuals(position, context) {
   const fatePhase = finiteOutcome
     ? THREE.MathUtils.smoothstep(position, fate.onsetAt, 1000)
     : 0;
+  const bouncePhase = fate?.cyclicBounce
+    ? THREE.MathUtils.smoothstep(position, fate.bounceAt, 1000)
+    : 0;
+  const crunchPhase = fate?.cyclicBounce
+    ? THREE.MathUtils.smoothstep(position, fate.onsetAt, fate.bounceAt)
+    : fatePhase;
+  const fateDestruction = fate?.type === 'little-rip'
+    ? fatePhase * (fate.ripStrength ?? 1)
+    : fatePhase;
   const earlyVisible = position < 150 && mode === 'explorer';
   epochEffectsGroup.visible = earlyVisible;
   if (earlyVisible && primordialParticles) {
@@ -154,8 +165,10 @@ export function updateEpochVisuals(position, context) {
   } else if (finiteOutcome && fatePhase > 0) {
     currentBackground.lerpColors(normalBackground, fateColors[fate.type], fatePhase * .72);
     renderer.toneMappingExposure = fate.type === 'big-crunch'
-      ? 1.15 + fatePhase * 1.45
-      : 1.15 - fatePhase * .38;
+      ? 1.15 + crunchPhase * 1.45 + bouncePhase * 1.8
+      : fate.type === 'type-iii-singularity'
+        ? 1.15 + Math.pow(fatePhase, 2.2) * 2.6
+        : 1.15 - fatePhase * .38;
   } else if (position > 950) {
     // Heat death is the disappearance of usable gradients, not a global dimmer.
     const cooling = THREE.MathUtils.smoothstep(position, 950, 1000);
@@ -348,24 +361,37 @@ export function updateEpochVisuals(position, context) {
     const bubbleZ = fateBubble?.position.z || 0;
     const bubbleRadius = .18 + Math.pow(fatePhase, .58) * 36;
     for (let i = 0; i < originalGalaxyPositions.length; i += 3) {
-      if (fate.type === 'big-rip') {
+      if (fate.type === 'big-rip' || fate.type === 'little-rip') {
+        const ripStrength = fate.type === 'little-rip' ? fate.ripStrength ?? 1 : 1;
         const radius = Math.hypot(originalGalaxyPositions[i], originalGalaxyPositions[i + 1], originalGalaxyPositions[i + 2]);
-        const separation = 1 + Math.pow(fatePhase, 1.7) * (2.8 + radius * .16);
+        const separation = 1 + Math.pow(fatePhase, 1.7) * (2.8 + radius * .16) * ripStrength;
         positionArray[i] *= separation;
         positionArray[i + 1] *= separation;
         positionArray[i + 2] *= separation;
-        const survival = Math.pow(1 - fatePhase, .72);
+        const survival = Math.pow(1 - fatePhase * ripStrength, .72);
         colorArray[i] *= survival;
         colorArray[i + 1] *= survival;
         colorArray[i + 2] *= survival;
       } else if (fate.type === 'big-crunch') {
-        const contraction = Math.max(.012, 1 - Math.pow(fatePhase, 1.35) * .988);
+        const collapsed = Math.max(.012, 1 - Math.pow(crunchPhase, 1.35) * .988);
+        const contraction = fate.cyclicBounce
+          ? THREE.MathUtils.lerp(collapsed, .72, Math.pow(bouncePhase, .68))
+          : collapsed;
         positionArray[i] *= contraction;
         positionArray[i + 1] *= contraction;
         positionArray[i + 2] *= contraction;
-        colorArray[i] *= 1 + fatePhase * 1.4;
-        colorArray[i + 1] *= 1 - fatePhase * .5;
-        colorArray[i + 2] *= 1 - fatePhase * .72;
+        colorArray[i] *= 1 + crunchPhase * 1.4 + bouncePhase * 1.8;
+        colorArray[i + 1] *= 1 - crunchPhase * .5 + bouncePhase * 1.25;
+        colorArray[i + 2] *= 1 - crunchPhase * .72 + bouncePhase * 2.2;
+      } else if (fate.type === 'type-iii-singularity') {
+        const finiteExpansion = 1 + Math.log2(fate.singularityScaleFactor || 2) * .14 * fatePhase;
+        positionArray[i] *= finiteExpansion;
+        positionArray[i + 1] *= finiteExpansion;
+        positionArray[i + 2] *= finiteExpansion;
+        const energyRise = Math.pow(fatePhase, 2.4);
+        colorArray[i] *= 1 + energyRise * 4.8;
+        colorArray[i + 1] *= 1 + energyRise * 2.8;
+        colorArray[i + 2] *= 1 + energyRise * 1.2;
       } else {
         const distance = Math.hypot(
           positionArray[i] - bubbleX,
@@ -396,7 +422,7 @@ export function updateEpochVisuals(position, context) {
   const coreGlow = galaxyGroup.children.find((item) => item.userData.isCoreGlow);
   if (coreGlow) {
     const { scale, opacity } = coreGlow.userData.profile;
-    coreGlow.material.opacity = assembledCore * stellarPopulation * opacity * (1 - fatePhase);
+    coreGlow.material.opacity = assembledCore * stellarPopulation * opacity * (1 - fateDestruction);
     coreGlow.scale.set(scale, scale, 1);
   }
   const agnGlow = galaxyGroup.children.find((item) => item.userData.isAgnGlow);
@@ -416,7 +442,7 @@ export function updateEpochVisuals(position, context) {
     agnJet.material.opacity = activePhase * .18;
   }
 
-  const outcomeVisibility = 1 - fatePhase;
+  const outcomeVisibility = 1 - fateDestruction;
   const remnantsVisible = outcomeVisibility > .001
     && position >= remnantDynamics.firstBirthAt
     && position < remnantFadeEnd;
@@ -434,7 +460,7 @@ export function updateEpochVisuals(position, context) {
           remnantFadeStart,
           Math.max(remnantFadeStart + 1, remnantFadeEnd)
         );
-    stellarRemnants.material.opacity = remnantFade * .64 * (1 - fatePhase);
+    stellarRemnants.material.opacity = remnantFade * .64 * outcomeVisibility;
     const remnantArray = stellarRemnants.geometry.attributes.position.array;
     const remnantColors = stellarRemnants.geometry.attributes.color.array;
     const writeOrbit = (index, samplePosition) => {
@@ -644,13 +670,18 @@ export function updateEpochVisuals(position, context) {
       fateBubble.visible = false;
       fateGlow.position.set(0, 0, 0);
       fateGlow.material.opacity = fate.type === 'big-crunch'
-        ? Math.pow(fatePhase, 2.4) * .92
-        : Math.sin(fatePhase * Math.PI) * .28;
+        ? Math.min(1, Math.pow(crunchPhase, 2.4) * .92 + bouncePhase * .9)
+        : fate.type === 'type-iii-singularity'
+          ? Math.pow(fatePhase, 2.1) * .96
+          : Math.sin(fatePhase * Math.PI) * .28;
       const glowScale = fate.type === 'big-crunch'
-        ? .4 + (1 - fatePhase) * 8
-        : 3 + fatePhase * 28;
+        ? fate.cyclicBounce
+          ? .4 + (1 - crunchPhase) * 8 + bouncePhase * 16
+          : .4 + (1 - fatePhase) * 8
+        : fate.type === 'type-iii-singularity'
+          ? 2 + Math.pow(fatePhase, .8) * 7
+          : 3 + fatePhase * 28;
       fateGlow.scale.setScalar(glowScale);
     }
   }
 }
-

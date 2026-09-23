@@ -100,11 +100,34 @@ export function erasForUniverse(universe) {
       { until: 1001, name: '大撕裂 · 条件结局', description: '在 w < -1 持续成立的假设下，局部引力与微观束缚将被逐层克服。' }
     ];
   }
+  if (fate.type === 'little-rip') {
+    const variant = fate.ripVariant === 'pseudo'
+      ? '伪撕裂变体中膨胀率渐近有限上限，只有束缚强度低于该上限的结构会解体。'
+      : '膨胀率只在无限远未来发散，但束缚结构仍会在有限时间内逐层解体。';
+    return [
+      ...shared,
+      ...preFate,
+      { until: 1001, name: '小撕裂 · 渐近结局', description: variant }
+    ];
+  }
+  if (fate.type === 'type-iii-singularity') {
+    return [
+      ...shared,
+      ...preFate,
+      { until: 1001, name: 'III 型有限尺度奇点', description: '尺度因子保持有限，暗能量密度、压力与曲率却在有限时间快速发散。' }
+    ];
+  }
   if (fate.type === 'big-crunch') {
     return [
       ...shared,
       ...preFate,
-      { until: 1001, name: '大坍缩 · 条件结局', description: '尺度因子反向演化，物质与辐射密度在有限时间内快速上升。' }
+      {
+        until: 1001,
+        name: fate.cyclicBounce ? '大坍缩 · 循环反弹' : '大坍缩 · 条件结局',
+        description: fate.cyclicBounce
+          ? '尺度因子反向演化至高曲率阶段；本分支假设未知量子引力机制触发反弹，进入新一轮膨胀。'
+          : '尺度因子反向演化，物质与辐射密度在有限时间内快速上升。'
+      }
     ];
   }
   return [

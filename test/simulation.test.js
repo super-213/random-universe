@@ -10,6 +10,7 @@ import {
   timelinePositionToCosmicYears
 } from '../src/domain/cosmic-time.js';
 import { erasForUniverse } from '../src/domain/catalog.js';
+import { darkEnergyEquationOfState } from '../src/domain/cosmic-fate.js';
 import {
   createUniverse,
   estimatePresentAgeYears,
@@ -423,6 +424,53 @@ test('finite cosmic outcomes map continuously through the full future timeline',
     cosmicTimeLabel(cosmicFate.onsetAt, universe),
     cosmicTimeLabel(998, universe)
   );
+});
+
+test('little rip stays asymptotic while pseudo rip remains a seeded variant', () => {
+  const littleRip = createUniverse('0000-0000-0000-0009');
+  assert.equal(littleRip.cosmicFate.type, 'little-rip');
+  assert.equal(littleRip.cosmicFate.ripVariant, 'little');
+  assert.equal(littleRip.cosmicFate.outcomeYears, Infinity);
+  assert.ok(Number.isFinite(littleRip.cosmicFate.onsetYears));
+  assert.match(cosmicTimeLabel(1000, littleRip), /T→∞ · 小撕裂/);
+  assert.ok(erasForUniverse(littleRip).some((era) => era.name.includes('小撕裂')));
+
+  const pseudoRip = createUniverse('0000-0000-0000-000W');
+  assert.equal(pseudoRip.cosmicFate.type, 'little-rip');
+  assert.equal(pseudoRip.cosmicFate.ripVariant, 'pseudo');
+  assert.ok(pseudoRip.cosmicFate.ripStrength > 0 && pseudoRip.cosmicFate.ripStrength < 1);
+  assert.match(cosmicTimeLabel(1000, pseudoRip), /伪撕裂/);
+});
+
+test('little and pseudo rip equations approach minus one without sharing the same asymptote rate', () => {
+  const present = darkEnergyEquationOfState(1, -1.06, .02, 'little-rip', 'little');
+  const littleFuture = darkEnergyEquationOfState(1e12, -1.06, .02, 'little-rip', 'little');
+  const pseudoFuture = darkEnergyEquationOfState(1e12, -1.06, .02, 'little-rip', 'pseudo');
+  assert.equal(present, -1.06);
+  assert.ok(littleFuture > present && littleFuture < -1);
+  assert.ok(pseudoFuture > littleFuture && pseudoFuture < -1);
+});
+
+test('type III singularities end at finite time and finite scale', () => {
+  const universe = createUniverse('0000-0000-0000-000H');
+  const { cosmicFate } = universe;
+  assert.equal(cosmicFate.type, 'type-iii-singularity');
+  assert.ok(Number.isFinite(cosmicFate.outcomeYears));
+  assert.ok(cosmicFate.outcomeYears > universe.presentAgeYears);
+  assert.ok(cosmicFate.singularityScaleFactor > 1);
+  assert.equal(cosmicYearsToTimelinePosition(cosmicFate.outcomeYears, universe), 1000);
+  assert.ok(erasForUniverse(universe).some((era) => era.name.includes('III 型')));
+});
+
+test('cyclic bounce is an optional seeded epilogue to a big crunch', () => {
+  const universe = createUniverse('0000-0000-0000-0000');
+  const { cosmicFate } = universe;
+  assert.equal(cosmicFate.type, 'big-crunch');
+  assert.equal(cosmicFate.cyclicBounce, true);
+  assert.ok(cosmicFate.bounceAt > cosmicFate.onsetAt);
+  assert.ok(cosmicFate.bounceAt < 1000);
+  assert.match(cosmicFate.label, /循环反弹/);
+  assert.ok(erasForUniverse(universe).some((era) => era.name.includes('循环反弹')));
 });
 
 test('derived cosmic milestones remain ordered and react to generated constants', () => {
@@ -1003,11 +1051,11 @@ test('rare observations are seeded and require simulated sources or causal precu
         assert.equal(typeof event.landingViable, 'boolean');
       } else if (event.type === 'aestivation-awakening') {
         assert.equal(event.sourceEventId, 'stable-digital');
-        assert.equal(universe.cosmicFate.type, 'heat-death');
+        assert.ok(['heat-death', 'little-rip'].includes(universe.cosmicFate.type));
         assert.ok(event.dormancyAt > civilizationEvents[3].impactAt);
         assert.ok(event.dormancyAt < event.start);
       } else if (['proton-decay-era', 'galactic-evaporation', 'hawking-final-burst', 'black-dwarf-supernova', 'last-observable-signal'].includes(event.type)) {
-        assert.equal(universe.cosmicFate.type, 'heat-death');
+        assert.ok(['heat-death', 'little-rip'].includes(universe.cosmicFate.type));
         if (event.type === 'proton-decay-era') {
           assert.ok(Math.abs(
             Math.log10(event.physicalStartYears) - universe.protonDecayExponent

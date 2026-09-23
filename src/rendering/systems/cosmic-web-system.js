@@ -376,16 +376,28 @@ export function createCosmicWebSystem({
     const fatePhase = finiteOutcome
       ? THREE.MathUtils.smoothstep(position, fate.onsetAt, 1000)
       : 0;
+    const bouncePhase = fate.cyclicBounce
+      ? THREE.MathUtils.smoothstep(position, fate.bounceAt, 1000)
+      : 0;
+    const crunchPhase = fate.cyclicBounce
+      ? THREE.MathUtils.smoothstep(position, fate.onsetAt, fate.bounceAt)
+      : fatePhase;
+    const ripStrength = fate.type === 'little-rip' ? fate.ripStrength ?? 1 : 1;
     state.visual.epochOpacity = THREE.MathUtils.smoothstep(position, 195, 330);
     state.visual.fateOpacity = fate.type === 'vacuum-decay'
       ? 1 - fatePhase
-      : fate.type === 'big-rip'
-        ? Math.pow(1 - fatePhase, .42)
+      : fate.type === 'big-rip' || fate.type === 'little-rip'
+        ? Math.pow(1 - fatePhase * ripStrength, .42)
         : 1;
-    if (fate.type === 'big-rip') {
-      cosmicWebGroup.scale.setScalar(1 + Math.pow(fatePhase, 1.45) * 1.8);
+    if (fate.type === 'big-rip' || fate.type === 'little-rip') {
+      cosmicWebGroup.scale.setScalar(1 + Math.pow(fatePhase, 1.45) * 1.8 * ripStrength);
     } else if (fate.type === 'big-crunch') {
-      cosmicWebGroup.scale.setScalar(Math.max(.015, 1 - Math.pow(fatePhase, 1.28) * .985));
+      const collapsed = Math.max(.015, 1 - Math.pow(crunchPhase, 1.28) * .985);
+      cosmicWebGroup.scale.setScalar(fate.cyclicBounce
+        ? THREE.MathUtils.lerp(collapsed, .68, Math.pow(bouncePhase, .65))
+        : collapsed);
+    } else if (fate.type === 'type-iii-singularity') {
+      cosmicWebGroup.scale.setScalar(1 + Math.log2(fate.singularityScaleFactor || 2) * .12 * fatePhase);
     } else {
       cosmicWebGroup.scale.setScalar(1);
     }

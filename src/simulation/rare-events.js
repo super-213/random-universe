@@ -1044,7 +1044,7 @@ export function createRareEventPlan({
     }));
   }
 
-  if (universe.cosmicFate.type === 'heat-death') {
+  if (universe.cosmicFate.type === 'heat-death' || universe.cosmicFate.type === 'little-rip') {
     const digitalMigrationEvent = civilizationEvents
       .filter((event) => event.type === 'digital-migration' && event.migrationStable)
       .sort((left, right) => left.impactAt - right.impactAt)[0];

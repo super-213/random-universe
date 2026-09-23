@@ -1052,11 +1052,14 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       declineWindow.energyStart,
       declineWindow.energyEnd
     );
+    const fateSeverity = universe.cosmicFate.type === 'little-rip'
+      ? universe.cosmicFate.ripStrength ?? 1
+      : 1;
     const fateDecline = declineProgressAt(
       time,
       declineWindow.fateStart,
       declineWindow.fateEnd
-    );
+    ) * fateSeverity;
     const environmentalDecline = Math.max(energyDecline, fateDecline);
     const recoveryAvailability = (1 - environmentalDecline) ** 2;
     if (simulation.habitatDeathAt) {

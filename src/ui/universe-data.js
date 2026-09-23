@@ -35,15 +35,26 @@ export function updateUniverseData(universe) {
   $('#evaporation-value').textContent = fate.outcomeExponent < universe.blackHoleEvaporationExponent
     ? '结局前未抵达'
     : `约 10^${universe.blackHoleEvaporationExponent} 年`;
-  $('#dark-energy-model-value').textContent = fate.modelLabel;
+  $('#dark-energy-model-value').textContent = fate.ripVariant === 'pseudo'
+    ? `${fate.modelLabel} · 伪撕裂变体`
+    : fate.modelLabel;
   $('#dark-energy-model-value').title = fate.modelDescription;
-  $('#dark-energy-eos-value').textContent = `w₀ ${fate.w0.toFixed(2)} · wₐ ${fate.wa.toFixed(2)} · 有界 BA`;
+  const equationLabel = fate.model === 'little-rip'
+    ? 'w→-1⁻ · 渐近模型'
+    : fate.model === 'type-iii'
+      ? `aₛ ${fate.singularityScaleFactor.toFixed(1)} · 有限尺度`
+      : `w₀ ${fate.w0.toFixed(2)} · wₐ ${fate.wa.toFixed(2)} · 有界 BA`;
+  $('#dark-energy-eos-value').textContent = equationLabel;
   $('#vacuum-value').textContent = formatVacuumState(fate);
+  const ripCropped = fate.type === 'little-rip'
+    && fate.ripOnsetExponent <= universe.protonDecayExponent;
   $('#baryon-fate-value').textContent = Number.isFinite(universe.protonDecayExponent)
-    ? (fate.outcomeExponent <= universe.protonDecayExponent
-        ? '质子衰变路径 · 终局前未发生'
+    ? (fate.outcomeExponent <= universe.protonDecayExponent || ripCropped
+        ? `质子衰变路径 · ${fate.type === 'little-rip' ? '撕裂前未抵达' : '终局前未发生'}`
         : `质子衰变路径 · 约 10^${universe.protonDecayExponent.toFixed(1)} 年`)
-    : '质子稳定路径 · 黑矮星事件可发生';
+    : fate.type === 'little-rip'
+      ? '质子稳定路径 · 超远未来事件按撕裂时间裁剪'
+      : '质子稳定路径 · 黑矮星事件可发生';
   $('#lifetime-value').textContent = `${fate.label} · ${formatOutcomeTime(fate)}`;
   const equalityLabel = $('#timeline-equality-label');
   equalityLabel.title = `约 ${(universe.cosmicMilestones.matterRadiationEqualityYears / 1e4).toFixed(1)} 万年`;
@@ -54,7 +65,13 @@ export function updateUniverseData(universe) {
   stellarLabel.style.left = `${stellarEnd / 10}%`;
   stellarLabel.style.display = stellarEndReached ? '' : 'none';
   const lateLabel = $('#timeline-late-label');
-  lateLabel.textContent = fate.type === 'heat-death' ? '黑洞时代' : '临界阶段';
+  lateLabel.textContent = fate.type === 'heat-death'
+    ? '黑洞时代'
+    : fate.type === 'little-rip'
+      ? '渐近解束缚'
+      : fate.type === 'type-iii-singularity'
+        ? '密度发散'
+        : fate.cyclicBounce ? '坍缩—反弹' : '临界阶段';
   lateLabel.style.left = `${(fate.type === 'heat-death' ? 845 : fate.onsetAt) / 10}%`;
   $('#timeline-final-label').textContent = fate.shortLabel;
   $('#cosmic-timeline').setAttribute('aria-label', `从大爆炸到${fate.label}的宇宙时间`);

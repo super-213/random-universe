@@ -25,6 +25,14 @@ const modelCatalog = {
     label: '幽灵暗能量',
     description: '有效状态方程低于 -1，暗能量密度随膨胀增长'
   },
+  'little-rip': {
+    label: '渐近幽灵能量',
+    description: '状态方程从 -1 下方渐近真空值，不在有限时间形成奇点'
+  },
+  'type-iii': {
+    label: 'III 型奇异流体',
+    description: '暗能量密度与压力在有限时间、有限尺度因子下发散'
+  },
   recollapsing: {
     label: '反转势能',
     description: '标量场势能在远未来跨过零点，膨胀最终停止'
@@ -42,6 +50,16 @@ const outcomeCatalog = {
     shortLabel: '大撕裂',
     description: '加速膨胀最终克服星系、恒星系与局部束缚'
   },
+  'little-rip': {
+    label: '小撕裂',
+    shortLabel: '小撕裂',
+    description: '膨胀率只在无限远未来发散，束缚结构仍会逐层解体'
+  },
+  'type-iii-singularity': {
+    label: 'III 型有限尺度奇点',
+    shortLabel: 'III 型奇点',
+    description: '尺度因子保持有限，能量密度、压力与时空曲率在有限时间发散'
+  },
   'big-crunch': {
     label: '大坍缩',
     shortLabel: '大坍缩',
@@ -54,10 +72,15 @@ const outcomeCatalog = {
   }
 };
 
-export function darkEnergyEquationOfState(scaleFactor, w0, wa) {
+export function darkEnergyEquationOfState(scaleFactor, w0, wa, model = '', ripVariant = 'little') {
   // Barboza-Alcaniz-style bounded w0/wa evolution written in scale factor.
   // It keeps w(a=1)=w0 and the same local slope as CPL without diverging in
   // either the early universe or the far future.
+  if (model === 'little-rip' && scaleFactor > 1) {
+    const relaxation = 1 + Math.log(scaleFactor);
+    const power = ripVariant === 'pseudo' ? 2 : 1;
+    return -1 - Math.abs(1 + w0) / relaxation ** power;
+  }
   const denominator = scaleFactor * scaleFactor + (1 - scaleFactor) ** 2;
   return w0 + wa * (1 - scaleFactor) / denominator;
 }
@@ -111,6 +134,7 @@ function integrateContraction({
 
 function integrateExpansion({
   model,
+  ripVariant,
   w0,
   wa,
   expansionRate,
@@ -129,7 +153,7 @@ function integrateExpansion({
     const previousScaleFactor = scaleFactor;
     const nextScaleFactor = scaleFactor * Math.exp(INTEGRATION_STEP);
     const midpointScaleFactor = Math.sqrt(scaleFactor * nextScaleFactor);
-    const w = darkEnergyEquationOfState(midpointScaleFactor, w0, wa);
+    const w = darkEnergyEquationOfState(midpointScaleFactor, w0, wa, model, ripVariant);
     const nextDarkEnergyEvolution = darkEnergyEvolution * Math.exp(-3 * (1 + w) * INTEGRATION_STEP);
     const negativePotential = model === 'recollapsing'
       ? .22 * darkEnergyDensity * Math.pow(nextScaleFactor / turnScale, 2.35)
@@ -185,11 +209,33 @@ function selectDarkEnergyModel(random) {
     wa: randomBetween(random, -.1, .1),
     turnScale: Infinity
   };
-  if (roll < .82) return {
-    model: 'phantom',
-    w0: randomBetween(random, -1.22, -1.035),
-    wa: randomBetween(random, .015, .14),
-    turnScale: Infinity
+  if (roll < .82) {
+    if (random() < .6) return {
+      model: 'phantom',
+      w0: randomBetween(random, -1.22, -1.035),
+      wa: randomBetween(random, .015, .14),
+      turnScale: Infinity
+    };
+    const ripVariant = random() < .28 ? 'pseudo' : 'little';
+    return {
+      model: 'little-rip',
+      w0: randomBetween(random, -1.08, -1.015),
+      wa: randomBetween(random, -.035, .08),
+      turnScale: Infinity,
+      ripVariant,
+      ripStrength: ripVariant === 'pseudo' ? randomBetween(random, .55, .86) : 1,
+      ripOnsetExponent: ripVariant === 'pseudo'
+        ? randomBetween(random, 18, 38)
+        : randomBetween(random, 12, 30)
+    };
+  }
+  if (random() < 1 / 3) return {
+    model: 'type-iii',
+    w0: randomBetween(random, -1.08, -.9),
+    wa: randomBetween(random, -.16, .16),
+    turnScale: Infinity,
+    singularityDelayHubbleTimes: randomBetween(random, 1.4, 18),
+    singularityScaleFactor: randomBetween(random, 2.2, 14)
   };
   return {
     model: 'recollapsing',
@@ -222,6 +268,12 @@ export function createCosmicFate(seed, cosmology) {
   } else if (darkEnergy.model === 'recollapsing') {
     baseType = 'big-crunch';
     baseOutcomeYears = expansion.crunchYears;
+  } else if (darkEnergy.model === 'little-rip') {
+    baseType = 'little-rip';
+  } else if (darkEnergy.model === 'type-iii') {
+    baseType = 'type-iii-singularity';
+    baseOutcomeYears = cosmology.presentAgeYears
+      + HUBBLE_TIME_YEARS / cosmology.expansionRate * darkEnergy.singularityDelayHubbleTimes;
   }
 
   const metastableVacuum = random() < .16;
@@ -230,6 +282,7 @@ export function createCosmicFate(seed, cosmology) {
   const vacuumWins = metastableVacuum && vacuumDecayYears < baseOutcomeYears;
   const type = vacuumWins ? 'vacuum-decay' : baseType;
   const outcomeYears = vacuumWins ? vacuumDecayYears : baseOutcomeYears;
+  const cyclicBounce = type === 'big-crunch' && random() < .28;
   const modelInfo = modelCatalog[darkEnergy.model];
   const outcomeInfo = outcomeCatalog[type];
   let onsetYears = Infinity;
@@ -243,10 +296,28 @@ export function createCosmicFate(seed, cosmology) {
     const presentExponent = Math.log10(cosmology.presentAgeYears);
     const outcomeExponent = Math.log10(outcomeYears);
     onsetYears = 10 ** (presentExponent + (outcomeExponent - presentExponent) * .97);
+  } else if (type === 'type-iii-singularity') {
+    const presentExponent = Math.log10(cosmology.presentAgeYears);
+    const outcomeExponent = Math.log10(outcomeYears);
+    onsetYears = 10 ** (presentExponent + (outcomeExponent - presentExponent) * .82);
+  } else if (type === 'little-rip') {
+    onsetYears = 10 ** darkEnergy.ripOnsetExponent;
   }
-  const onsetAt = Number.isFinite(onsetYears)
-    ? clamp(finiteFuturePosition(onsetYears, cosmology.presentAgeYears, outcomeYears), 480, 997)
-    : 930;
+  let onsetAt = 930;
+  if (type === 'little-rip') {
+    const exponent = darkEnergy.ripOnsetExponent;
+    onsetAt = exponent < 14
+      ? 570 + (exponent - 12) / 2 * 80
+      : exponent < 15
+        ? 650 + (exponent - 14) * 30
+        : 680 + (exponent - 15) / 25 * 165;
+    onsetAt = clamp(onsetAt, 570, 840);
+  } else if (Number.isFinite(onsetYears)) {
+    onsetAt = clamp(finiteFuturePosition(onsetYears, cosmology.presentAgeYears, outcomeYears), 480, 997);
+  }
+
+  const label = cyclicBounce ? '大坍缩 · 循环反弹' : outcomeInfo.label;
+  const shortLabel = cyclicBounce ? '循环反弹' : outcomeInfo.shortLabel;
 
   return {
     ...darkEnergy,
@@ -254,11 +325,13 @@ export function createCosmicFate(seed, cosmology) {
     modelDescription: modelInfo.description,
     expansionHistory: expansion.history,
     turnaroundYears: expansion.turnaroundYears || null,
+    cyclicBounce,
+    bounceAt: cyclicBounce ? 992 : null,
     metastableVacuum,
     vacuumDecayExponent,
     type,
-    label: outcomeInfo.label,
-    shortLabel: outcomeInfo.shortLabel,
+    label,
+    shortLabel,
     description: outcomeInfo.description,
     outcomeYears,
     outcomeExponent: Number.isFinite(outcomeYears) ? Math.log10(outcomeYears) : Infinity,
@@ -268,7 +341,14 @@ export function createCosmicFate(seed, cosmology) {
 }
 
 export function formatOutcomeTime(fate) {
-  if (!Number.isFinite(fate.outcomeYears)) return '渐近 · 无有限终点';
+  if (!Number.isFinite(fate.outcomeYears)) {
+    if (fate.type === 'little-rip') {
+      return fate.ripVariant === 'pseudo'
+        ? 'T→∞ · 伪撕裂渐近上限'
+        : 'T→∞ · 无有限时间奇点';
+    }
+    return '渐近 · 无有限终点';
+  }
   if (fate.outcomeYears < 1e12) return `T+${(fate.outcomeYears / 1e8).toFixed(0)} 亿年`;
   return `T+10^${fate.outcomeExponent.toFixed(1)} 年`;
 }
