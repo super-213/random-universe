@@ -4,7 +4,6 @@ const $ = (selector) => document.querySelector(selector);
 
 let lastEventKey = '';
 let eventFadeTimer = null;
-let civilizationRows = [];
 const energyTierLabels = ['', '行星能源', '恒星能源', '黑洞能源', '熵管理'];
 
 const ui = {};
@@ -183,12 +182,12 @@ export function renderCivilizationRows({ position, simulationState, runtimeState
   );
 
   if (!panel?.classList.contains('is-expanded')) return;
-  if (civilizationRows.length !== civilizationData.length || !civilizationRows[0]?.isConnected) {
-    civilizationRows = civilizationData.map((_, index) => document.querySelector(`[data-species="${index}"]`));
+  if (ui.civilizationRows?.length !== civilizationData.length || !ui.civilizationRows[0]?.isConnected) {
+    ui.civilizationRows = civilizationData.map((_, index) => document.querySelector(`[data-species="${index}"]`));
   }
   runtimeState.forEach((state, index) => {
     const species = civilizationData[index];
-    const row = civilizationRows[index];
+    const row = ui.civilizationRows[index];
     if (!row) return;
     setStyle(row, 'opacity', state.alive ? '1' : '.18');
     row.classList.toggle('is-impacted', state.alive && state.eventState.causes.length > 0);

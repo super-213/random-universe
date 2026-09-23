@@ -4,7 +4,7 @@ import {
 } from '../domain/cosmic-time.js';
 import { createSeededRandom, randomBetween } from '../domain/random.js';
 import { stellarEndTimelinePosition } from '../domain/universe.js';
-import { civilizationDeclineWindow } from './civilization.js';
+import { civilizationDeclineWindow } from './civilization-lifecycle.js';
 
 const travelModes = [
   { id: 'generation-fleet', label: '世代舰队', speed: [.12, .62], color: 0xffd27d },

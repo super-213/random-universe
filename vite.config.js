@@ -6,6 +6,7 @@ export default defineConfig({
       output: {
         manualChunks(id) {
           if (id.includes('/node_modules/three/build/')) return 'three-core';
+          if (id.endsWith('/src/simulation/civilization.js')) return 'civilization';
         }
       }
     }

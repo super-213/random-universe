@@ -1,5 +1,4 @@
 import { clamp, smoothstep } from '../domain/math.js';
-import { stellarEndTimelinePosition } from '../domain/universe.js';
 import {
   cosmicYearsToTimelinePosition,
   timelinePositionToCosmicYears
@@ -11,6 +10,9 @@ import {
   technologyBits
 } from './technology-tree.js';
 import { fleetProgress, fleetStates, fleetTravelDuration } from './intergalactic-travel.js';
+import { civilizationDeclineWindow } from './civilization-lifecycle.js';
+
+export { civilizationDeclineWindow } from './civilization-lifecycle.js';
 
 const morphologyCodes = {
   '生物共同体': 1,
@@ -21,21 +23,6 @@ const morphologyCodes = {
 };
 
 const morphologyLabels = ['', '生物共同体', '机器文明', '群体意识', '数字文明', '低可见度文明'];
-
-export function civilizationDeclineWindow(universe) {
-  const stellarEnd = stellarEndTimelinePosition(universe);
-  const finiteOutcome = universe.cosmicFate?.type !== 'heat-death';
-  const stellarEndReached = !finiteOutcome
-    || universe.cosmicFate.outcomeExponent > universe.lastStarDeathExponent;
-  const energyStart = stellarEndReached ? Math.max(470, stellarEnd - 22) : Infinity;
-  const energyEnd = stellarEndReached ? Math.min(1000, stellarEnd + 55) : Infinity;
-  return {
-    energyStart,
-    energyEnd,
-    fateStart: finiteOutcome ? universe.cosmicFate.onsetAt : Infinity,
-    fateEnd: finiteOutcome ? 1000 : Infinity
-  };
-}
 
 function declineProgressAt(time, start, end) {
   return Number.isFinite(start)
