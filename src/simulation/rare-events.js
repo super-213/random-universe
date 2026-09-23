@@ -141,7 +141,8 @@ export function createRareEventPlan({
   stellarPopulation,
   starPositions,
   civilizationData,
-  civilizationEvents
+  civilizationEvents,
+  civilizationSimulation = null
 }) {
   const random = createSeededRandom(universe.seed, 19183);
   const events = [];
@@ -545,6 +546,88 @@ export function createRareEventPlan({
     }));
   }
 
+  const rogueLensStart = futurePosition(522 + random() * 74, universe);
+  const rogueLensSource = choose(random, stellarCandidates(stellarPopulation, (index) => (
+    stellarPopulation.birthAt[index] <= rogueLensStart
+      && stellarPopulation.deathAt[index] > rogueLensStart
+  )));
+  if (rogueLensSource !== null && random() < .64) {
+    const lensMassEarth = 10 ** randomBetween(random, -1.2, 3.25);
+    const durationHours = clamp(4.8 * Math.sqrt(lensMassEarth), 1.5, 240);
+    const impactParameter = randomBetween(random, .12, .92);
+    const peakMagnification = (impactParameter ** 2 + 2)
+      / (impactParameter * Math.sqrt(impactParameter ** 2 + 4));
+    add(createMarker({
+      universe,
+      type: 'rogue-planet-microlensing',
+      label: '流浪行星微透镜候选',
+      visual: 'microlensing',
+      color: '#bcd9ff',
+      start: rogueLensStart,
+      duration: 23,
+      physicalDurationYears: durationHours / 8766,
+      sourceIndex: rogueLensSource,
+      lensMassEarth,
+      durationHours,
+      impactParameter,
+      peakMagnification,
+      message: '一颗不可见的行星质量天体从背景恒星前方掠过，产生短时、无色且近似对称的增亮',
+      outcome: `事件持续约 ${durationHours.toFixed(1)} 小时，模型质量约 ${lensMassEarth.toFixed(1)} M⊕；单次光变仍无法完全排除极宽轨道行星`
+    }));
+  }
+
+  const interstellarStart = futurePosition(538 + random() * 66, universe);
+  const interstellarSource = choose(random, stellarCandidates(stellarPopulation, (index) => (
+    stellarPopulation.birthAt[index] <= interstellarStart
+      && stellarPopulation.deathAt[index] > interstellarStart
+      && stellarPopulation.planetCounts[index] > 0
+  )));
+  if (interstellarSource !== null && random() < .58) {
+    const speedKms = randomBetween(random, 18, 96);
+    const eccentricity = randomBetween(random, 1.06, 4.2);
+    const volatileRich = random() < .62;
+    add(createMarker({
+      universe,
+      type: 'interstellar-object-flyby',
+      label: volatileRich ? '星际彗星掠过' : '星际天体掠过',
+      visual: 'orbital-debris',
+      color: volatileRich ? '#8fe2e8' : '#d7c7a3',
+      start: interstellarStart,
+      duration: 25,
+      physicalDurationYears: randomBetween(random, .08, 1.4),
+      sourceIndex: interstellarSource,
+      speedKms,
+      eccentricity,
+      volatileRich,
+      message: `双曲轨道天体以 ${speedKms.toFixed(0)} km/s 穿过行星系，轨道离心率 ${eccentricity.toFixed(2)} 明确高于 1`,
+      outcome: volatileRich
+        ? '挥发物光谱提供另一个恒星系的行星形成样本；天体未被宿主恒星长期俘获'
+        : '未解析加速度与异常形状会引发多种解释，但天然抛射物仍是基准模型'
+    }));
+  }
+
+  if (random() < .22) {
+    const stringStart = futurePosition(566 + random() * 72, universe);
+    const deficitAngleArcsec = 10 ** randomBetween(random, -2.2, .2);
+    const imageSeparationArcsec = deficitAngleArcsec * randomBetween(random, .6, 1.8);
+    add(createMarker({
+      universe,
+      type: 'cosmic-string-lensing-candidate',
+      label: '宇宙弦透镜候选',
+      visual: 'cosmic-string-lensing',
+      color: '#bd9cff',
+      start: stringStart,
+      duration: 32,
+      physicalDurationYears: randomBetween(random, 1, 60),
+      confidence: 'cosmology-hypothesis',
+      sourceIndex: galacticCenterIndex,
+      deficitAngleArcsec,
+      imageSeparationArcsec,
+      message: '多组背景源沿一条窄带同时出现近乎无畸变的成对像，形态符合锥形时空的透镜特征',
+      outcome: `候选亏损角约 ${deficitAngleArcsec.toFixed(3)}″、像间距 ${imageSeparationArcsec.toFixed(3)}″；星系对齐与仪器系统误差尚未排除，不能视为宇宙弦发现`
+    }));
+  }
+
   const transitStart = futurePosition(486 + random() * 96, universe);
   const observer = civilizationData
     .map((species, index) => ({ species, index }))
@@ -614,6 +697,45 @@ export function createRareEventPlan({
       luminosityFraction,
       message: `${target.name} 的恒星工程之后，系统出现无法由天然尘埃完全解释的中红外连续谱`,
       outcome: `约 ${(luminosityFraction * 100).toFixed(0)}% 恒星光度在 ${Math.round(wasteHeatKelvin)} K 附近重新辐射；这是条件满足后的技术迹象候选，而非确定的外星巨构判决`
+    }));
+  }
+
+  const stellarPropulsionEvent = civilizationEvents
+    .filter((event) => event.type === 'stellar-engineering'
+      && event.engineeringStable
+      && (!event.engineeringMode || event.engineeringMode === '恒星推进器'))
+    .sort((left, right) => left.impactAt - right.impactAt)[0];
+  if (stellarPropulsionEvent) {
+    const engineer = civilizationData[stellarPropulsionEvent.targetSpeciesIndex];
+    const acceleration = 10 ** randomBetween(random, -13.2, -9.1);
+    const driftParsecs = randomBetween(random, 8, 140);
+    const driftAngle = random() * Math.PI * 2;
+    const driftInclination = randomBetween(random, -.32, .32);
+    const driftPlanarScale = Math.sqrt(1 - driftInclination ** 2);
+    add(createMarker({
+      universe,
+      type: 'stellar-engine-proper-motion',
+      label: '恒星自行异常',
+      visual: 'stellar-engine',
+      color: '#ffe08c',
+      start: stellarPropulsionEvent.impactAt + randomBetween(random, 18, 42),
+      duration: 38,
+      physicalDurationYears: randomBetween(random, 8e5, 8e6),
+      category: 'civilization',
+      confidence: 'science-fiction',
+      targetNodeIndex: engineer.homeNodeIndex,
+      targetSpeciesIndex: stellarPropulsionEvent.targetSpeciesIndex,
+      sourceEventId: stellarPropulsionEvent.id,
+      causalRootId: stellarPropulsionEvent.causalRootId || stellarPropulsionEvent.id,
+      acceleration,
+      driftParsecs,
+      driftDirection: [
+        Math.cos(driftAngle) * driftPlanarScale,
+        driftInclination,
+        Math.sin(driftAngle) * driftPlanarScale
+      ],
+      message: `${engineer.name} 的宿主恒星出现与银河势不一致的持续加速度，并伴随单侧辐射遮蔽和定向恒星风`,
+      outcome: `若加速度维持，恒星将在一个银河轨道周期内偏离同龄星群约 ${driftParsecs.toFixed(0)} pc；恒星推进器仍属于明确的科幻工程解释`
     }));
   }
 
@@ -743,6 +865,27 @@ export function createRareEventPlan({
       message: '舰体无法直接分辨，但高能粒子前驱、星际介质冲击波与异常红移沿航向形成线性关联',
       outcome: '尾迹只提供运动方向和最低能量预算；将其解释为舰队属于明确的科幻假设层'
     }));
+
+    add(createMarker({
+      universe,
+      type: 'deep-time-memory-reunion',
+      label: '深时巡游档案汇合',
+      visual: 'knowledge-ark',
+      color: '#cab5ff',
+      start: fleetEvent.impactAt + randomBetween(random, 28, 58),
+      duration: 34,
+      physicalDurationYears: randomBetween(random, 8e4, 4e5),
+      category: 'civilization',
+      confidence: 'science-fiction',
+      targetNodeIndex: fleetOwner.homeNodeIndex,
+      targetSpeciesIndex: fleetEvent.targetSpeciesIndex,
+      sourceEventId: fleetEvent.id,
+      causalRootId: fleetEvent.causalRootId || fleetEvent.id,
+      archiveCount: 120 + Math.floor(random() * 1880),
+      memoryConflictFraction: randomBetween(random, .08, .46),
+      message: `${fleetOwner.name} 的远航分支完成一次跨越深时的会合，交换彼此独立保存的星系历史与人格记忆`,
+      outcome: '档案比对暴露出光行时延、记忆删改与文化分化造成的冲突版本；会合不等于重新成为单一文明'
+    }));
   }
 
   const biosphereTarget = civilizationData.length
@@ -824,6 +967,61 @@ export function createRareEventPlan({
     });
     add(climate);
 
+    const transferStartYears = timelinePositionToCosmicYears(impact.impactAt, universe)
+      + randomBetween(random, 3e5, 4e7);
+    const transferStart = cosmicYearsToTimelinePosition(transferStartYears, universe);
+    const habitatCount = civilizationSimulation?.habitatRemnantIndices?.length || 0;
+    const landingCandidates = [];
+    for (let nodeIndex = 0; nodeIndex < habitatCount; nodeIndex++) {
+      if (nodeIndex !== biosphereTarget.homeNodeIndex) landingCandidates.push(nodeIndex);
+    }
+    const habitatPositions = civilizationSimulation?.habitatPositions;
+    if (habitatPositions && landingCandidates.length) {
+      const originOffset = biosphereTarget.homeNodeIndex * 3;
+      landingCandidates.sort((left, right) => {
+        const leftOffset = left * 3;
+        const rightOffset = right * 3;
+        return Math.hypot(
+          habitatPositions[leftOffset] - habitatPositions[originOffset],
+          habitatPositions[leftOffset + 1] - habitatPositions[originOffset + 1],
+          habitatPositions[leftOffset + 2] - habitatPositions[originOffset + 2]
+        ) - Math.hypot(
+          habitatPositions[rightOffset] - habitatPositions[originOffset],
+          habitatPositions[rightOffset + 1] - habitatPositions[originOffset + 1],
+          habitatPositions[rightOffset + 2] - habitatPositions[originOffset + 2]
+        );
+      });
+    }
+    const nearbyLandingCandidates = landingCandidates.slice(0, Math.min(12, landingCandidates.length));
+    const landingNodeIndex = choose(random, nearbyLandingCandidates) ?? biosphereTarget.homeNodeIndex;
+    const viableFraction = 10 ** randomBetween(random, -10, -4);
+    const landingViable = random() < clamp(
+      .18 + (Math.log10(viableFraction) + 10) * .11,
+      .18,
+      .82
+    );
+    add(createMarker({
+      universe,
+      type: 'lithopanspermia-transfer',
+      label: '岩石胚种转移',
+      visual: 'biosphere-chain',
+      color: '#8de2b5',
+      start: transferStart,
+      duration: 29,
+      physicalDurationYears: randomBetween(random, 4e4, 3e6),
+      category: 'civilization',
+      confidence: 'astrobiology-model',
+      originNodeIndex: biosphereTarget.homeNodeIndex,
+      targetNodeIndex: landingNodeIndex,
+      targetSpeciesIndex: biosphereTargetIndex,
+      sourceEventId: impact.id,
+      causalRootId: impact.id,
+      viableFraction,
+      landingViable,
+      message: '大型撞击抛出的岩石进入星际空间，少量低温内部物质在辐射与再入加热后仍可能保持化学完整',
+      outcome: '轨道转移可以计算，但生命是否在抛射、漫游和着陆全过程中存活仍未证实；事件只表示一次可行路径'
+    }));
+
     const biosignatureStart = climate.impactAt + randomBetween(random, 12, 28);
     add(createMarker({
       universe,
@@ -847,6 +1045,39 @@ export function createRareEventPlan({
   }
 
   if (universe.cosmicFate.type === 'heat-death') {
+    const digitalMigrationEvent = civilizationEvents
+      .filter((event) => event.type === 'digital-migration' && event.migrationStable)
+      .sort((left, right) => left.impactAt - right.impactAt)[0];
+    if (digitalMigrationEvent) {
+      const sleeper = civilizationData[digitalMigrationEvent.targetSpeciesIndex];
+      const aestivationStart = futurePosition(748 + random() * 54, universe);
+      const computationGainExponent = randomBetween(random, 18, 30);
+      const dormancyAt = Math.min(
+        aestivationStart - 18,
+        digitalMigrationEvent.impactAt + Math.max(12, (aestivationStart - digitalMigrationEvent.impactAt) * .24)
+      );
+      add(createMarker({
+        universe,
+        type: 'aestivation-awakening',
+        label: '低温计算夏眠唤醒',
+        visual: 'digital-migration',
+        color: '#8fc9ff',
+        start: aestivationStart,
+        duration: 34,
+        physicalDurationYears: 10 ** randomBetween(random, 5, 8),
+        category: 'civilization',
+        confidence: 'science-fiction',
+        targetNodeIndex: sleeper.homeNodeIndex,
+        targetSpeciesIndex: digitalMigrationEvent.targetSpeciesIndex,
+        sourceEventId: digitalMigrationEvent.id,
+        causalRootId: digitalMigrationEvent.causalRootId || digitalMigrationEvent.id,
+        dormancyAt,
+        computationGainExponent,
+        message: `${sleeper.name} 的低活动计算节点在宇宙背景进一步冷却后重新同步，开始释放长期封存的自由能`,
+        outcome: `理想模型给出的累计计算增益可达约 10^${computationGainExponent.toFixed(0)} 倍；动机、存储寿命与竞争者行为都属于高度推测`
+      }));
+    }
+
     const whiteDwarfStart = futurePosition(704 + random() * 46, universe);
     const whiteDwarfSource = firstCompatibleSource(stellarPopulation, random, whiteDwarfStart, [1]);
     if (whiteDwarfSource !== null) {
@@ -1032,6 +1263,9 @@ export const rareEventTypes = [
   'pulsar-nulling',
   'black-hole-photon-ring-flare',
   'gravitational-microlensing',
+  'rogue-planet-microlensing',
+  'interstellar-object-flyby',
+  'cosmic-string-lensing-candidate',
   'failed-supernova',
   'anomalous-transit',
   'infrared-waste-heat',
@@ -1040,12 +1274,16 @@ export const rareEventTypes = [
   'optical-laser-beacon',
   'megastructure-occultation',
   'relativistic-fleet-trail',
+  'stellar-engine-proper-motion',
+  'deep-time-memory-reunion',
   'great-oxygenation',
   'planetary-impact',
+  'lithopanspermia-transfer',
   'runaway-greenhouse',
   'snowball-climate-cycle',
   'biosignature-loss',
   'white-dwarf-collision',
+  'aestivation-awakening',
   'proton-decay-era',
   'galactic-evaporation',
   'rogue-black-hole-flyby',

@@ -582,6 +582,38 @@ export const civilizationEventVisualBuilderRegistry = new Map([
     effect.companion = companion;
     effect.tidalRing = tidalRing;
   }],
+  ['cosmic-string-lensing', ({ event, group, effect, color }) => {
+    const stringLine = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(0, -1.25, 0),
+        new THREE.Vector3(0, 1.25, 0)
+      ]),
+      new THREE.LineBasicMaterial({
+        color,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending
+      })
+    );
+    const lensedPairs = Array.from({ length: 6 }, (_, index) => {
+      const y = -.78 + index * .31;
+      const separation = .12 + index % 3 * .035;
+      return [-1, 1].map((side) => {
+        const image = new THREE.Sprite(additiveMaterial({
+          map: getPointTexture(),
+          color: index % 2 ? 0xd9e8ff : 0xffffff
+        }));
+        image.scale.setScalar(.07 + index % 2 * .025);
+        image.userData = { side, y, separation, phase: index * .73 };
+        group.add(image);
+        return image;
+      });
+    }).flat();
+    group.add(stringLine);
+    effect.stringLine = stringLine;
+    effect.lensedPairs = lensedPairs;
+  }],
   ['microlensing', ({ event, group, effect, color }) => {
     const source = new THREE.Sprite(additiveMaterial({ map: getPointTexture(), color: 0xf7fbff }));
     const einsteinRing = new THREE.Sprite(additiveMaterial({ map: makeRingTexture(), color }));
@@ -814,6 +846,15 @@ export const civilizationEventVisualUpdateRegistry = new Map([
     effect.tidalRing.scale.setScalar(5 + reveal * 7);
     effect.companion.position.x = 5.2 - phase * 3.8;
   }],
+  ['cosmic-string-lensing', ({ event, effect, phase, persistence, reveal, fade, intensity }) => {
+    effect.stringLine.material.opacity = intensity * .74;
+    effect.stringLine.scale.y = .18 + reveal * .82;
+    effect.lensedPairs.forEach((image) => {
+      image.position.x = image.userData.side * image.userData.separation * reveal;
+      image.position.y = image.userData.y;
+      image.material.opacity = intensity * (.5 + reveal * .38);
+    });
+  }],
   ['microlensing', ({ event, effect, phase, persistence, reveal, fade, intensity }) => {
     const alignment = Math.sin(Math.min(1, phase) * Math.PI);
     const magnification = Math.min(2.2, event.peakMagnification || 1.4);
@@ -930,6 +971,12 @@ export const civilizationEventVisualAnimationRegistry = new Map([
   }],
   ['galactic-encounter', ({ effect, now }) => {
     effect.tidalRing.material.rotation = now * .00004;
+  }],
+  ['cosmic-string-lensing', ({ effect, now }) => {
+    effect.stringLine.rotation.z = Math.sin(now * .00032) * .055;
+    effect.lensedPairs.forEach((image) => {
+      image.position.y = image.userData.y + Math.sin(now * .00055 + image.userData.phase) * .018;
+    });
   }],
   ['microlensing', ({ effect, now }) => {
     effect.einsteinRing.material.rotation = now * .00006;

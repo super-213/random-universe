@@ -26,6 +26,7 @@ const expectedVisuals = [
   'light-cone',
   'stellar-engine',
   'galactic-encounter',
+  'cosmic-string-lensing',
   'microlensing',
   'transit-curve',
   'waste-heat',

@@ -1072,7 +1072,9 @@ export async function createExplorerApp() {
   
   function eventConfidenceClass(event) {
     if (event.confidence === 'science-fiction') return ' is-speculative';
-    if (event.confidence === 'astrophysical-model' || event.confidence === 'astrobiology-model') {
+    if (event.confidence === 'astrophysical-model'
+      || event.confidence === 'astrobiology-model'
+      || event.confidence === 'cosmology-hypothesis') {
       return ' is-hypothesis';
     }
     return '';
@@ -1082,6 +1084,7 @@ export async function createExplorerApp() {
     if (event.confidence === 'science-fiction') return '科幻假设';
     if (event.confidence === 'astrophysical-model') return '天体演化模型';
     if (event.confidence === 'astrobiology-model') return '天体生物学模型';
+    if (event.confidence === 'cosmology-hypothesis') return '宇宙学候选';
     return '';
   }
   
@@ -2273,10 +2276,25 @@ export async function createExplorerApp() {
     const positions = civilizationSimulation.habitatPositions;
     const observerOffset = observerNode * 3;
     const eventOffset = eventNode * 3;
+    const state = session.timeline.lastCivilizationSnapshot;
+    const driftOffsetForNode = (nodeIndex) => {
+      const speciesIndex = civilizationData.findIndex((species) => species.homeNodeIndex === nodeIndex);
+      if (speciesIndex < 0) return [0, 0, 0];
+      const parsecs = state?.stellarDriftParsecs?.[speciesIndex] || 0;
+      const directionOffset = speciesIndex * 3;
+      const sceneDistance = Math.min(.5, parsecs / 320);
+      return [
+        (state?.stellarDriftDirections?.[directionOffset] || 0) * sceneDistance,
+        (state?.stellarDriftDirections?.[directionOffset + 1] || 0) * sceneDistance,
+        (state?.stellarDriftDirections?.[directionOffset + 2] || 0) * sceneDistance
+      ];
+    };
+    const observerDrift = driftOffsetForNode(observerNode);
+    const eventDrift = driftOffsetForNode(eventNode);
     const distance = Math.hypot(
-      positions[observerOffset] - positions[eventOffset],
-      positions[observerOffset + 1] - positions[eventOffset + 1],
-      positions[observerOffset + 2] - positions[eventOffset + 2]
+      positions[observerOffset] + observerDrift[0] - positions[eventOffset] - eventDrift[0],
+      positions[observerOffset + 1] + observerDrift[1] - positions[eventOffset + 1] - eventDrift[1],
+      positions[observerOffset + 2] + observerDrift[2] - positions[eventOffset + 2] - eventDrift[2]
     );
     return lightTravelYearsForSceneDistance(distance, universe);
   }
@@ -2550,6 +2568,7 @@ export async function createExplorerApp() {
         stellarRemnants,
         remnantDynamics,
         cosmicPosition: session.timeline.position,
+        simulationState: session.timeline.lastCivilizationSnapshot,
         civilizationData,
         civilizationGroups
       });
@@ -2660,6 +2679,7 @@ export async function createExplorerApp() {
       stellarRemnants,
       remnantDynamics,
       cosmicPosition: session.timeline.position,
+      simulationState,
       civilizationData,
       civilizationGroups
     });

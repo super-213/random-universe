@@ -256,7 +256,9 @@ export function selectTimelineNarrative({
       ? '科幻假设 · '
       : activeEvent.confidence === 'astrophysical-model'
         ? '天体演化模型 · '
-        : activeEvent.confidence === 'astrobiology-model' ? '天体生物学模型 · ' : '';
+        : activeEvent.confidence === 'astrobiology-model'
+          ? '天体生物学模型 · '
+          : activeEvent.confidence === 'cosmology-hypothesis' ? '宇宙学候选 · ' : '';
     return {
       key: `${activeEvent.id}-${impacted ? 'aftermath' : 'forming'}`,
       time: label,

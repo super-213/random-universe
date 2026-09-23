@@ -761,7 +761,8 @@ export function createCosmicEventBuilder({
       stellarPopulation,
       starPositions,
       civilizationData,
-      civilizationEvents
+      civilizationEvents,
+      civilizationSimulation
     });
     civilizationEvents.push(...rareEvents);
     civilizationEvents.sort((left, right) => left.start - right.start);

@@ -103,6 +103,8 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
   const temporalDrift = new Uint8Array(speciesCount);
   const evacuations = new Uint8Array(speciesCount);
   const biosphereStages = new Uint8Array(speciesCount);
+  const seededBiosphereNodes = new Int8Array(nodeCount);
+  const biosphereSeedCounts = new Uint16Array(speciesCount);
   const climateStates = new Int8Array(speciesCount);
   const biosignatureStates = new Int8Array(speciesCount);
   const filterStates = new Int8Array(speciesCount);
@@ -117,6 +119,11 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
   const blackHoleHabitats = new Int8Array(speciesCount);
   const escapeProjects = new Int8Array(speciesCount);
   const dimensionalGateways = new Uint8Array(speciesCount);
+  const stellarDriftParsecs = new Float32Array(speciesCount);
+  const stellarDriftDirections = new Float32Array(speciesCount * 3);
+  const dormancyModes = new Int8Array(speciesCount);
+  const memoryReunions = new Uint16Array(speciesCount);
+  const memoryIntegrity = new Float32Array(speciesCount);
   const technologyMasks = new Uint16Array(speciesCount);
   const internalPopulation = new Float32Array(speciesCount);
   const resources = new Float32Array(speciesCount);
@@ -160,6 +167,7 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
     governance[index] = clamp(.24 + species.cooperation * .36 + cohesion[index] * .24, .22, .82);
     research[index] = clamp(.18 + technology[index] * .54, .18, .62);
     stability[index] = clamp(.26 + cohesion[index] * .58, .3, .84);
+    memoryIntegrity[index] = 1;
   });
   for (let a = 0; a < speciesCount; a++) {
     for (let b = a + 1; b < speciesCount; b++) {
@@ -342,6 +350,36 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       event.outcome = `${target.name} 的生物圈跨过复杂生命门槛，并最终演化出技术物种`;
       return;
     }
+    if (event.type === 'lithopanspermia-transfer') {
+      const landingNode = Number.isInteger(event.targetNodeIndex)
+        ? event.targetNodeIndex
+        : target?.homeNodeIndex;
+      if (!Number.isInteger(landingNode) || landingNode < 0 || landingNode >= nodeCount
+        || disabledNodes[landingNode]) {
+        event.outcome = '胚种岩石抵达前，目标恒星系已经失去可长期保存生命化学的环境';
+        return;
+      }
+      if (event.landingViable === false) {
+        seededBiosphereNodes[landingNode] = -1;
+        event.outcome = '胚种岩石完成着陆，但辐射损伤与再入加热使可复制化学链未能延续';
+        return;
+      }
+      seededBiosphereNodes[landingNode] = 1;
+      if (Number.isInteger(targetIndex) && targetIndex >= 0 && targetIndex < speciesCount) {
+        biosphereSeedCounts[targetIndex]++;
+        research[targetIndex] = Math.min(1, research[targetIndex] + .012);
+      }
+      const beneficiaryIndex = owners[landingNode];
+      if (beneficiaryIndex >= 0) {
+        biosphereCapacity[beneficiaryIndex] = Math.min(1, biosphereCapacity[beneficiaryIndex] + .08);
+        biosphereStages[beneficiaryIndex] = Math.max(1, biosphereStages[beneficiaryIndex]);
+        event.beneficiarySpeciesIndex = beneficiaryIndex;
+      }
+      event.outcome = beneficiaryIndex >= 0
+        ? `胚种在 ${civilizationData[beneficiaryIndex].name} 控制的恒星域落地，建立可持续的微生物生态并提高当地生物承载力`
+        : '胚种在无人恒星域落地并建立微生物生态；该节点将提高未来殖民与地球化的成功率';
+      return;
+    }
     if (event.type === 'fermi-paradigm') {
       let observers = 0;
       civilizationData.forEach((species, speciesIndex) => {
@@ -410,7 +448,12 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       event.outcome = `${target.name} 完成直径约 ${diameter} 的泽利宇宙环；中央孔洞已成为通往其他宇宙的单向通道`;
       return;
     }
-    if (!target || !seeded[targetIndex] || territoryCountFor(targetIndex) === 0) {
+    const remoteMemoryContinuity = event.type === 'deep-time-memory-reunion'
+      && (externalPopulations[targetIndex] > 0 || fleetState[targetIndex] !== fleetStates.none);
+    const dormantContinuity = event.type === 'aestivation-awakening'
+      && dormancyModes[targetIndex] === 1;
+    if (!target || !seeded[targetIndex]
+      || (territoryCountFor(targetIndex) === 0 && !remoteMemoryContinuity && !dormantContinuity)) {
       event.outcome = `${target?.name || '目标文明'} 已在事件生效前衰亡`;
       return;
     }
@@ -490,6 +533,63 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       visibility[targetIndex] = Math.min(1, visibility[targetIndex] + .045);
       lastCauses[targetIndex] = '相对论舰队尾迹被间接观测';
       event.outcome = `${target.name} 舰队仍不可直接成像，但冲击波与高能粒子尾迹泄露了航向和最低能量预算`;
+      return;
+    }
+    if (event.type === 'stellar-engine-proper-motion') {
+      if (engineeringModes[targetIndex] !== 3) {
+        event.outcome = `${target.name} 未能维持恒星推进器，异常自行没有发展为可累积的恒星位移`;
+        return;
+      }
+      const drift = clamp(event.driftParsecs || 0, 0, 220);
+      stellarDriftParsecs[targetIndex] = Math.max(stellarDriftParsecs[targetIndex], drift);
+      const direction = event.driftDirection || [1, 0, 0];
+      const directionLength = Math.hypot(...direction) || 1;
+      const offset = targetIndex * 3;
+      stellarDriftDirections[offset] = direction[0] / directionLength;
+      stellarDriftDirections[offset + 1] = direction[1] / directionLength;
+      stellarDriftDirections[offset + 2] = direction[2] / directionLength;
+      materials[targetIndex] = Math.max(.04, materials[targetIndex] - .09);
+      energyReserves[targetIndex] = Math.max(.04, energyReserves[targetIndex] - .12);
+      research[targetIndex] = Math.min(1, research[targetIndex] + .045);
+      visibility[targetIndex] = Math.min(1, visibility[targetIndex] + .08);
+      lastCauses[targetIndex] = '恒星推进器改变宿主恒星轨道';
+      event.outcome = `${target.name} 的宿主恒星已偏离原轨道约 ${drift.toFixed(0)} pc；推进耗能降低物流效率，并改变后续光行时与殖民距离`;
+      return;
+    }
+    if (event.type === 'deep-time-memory-reunion') {
+      const archiveCount = Math.max(1, event.archiveCount || 1);
+      const conflict = clamp(event.memoryConflictFraction || .2, 0, .8);
+      memoryReunions[targetIndex] = Math.min(65535, memoryReunions[targetIndex] + archiveCount);
+      memoryIntegrity[targetIndex] = clamp(memoryIntegrity[targetIndex] * (1 - conflict * .22), .35, 1);
+      archives[targetIndex] = 1;
+      archiveReadyAt[targetIndex] = Math.min(archiveReadyAt[targetIndex], time + 8);
+      research[targetIndex] = Math.min(1, research[targetIndex] + .04 + Math.log10(archiveCount + 1) * .018);
+      governance[targetIndex] = Math.min(1, governance[targetIndex] + .035 * (1 - conflict));
+      cohesion[targetIndex] = clamp(
+        cohesion[targetIndex] + (conflict < .28 ? .045 : -.035),
+        0,
+        1
+      );
+      lastCauses[targetIndex] = conflict < .28 ? '深时档案完成校验融合' : '深时记忆版本发生冲突';
+      event.outcome = conflict < .28
+        ? `${target.name} 校验并融合 ${archiveCount} 组独立档案，科研与治理模型获得长期增益`
+        : `${target.name} 接收 ${archiveCount} 组独立档案，但 ${(conflict * 100).toFixed(0)}% 的冲突版本降低社会凝聚力，科研仍获得增益`;
+      return;
+    }
+    if (event.type === 'aestivation-awakening') {
+      if (dormancyModes[targetIndex] !== 1 || substrateModes[targetIndex] === 0) {
+        event.outcome = `${target.name} 没有保持可恢复的数字夏眠节点，预定唤醒窗口失效`;
+        return;
+      }
+      const gain = clamp(((event.computationGainExponent || 18) - 16) / 16, .12, .92);
+      dormancyModes[targetIndex] = 2;
+      compute[targetIndex] = Math.min(1, Math.max(compute[targetIndex], .62) + gain * .24);
+      energyReserves[targetIndex] = Math.min(1, Math.max(energyReserves[targetIndex], .28) + gain * .18);
+      research[targetIndex] = Math.min(1, research[targetIndex] + gain * .16);
+      stability[targetIndex] = Math.min(1, Math.max(stability[targetIndex], .48) + .08);
+      visibility[targetIndex] = Math.min(1, visibility[targetIndex] + .14);
+      lastCauses[targetIndex] = '低温计算节点完成夏眠唤醒';
+      event.outcome = `${target.name} 从低功耗夏眠恢复，封存能源转化为计算与科研增益；文明重新进入扩张和通信循环`;
       return;
     }
 
@@ -919,6 +1019,11 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
 
   let scheduledImpactIndex = 0;
   let civilizationEventIndex = 0;
+  const stateTransitions = civilizationEvents
+    .filter((event) => event.type === 'aestivation-awakening' && Number.isFinite(event.dormancyAt))
+    .map((event) => ({ at: event.dormancyAt, event }))
+    .sort((left, right) => left.at - right.at);
+  let stateTransitionIndex = 0;
   if (simulation.habitatDeathAt) {
     for (let node = 0; node < nodeCount; node++) {
       if (simulation.habitatDeathAt[node] >= simulation.start) continue;
@@ -984,6 +1089,28 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       lastCauses[speciesIndex] = '母星文明进入星际阶段';
     });
 
+    while (stateTransitionIndex < stateTransitions.length
+      && stateTransitions[stateTransitionIndex].at <= time) {
+      const { event } = stateTransitions[stateTransitionIndex];
+      const speciesIndex = event.targetSpeciesIndex;
+      const canHibernate = seeded[speciesIndex]
+        && territoryCountFor(speciesIndex) > 0
+        && substrateModes[speciesIndex] > 0;
+      if (canHibernate) {
+        dormancyModes[speciesIndex] = 1;
+        visibility[speciesIndex] *= .08;
+        energyReserves[speciesIndex] = Math.max(.05, energyReserves[speciesIndex] * .42);
+        logisticsThroughput[speciesIndex] *= .18;
+        internalPopulation[speciesIndex] = Math.max(.02, internalPopulation[speciesIndex] * .7);
+        stability[speciesIndex] = Math.max(.5, stability[speciesIndex]);
+        lastCauses[speciesIndex] = '数字文明进入低温计算夏眠';
+        event.dormancyEstablished = true;
+      } else {
+        event.dormancyEstablished = false;
+      }
+      stateTransitionIndex++;
+    }
+
     while (scheduledImpactIndex < scheduledImpacts.length
       && scheduledImpacts[scheduledImpactIndex].impact.at <= time) {
       const { event, impact } = scheduledImpacts[scheduledImpactIndex];
@@ -1043,7 +1170,8 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
     civilizationData.forEach((species, speciesIndex) => {
       const advancement = advanceTechnologyTree({
         mask: technologyMasks[speciesIndex],
-        active: seeded[speciesIndex] && territoryCountFor(speciesIndex) > 0,
+        active: seeded[speciesIndex] && territoryCountFor(speciesIndex) > 0
+          && dormancyModes[speciesIndex] !== 1,
         technology: technology[speciesIndex],
         research: research[speciesIndex],
         resources: resources[speciesIndex],
@@ -1090,7 +1218,9 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
         * (.72 + energyReserves[owner] * .28)
         * (.76 + resources[owner] * .24)
         * (.74 + stability[owner] * .26)
-        * (contamination[owner] > 0 ? .72 : 1) * (filterStates[owner] < 0 ? .78 : 1);
+        * (contamination[owner] > 0 ? .72 : 1) * (filterStates[owner] < 0 ? .78 : 1)
+        * (dormancyModes[owner] === 1 ? .14 : 1)
+        * (seededBiosphereNodes[node] > 0 ? 1.07 : 1);
       strength[node] += relaxation(.032 + species.resilience * .018)
         * support * recoveryAvailability * (1 - strength[node]);
       strength[node] = clamp(strength[node], 0, 1.35);
@@ -1137,7 +1267,8 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
     }
     civilizationData.forEach((species, speciesIndex) => {
       const territory = ownedBySpecies[speciesIndex];
-      if (!seeded[speciesIndex] || territory.length === 0 || time >= expansionEnd) return;
+      if (!seeded[speciesIndex] || territory.length === 0 || time >= expansionEnd
+        || dormancyModes[speciesIndex] === 1) return;
       const probeBonus = probeModes[speciesIndex] > 0 ? .8 : 0;
       const frontierBonus = terraforming[speciesIndex] > 0 ? .48 : 0;
       const substrateBonus = substrateModes[speciesIndex] ? .28 : 0;
@@ -1165,7 +1296,8 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
         if (defender < 0) {
           if (reservedFor[target] >= 0 && reservedFor[target] !== speciesIndex && !seeded[reservedFor[target]]) continue;
           const colonizationChance = clamp(
-            .18 + species.expansionRate * .19 + friendlyCounts[speciesIndex] * .025,
+            .18 + species.expansionRate * .19 + friendlyCounts[speciesIndex] * .025
+              + (seededBiosphereNodes[target] > 0 ? .14 : 0),
             0,
             .92
           );
@@ -1261,8 +1393,9 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
         const morphologyFactor = morphologyModes[owner] === 2 || morphologyModes[owner] === 4
           ? .82
           : morphologyModes[owner] === 3 ? .9 : 1;
+        const dormancyFactor = dormancyModes[owner] === 1 ? .18 : 1;
         const declineLoss = (.004 + environmentalDecline * .052 + terminalShock * .08)
-          * refugeFactor * resilienceFactor * morphologyFactor;
+          * refugeFactor * resilienceFactor * morphologyFactor * dormancyFactor;
         strength[node] -= declineLoss;
         if (strength[node] <= .035 || abruptFateFinished) {
           owners[node] = -1;
@@ -1273,12 +1406,14 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
     }
 
     const counts = new Uint16Array(speciesCount);
+    const ownedSeededBiospheres = new Uint16Array(speciesCount);
     const infrastructureCapacity = new Float32Array(speciesCount);
     for (let node = 0; node < nodeCount; node++) {
       const owner = owners[node];
       if (owner < 0) continue;
       counts[owner]++;
       infrastructureCapacity[owner] += strength[node];
+      if (seededBiosphereNodes[node] > 0) ownedSeededBiospheres[owner]++;
     }
     const trends = new Int8Array(speciesCount);
     const active = new Uint8Array(speciesCount);
@@ -1309,6 +1444,21 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
           ? 1
           : 1 - environmentalDecline * (1 - refugeFloor);
         const conflictPressure = conflictCounts[speciesIndex] / Math.max(1, speciesCount - 1);
+        if (dormancyModes[speciesIndex] === 1) {
+          energyReserves[speciesIndex] += (.07 - energyReserves[speciesIndex]) * relaxation(.08);
+          materials[speciesIndex] += (.82 - materials[speciesIndex]) * relaxation(.008);
+          compute[speciesIndex] += (.72 - compute[speciesIndex]) * relaxation(.018);
+          logisticsThroughput[speciesIndex] = Math.min(.08, logisticsThroughput[speciesIndex]);
+          resources[speciesIndex] = materials[speciesIndex] * .58
+            + compute[speciesIndex] * .32 + stability[speciesIndex] * .1;
+          internalPopulation[speciesIndex] = Math.max(
+            .02,
+            internalPopulation[speciesIndex] * Math.exp(-.00008 * evolutionStep)
+          );
+          stability[speciesIndex] = Math.max(.42, stability[speciesIndex] * (.9995 ** evolutionStep));
+          lastCounts[speciesIndex] = counts[speciesIndex];
+          continue;
+        }
         const capacity = Math.max(1.2, infrastructureCapacity[speciesIndex] * 2.4
           * (terraforming[speciesIndex] > 0 ? 1.24 : 1)
           * (substrateModes[speciesIndex] ? 1.34 : 1));
@@ -1341,6 +1491,7 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
             : climateStates[speciesIndex] === 1 ? .82 : 1;
         const targetBiosphere = clamp(environmentalAvailability * climateBiosphereFactor * (
           .3 + terraforming[speciesIndex] * .22 + biosphereStages[speciesIndex] * .035
+            + Math.min(.16, ownedSeededBiospheres[speciesIndex] * .025)
             - internalPopulation[speciesIndex] / capacity * .15 - conflictPressure * .12
         ),
           .01,
@@ -1350,7 +1501,8 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
         logisticsThroughput[speciesIndex] = clamp(
           (materials[speciesIndex] + energyReserves[speciesIndex] + compute[speciesIndex]) / 3
             * (.45 + governance[speciesIndex] * .35 + stability[speciesIndex] * .2)
-            * Math.min(1, .25 + counts[speciesIndex] / 80),
+            * Math.min(1, .25 + counts[speciesIndex] / 80)
+            * (1 - Math.min(.24, stellarDriftParsecs[speciesIndex] / 600)),
           0,
           1
         );
@@ -1358,14 +1510,18 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
           + biosphereCapacity[speciesIndex] * .3 + logisticsThroughput[speciesIndex] * .2;
         const targetGovernance = clamp(
           .22 + species.cooperation * .26 + cohesion[speciesIndex] * .34
-            + causalResponses[speciesIndex] * .04 - conflictPressure * .18,
+            + causalResponses[speciesIndex] * .04
+            + Math.min(.06, memoryReunions[speciesIndex] / 20000) * memoryIntegrity[speciesIndex]
+            - conflictPressure * .18,
           .08,
           1
         );
         governance[speciesIndex] += (targetGovernance - governance[speciesIndex]) * relaxation(.045);
         const targetResearch = clamp(
           .18 + technology[speciesIndex] * .38 + energyReserves[speciesIndex] * .16
-            + Math.max(0, precursorKnowledge[speciesIndex]) * .14 + artifacts[speciesIndex] * .06,
+            + Math.max(0, precursorKnowledge[speciesIndex]) * .14 + artifacts[speciesIndex] * .06
+            + Math.min(.12, Math.log10(memoryReunions[speciesIndex] + 1) * .035)
+              * memoryIntegrity[speciesIndex],
           .08,
           1
         );
@@ -1415,6 +1571,8 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       energyReserves: energyReserves.slice(),
       compute: compute.slice(),
       biosphereCapacity: biosphereCapacity.slice(),
+      seededBiosphereNodes: seededBiosphereNodes.slice(),
+      biosphereSeedCounts: biosphereSeedCounts.slice(),
       logisticsThroughput: logisticsThroughput.slice(),
       governance: governance.slice(),
       research: research.slice(),
@@ -1451,6 +1609,11 @@ export function buildCivilizationSimulation({ universe, civilizationData, civili
       blackHoleHabitats: blackHoleHabitats.slice(),
       escapeProjects: escapeProjects.slice(),
       dimensionalGateways: dimensionalGateways.slice(),
+      stellarDriftParsecs: stellarDriftParsecs.slice(),
+      stellarDriftDirections: stellarDriftDirections.slice(),
+      dormancyModes: dormancyModes.slice(),
+      memoryReunions: memoryReunions.slice(),
+      memoryIntegrity: memoryIntegrity.slice(),
       technologyMasks: technologyMasks.slice(),
       externalGalaxyIndices: externalGalaxyIndices.slice(),
       externalPopulations: externalPopulations.slice(),
@@ -1577,6 +1740,7 @@ export function deriveCivilizationRuntime(position, simulationState, civilizatio
     if (simulationState?.climateStates?.[index] === -1) statuses.push('全球冰封');
     if (simulationState?.climateStates?.[index] === 1) statuses.push('冰封后解冻');
     if (simulationState?.biosignatureStates?.[index] < 0) statuses.push('生物信号衰减');
+    if (simulationState?.biosphereSeedCounts?.[index] > 0) statuses.push('胚种落地');
     if (simulationState?.fermiAwareness[index]) statuses.push(`费米：${species.fermiScenario}`);
     if (simulationState?.diasporaModes[index] === 1) statuses.push('星系桥殖民地');
     if (simulationState?.diasporaModes[index] === 2) statuses.push('星系际流浪');
@@ -1589,6 +1753,12 @@ export function deriveCivilizationRuntime(position, simulationState, civilizatio
     if (simulationState?.escapeProjects[index] > 0) statuses.push('母宇宙外存续');
     if (simulationState?.escapeProjects[index] < 0) statuses.push('逃逸工程失败');
     if (simulationState?.dimensionalGateways?.[index]) statuses.push('泽利宇宙环');
+    if (simulationState?.stellarDriftParsecs?.[index] > 0) {
+      statuses.push(`恒星漂移 ${simulationState.stellarDriftParsecs[index].toFixed(0)} pc`);
+    }
+    if (simulationState?.dormancyModes?.[index] === 1) statuses.push('低温计算夏眠');
+    if (simulationState?.dormancyModes?.[index] === 2) statuses.push('夏眠后苏醒');
+    if (simulationState?.memoryReunions?.[index] > 0) statuses.push('深时记忆融合');
     return {
       alive,
       ascended,
@@ -1608,6 +1778,7 @@ export function deriveCivilizationRuntime(position, simulationState, civilizatio
       energy: simulationState?.energyReserves?.[index] || 0,
       compute: simulationState?.compute?.[index] || 0,
       biosphere: simulationState?.biosphereCapacity?.[index] || 0,
+      biosphereSeeds: simulationState?.biosphereSeedCounts?.[index] || 0,
       logistics: simulationState?.logisticsThroughput?.[index] || 0,
       governance: simulationState?.governance?.[index] || 0,
       research: simulationState?.research?.[index] || 0,
@@ -1623,6 +1794,10 @@ export function deriveCivilizationRuntime(position, simulationState, civilizatio
       fleetSupplies: simulationState?.fleetSupplies?.[index] || 0,
       fleetDistance: simulationState?.fleetDistances?.[index] || 0,
       fleetProgress: simulationState?.fleetProgress?.[index] || 0,
+      stellarDriftParsecs: simulationState?.stellarDriftParsecs?.[index] || 0,
+      dormancyMode: simulationState?.dormancyModes?.[index] || 0,
+      memoryReunions: simulationState?.memoryReunions?.[index] || 0,
+      memoryIntegrity: simulationState?.memoryIntegrity?.[index] || 0,
       statuses,
       eventState,
       friendlyNames,

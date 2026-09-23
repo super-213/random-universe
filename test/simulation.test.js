@@ -903,6 +903,10 @@ test('rare observations are seeded and require simulated sources or causal precu
       {
         id: 'known-fleet', type: 'intergalactic-diaspora', impactAt: 540,
         targetSpeciesIndex: 0, fleetSpeed: .32
+      },
+      {
+        id: 'stable-digital', type: 'digital-migration', impactAt: 510,
+        targetSpeciesIndex: 0, migrationStable: true
       }
     ];
     const input = {
@@ -911,7 +915,11 @@ test('rare observations are seeded and require simulated sources or causal precu
       stellarPopulation: population,
       starPositions: positions,
       civilizationData,
-      civilizationEvents
+      civilizationEvents,
+      civilizationSimulation: {
+        habitatRemnantIndices: Uint16Array.from({ length: 12 }, (_, index) => index),
+        habitatPositions: positions.slice(0, 36)
+      }
     };
     const first = createRareEventPlan(input);
     const second = createRareEventPlan(input);
@@ -950,6 +958,16 @@ test('rare observations are seeded and require simulated sources or causal precu
         assert.ok(population.remnantTypes[event.sourceIndex] > 0);
         assert.ok(Number.isInteger(event.backgroundSourceIndex));
         assert.ok(event.projectedSeparation < .055);
+      } else if (event.type === 'rogue-planet-microlensing') {
+        assert.ok(event.lensMassEarth > 0);
+        assert.ok(event.durationHours >= 1.5);
+        assert.ok(event.peakMagnification > 1);
+      } else if (event.type === 'interstellar-object-flyby') {
+        assert.ok(event.eccentricity > 1);
+        assert.ok(event.speedKms > 0);
+      } else if (event.type === 'cosmic-string-lensing-candidate') {
+        assert.equal(event.confidence, 'cosmology-hypothesis');
+        assert.ok(event.imageSeparationArcsec > 0);
       } else if (event.type === 'anomalous-transit') {
         assert.ok(population.planetCounts[event.sourceIndex] >= 3);
       } else if (event.type === 'infrared-waste-heat') {
@@ -962,6 +980,13 @@ test('rare observations are seeded and require simulated sources or causal precu
         assert.equal(event.sourceEventId, 'known-signal');
       } else if (event.type === 'relativistic-fleet-trail') {
         assert.equal(event.sourceEventId, 'known-fleet');
+      } else if (event.type === 'deep-time-memory-reunion') {
+        assert.equal(event.sourceEventId, 'known-fleet');
+        assert.ok(event.memoryConflictFraction > 0);
+      } else if (event.type === 'stellar-engine-proper-motion') {
+        assert.equal(event.sourceEventId, 'stable-engineering');
+        assert.equal(event.confidence, 'science-fiction');
+        assert.ok(Math.abs(Math.hypot(...event.driftDirection) - 1) < 1e-9);
       } else if (event.type === 'planetary-impact') {
         assert.equal(event.targetSpeciesIndex, 0);
         assert.equal(event.targetNodeIndex, 0);
@@ -970,6 +995,17 @@ test('rare observations are seeded and require simulated sources or causal precu
         assert.equal(event.targetSpeciesIndex, 0);
       } else if (event.type === 'biosignature-loss') {
         assert.match(event.sourceEventId, /^rare-(runaway-greenhouse|snowball-climate-cycle)-/);
+      } else if (event.type === 'lithopanspermia-transfer') {
+        assert.match(event.sourceEventId, /^rare-planetary-impact-/);
+        assert.equal(event.confidence, 'astrobiology-model');
+        assert.equal(event.category, 'civilization');
+        assert.notEqual(event.targetNodeIndex, event.originNodeIndex);
+        assert.equal(typeof event.landingViable, 'boolean');
+      } else if (event.type === 'aestivation-awakening') {
+        assert.equal(event.sourceEventId, 'stable-digital');
+        assert.equal(universe.cosmicFate.type, 'heat-death');
+        assert.ok(event.dormancyAt > civilizationEvents[3].impactAt);
+        assert.ok(event.dormancyAt < event.start);
       } else if (['proton-decay-era', 'galactic-evaporation', 'hawking-final-burst', 'black-dwarf-supernova', 'last-observable-signal'].includes(event.type)) {
         assert.equal(universe.cosmicFate.type, 'heat-death');
         if (event.type === 'proton-decay-era') {
@@ -1351,6 +1387,93 @@ test('causal evolution chains update biosphere, morphology, engineering, migrati
   assert.ok(snapshot.logisticsThroughput[2] > 0);
   assert.ok(snapshot.fermiAwareness.some((value) => value === 1));
   assert.ok(events.every((event) => event.outcome !== '事件仍在演化'));
+});
+
+test('rare causal events feed back into biospheres, stellar motion, dormancy, and memory', () => {
+  const universe = createUniverse('0000000000000005');
+  const civilizationData = [{
+    name: '回声文明',
+    birth: 390,
+    homeNodeIndex: 0,
+    aggression: .1,
+    cooperation: .9,
+    expansionRate: 1.1,
+    resilience: 1.2,
+    technology: .88,
+    visibility: .12,
+    cohesion: .78,
+    machineAutonomy: .35,
+    morphology: '数字文明',
+    fermiScenario: '短暂技术窗口'
+  }];
+  const habitatPositions = new Float32Array(12 * 3);
+  for (let index = 0; index < 12; index++) {
+    habitatPositions[index * 3] = Math.cos(index / 12 * Math.PI * 2) * 5;
+    habitatPositions[index * 3 + 2] = Math.sin(index / 12 * Math.PI * 2) * 5;
+  }
+  const simulation = {
+    start: 380,
+    end: 500,
+    step: 1,
+    habitatRemnantIndices: Uint16Array.from({ length: 12 }, (_, index) => index),
+    habitatPositions,
+    adjacency: [],
+    snapshots: []
+  };
+  const makeEvent = (type, impactAt, extra = {}) => ({
+    id: type,
+    type,
+    label: type,
+    category: 'civilization',
+    impactAt,
+    targetSpeciesIndex: 0,
+    civilizationImpacts: [],
+    outcome: '事件仍在演化',
+    ...extra
+  });
+  const events = [
+    makeEvent('digital-migration', 405, { migrationStable: true }),
+    makeEvent('stellar-engineering', 410, {
+      engineeringMode: '恒星推进器', engineeringStable: true
+    }),
+    makeEvent('lithopanspermia-transfer', 420, {
+      targetNodeIndex: 4, landingViable: true, viableFraction: 1e-5
+    }),
+    makeEvent('stellar-engine-proper-motion', 425, {
+      driftParsecs: 64, driftDirection: [0, .6, .8]
+    }),
+    makeEvent('deep-time-memory-reunion', 430, {
+      archiveCount: 720, memoryConflictFraction: .12
+    }),
+    makeEvent('aestivation-awakening', 470, {
+      dormancyAt: 440, computationGainExponent: 24
+    })
+  ];
+
+  buildCivilizationSimulation({
+    universe,
+    civilizationData,
+    civilizationSimulation: simulation,
+    cosmicEvents: events
+  });
+
+  const dormant = simulation.snapshots.find((snapshot) => snapshot.time === 450);
+  const awakened = simulation.snapshots.find((snapshot) => snapshot.time === 480);
+  assert.equal(dormant.seededBiosphereNodes[4], 1);
+  assert.equal(dormant.biosphereSeedCounts[0], 1);
+  assert.equal(dormant.stellarDriftParsecs[0], 64);
+  assert.ok(Math.abs(dormant.stellarDriftDirections[0]) < 1e-6);
+  assert.ok(Math.abs(dormant.stellarDriftDirections[1] - .6) < 1e-6);
+  assert.ok(Math.abs(dormant.stellarDriftDirections[2] - .8) < 1e-6);
+  assert.equal(dormant.memoryReunions[0], 720);
+  assert.ok(dormant.memoryIntegrity[0] < 1);
+  assert.equal(dormant.dormancyModes[0], 1);
+  assert.equal(awakened.dormancyModes[0], 2);
+  assert.ok(awakened.compute[0] > dormant.compute[0]);
+  assert.match(events.find((event) => event.type === 'lithopanspermia-transfer').outcome, /微生物生态/);
+  assert.match(events.find((event) => event.type === 'stellar-engine-proper-motion').outcome, /64 pc/);
+  assert.match(events.find((event) => event.type === 'deep-time-memory-reunion').outcome, /720 组/);
+  assert.match(events.find((event) => event.type === 'aestivation-awakening').outcome, /恢复/);
 });
 
 test('civilization chronicles preserve roles and causal event links for export', () => {
