@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 
 const mainSource = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+const styleSource = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
 
 function javascriptFiles(directory) {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -50,4 +51,20 @@ test('simulation modules depend only on domain and simulation modules', () => {
   simulationFiles.forEach((file) => assertPureModule(file, (specifier) => (
     specifier.startsWith('./') || specifier.startsWith('../domain/')
   )));
+});
+
+test('styles remain split by interface responsibility', () => {
+  const imports = [...styleSource.matchAll(/@import ['"]([^'"]+)['"]/g)].map((match) => match[1]);
+  assert.deepEqual(imports, [
+    './styles/base.css',
+    './styles/generator.css',
+    './styles/explorer.css',
+    './styles/timeline.css',
+    './styles/overlays.css',
+    './styles/responsive.css'
+  ]);
+  imports.forEach((specifier) => {
+    const stylesheet = readFileSync(new URL(`../src/${specifier.slice(2)}`, import.meta.url), 'utf8');
+    assert.ok(stylesheet.trim().length > 0, `${specifier} is empty`);
+  });
 });

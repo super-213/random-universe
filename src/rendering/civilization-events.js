@@ -321,18 +321,12 @@ function createInteruniversalGateway(color) {
   };
 }
 
-export function createCivilizationEventVisual(event) {
-  const group = new THREE.Group();
-  const color = new THREE.Color(event.color);
-  const glow = new THREE.Sprite(additiveMaterial({ map: makeGlowTexture(), color }));
-  const ring = new THREE.Sprite(additiveMaterial({ map: makeRingTexture(), color }));
-  group.add(glow, ring);
-  const effect = { glow, ring };
-
-  if (event.visual === 'interuniversal-gateway') {
+export const civilizationEventVisualBuilderRegistry = new Map([
+  ['interuniversal-gateway', ({ event, group, effect, color }) => {
     Object.assign(effect, createInteruniversalGateway(color));
     group.add(effect.assembly);
-  } else if (event.visual === 'signal-wave') {
+  }],
+  ['signal-wave', ({ event, group, effect, color }) => {
     const echoRings = [0, 1, 2].map((index) => {
       const echo = new THREE.Sprite(additiveMaterial({ map: makeRingTexture(), color }));
       echo.userData.offset = index / 3;
@@ -340,12 +334,14 @@ export function createCivilizationEventVisual(event) {
       return echo;
     });
     effect.echoRings = echoRings;
-  } else if (event.visual === 'probe-swarm') {
+  }],
+  ['probe-swarm', ({ event, group, effect, color }) => {
     const { swarm, directions } = createProbeSwarm(color);
     group.add(swarm);
     effect.swarm = swarm;
     effect.directions = directions;
-  } else if (event.visual === 'megastructure') {
+  }],
+  ['megastructure', ({ event, group, effect, color }) => {
     const shells = [
       { radius: .34, tilt: [.28, .1, 0] },
       { radius: .48, tilt: [-.36, .42, .18] },
@@ -366,7 +362,8 @@ export function createCivilizationEventVisual(event) {
       return shell;
     });
     effect.shells = shells;
-  } else if (event.visual === 'civilization-fracture') {
+  }],
+  ['civilization-fracture', ({ event, group, effect, color }) => {
     const geometry = new THREE.BufferGeometry();
     const positions = [];
     for (let index = 0; index < 14; index++) {
@@ -383,7 +380,8 @@ export function createCivilizationEventVisual(event) {
     }));
     group.add(fractures);
     effect.fractures = fractures;
-  } else if (event.visual === 'knowledge-ark') {
+  }],
+  ['knowledge-ark', ({ event, group, effect, color }) => {
     const archive = new THREE.IcosahedronGeometry(.24, 1);
     const archiveCore = new THREE.LineSegments(
       new THREE.EdgesGeometry(archive),
@@ -391,7 +389,8 @@ export function createCivilizationEventVisual(event) {
     );
     group.add(archiveCore);
     effect.archiveCore = archiveCore;
-  } else if (event.visual === 'uplift') {
+  }],
+  ['uplift', ({ event, group, effect, color }) => {
     const strands = [-1, 1].map((side) => {
       const points = [];
       for (let index = 0; index <= 64; index++) {
@@ -411,7 +410,8 @@ export function createCivilizationEventVisual(event) {
       return strand;
     });
     effect.strands = strands;
-  } else if (event.visual === 'orbital-debris') {
+  }],
+  ['orbital-debris', ({ event, group, effect, color }) => {
     const count = 120;
     const positions = new Float32Array(count * 3);
     const debrisDirections = new Float32Array(count * 3);
@@ -440,7 +440,8 @@ export function createCivilizationEventVisual(event) {
     group.add(debris);
     effect.debris = debris;
     effect.debrisDirections = debrisDirections;
-  } else if (event.visual === 'terraforming') {
+  }],
+  ['terraforming', ({ event, group, effect, color }) => {
     const planet = new THREE.LineSegments(
       new THREE.EdgesGeometry(new THREE.SphereGeometry(.34, 14, 9)),
       new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0, depthWrite: false })
@@ -450,7 +451,8 @@ export function createCivilizationEventVisual(event) {
     group.add(atmosphere, planet);
     effect.planet = planet;
     effect.atmosphere = atmosphere;
-  } else if (event.visual === 'digital-migration') {
+  }],
+  ['digital-migration', ({ event, group, effect, color }) => {
     const lattice = new THREE.LineSegments(
       new THREE.EdgesGeometry(new THREE.BoxGeometry(.72, .72, .72, 2, 2, 2)),
       new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending })
@@ -462,7 +464,8 @@ export function createCivilizationEventVisual(event) {
     group.add(lattice, innerLattice);
     effect.lattice = lattice;
     effect.innerLattice = innerLattice;
-  } else if (event.visual === 'precursor-ruins') {
+  }],
+  ['precursor-ruins', ({ event, group, effect, color }) => {
     const ruin = new THREE.LineSegments(
       new THREE.EdgesGeometry(new THREE.TetrahedronGeometry(.52, 1)),
       new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending })
@@ -470,7 +473,8 @@ export function createCivilizationEventVisual(event) {
     ruin.scale.set(1, 1.6, 1);
     group.add(ruin);
     effect.ruin = ruin;
-  } else if (event.visual === 'information-plague') {
+  }],
+  ['information-plague', ({ event, group, effect, color }) => {
     const positions = [];
     for (let index = 0; index < 20; index++) {
       const angle = index / 20 * Math.PI * 2;
@@ -495,7 +499,8 @@ export function createCivilizationEventVisual(event) {
     }));
     group.add(infectedNetwork);
     effect.infectedNetwork = infectedNetwork;
-  } else if (event.visual === 'relativistic-divergence') {
+  }],
+  ['relativistic-divergence', ({ event, group, effect, color }) => {
     const trails = [-1, 1].map((side) => {
       const points = [];
       for (let index = 0; index <= 40; index++) {
@@ -514,7 +519,8 @@ export function createCivilizationEventVisual(event) {
       return trail;
     });
     effect.relativisticTrails = trails;
-  } else if (event.visual === 'biosphere-chain') {
+  }],
+  ['biosphere-chain', ({ event, group, effect, color }) => {
     const biosphereShells = [0, 1, 2, 3].map((index) => {
       const shell = new THREE.LineSegments(
         new THREE.EdgesGeometry(new THREE.SphereGeometry(.2 + index * .1, 10 + index * 2, 6)),
@@ -525,7 +531,8 @@ export function createCivilizationEventVisual(event) {
       return shell;
     });
     effect.biosphereShells = biosphereShells;
-  } else if (event.visual === 'light-cone') {
+  }],
+  ['light-cone', ({ event, group, effect, color }) => {
     const lightCones = [-1, 1].map((direction) => {
       const cone = new THREE.LineSegments(
         new THREE.EdgesGeometry(new THREE.ConeGeometry(.62, 1.7, 18, 1, true)),
@@ -537,7 +544,8 @@ export function createCivilizationEventVisual(event) {
       return cone;
     });
     effect.lightCones = lightCones;
-  } else if (event.visual === 'stellar-engine') {
+  }],
+  ['stellar-engine', ({ event, group, effect, color }) => {
     const engineRings = [0, 1].map((index) => {
       const engineRing = new THREE.LineSegments(
         new THREE.EdgesGeometry(new THREE.TorusGeometry(.48 + index * .2, .018, 4, 72)),
@@ -563,7 +571,8 @@ export function createCivilizationEventVisual(event) {
     group.add(engineBeams);
     effect.engineRings = engineRings;
     effect.engineBeams = engineBeams;
-  } else if (event.visual === 'galactic-encounter') {
+  }],
+  ['galactic-encounter', ({ event, group, effect, color }) => {
     const companion = new THREE.Sprite(additiveMaterial({ map: makeGlowTexture(), color }));
     const tidalRing = new THREE.Sprite(additiveMaterial({ map: makeRingTexture(), color }));
     companion.position.set(4.2, .5, -1.6);
@@ -572,7 +581,8 @@ export function createCivilizationEventVisual(event) {
     group.add(companion, tidalRing);
     effect.companion = companion;
     effect.tidalRing = tidalRing;
-  } else if (event.visual === 'microlensing') {
+  }],
+  ['microlensing', ({ event, group, effect, color }) => {
     const source = new THREE.Sprite(additiveMaterial({ map: getPointTexture(), color: 0xf7fbff }));
     const einsteinRing = new THREE.Sprite(additiveMaterial({ map: makeRingTexture(), color }));
     const imageA = new THREE.Sprite(additiveMaterial({ map: getPointTexture(), color: 0xffffff }));
@@ -584,7 +594,8 @@ export function createCivilizationEventVisual(event) {
     effect.lensSource = source;
     effect.einsteinRing = einsteinRing;
     effect.lensImages = [imageA, imageB];
-  } else if (event.visual === 'transit-curve') {
+  }],
+  ['transit-curve', ({ event, group, effect, color }) => {
     const points = [];
     for (let index = 0; index <= 96; index++) {
       const progress = index / 96;
@@ -606,7 +617,8 @@ export function createCivilizationEventVisual(event) {
     group.add(curve, scanner);
     effect.transitCurve = curve;
     effect.transitScanner = scanner;
-  } else if (event.visual === 'waste-heat') {
+  }],
+  ['waste-heat', ({ event, group, effect, color }) => {
     const star = new THREE.Sprite(additiveMaterial({ map: getPointTexture(), color: 0xfff2c4 }));
     const infraredShells = [0, 1, 2].map((index) => {
       const shell = new THREE.Sprite(additiveMaterial({ map: makeRingTexture(), color }));
@@ -618,7 +630,8 @@ export function createCivilizationEventVisual(event) {
     group.add(star);
     effect.wasteHeatStar = star;
     effect.infraredShells = infraredShells;
-  } else if (event.visual === 'signal-silence') {
+  }],
+  ['signal-silence', ({ event, group, effect, color }) => {
     const fadingRings = [0, 1, 2, 3].map((index) => {
       const echo = new THREE.Sprite(additiveMaterial({ map: makeRingTexture(), color }));
       echo.userData.offset = index / 4;
@@ -638,30 +651,19 @@ export function createCivilizationEventVisual(event) {
     group.add(signalBreak);
     effect.fadingSignalRings = fadingRings;
     effect.signalBreak = signalBreak;
-  } else if (event.visual === 'last-star') {
+  }],
+  ['last-star', ({ event, group, effect, color }) => {
     const finalStar = new THREE.Sprite(additiveMaterial({ map: getPointTexture(), color: 0xffd79a }));
     const coolingHalo = new THREE.Sprite(additiveMaterial({ map: makeGlowTexture(), color: 0x7790ad }));
     finalStar.scale.setScalar(.24);
     group.add(coolingHalo, finalStar);
     effect.finalStar = finalStar;
     effect.coolingHalo = coolingHalo;
-  }
+  }]
+]);
 
-  group.userData.effect = effect;
-  return group;
-}
-
-export function updateCivilizationEventVisual(event, phase, persistence = 0) {
-  const effect = event.group.userData.effect;
-  const reveal = THREE.MathUtils.smoothstep(phase, 0, .12);
-  const fade = 1 - THREE.MathUtils.smoothstep(phase, .78, 1);
-  const intensity = Math.max(persistence, reveal * fade);
-  effect.glow.material.opacity = intensity * .48;
-  effect.glow.scale.setScalar(.38 + phase * 1.5 + persistence * .7);
-  effect.ring.material.opacity = intensity * .32;
-  effect.ring.scale.setScalar(.34 + Math.pow(Math.max(0, phase), .7) * 2.2);
-
-  if (effect.segments) {
+export const civilizationEventVisualUpdateRegistry = new Map([
+  ['interuniversal-gateway', ({ event, effect, phase, persistence, reveal, fade, intensity }) => {
     const construction = THREE.MathUtils.smoothstep(phase, 0, .92);
     const portalOpen = Math.max(persistence, THREE.MathUtils.smoothstep(phase, .58, 1));
     const builderFade = 1 - THREE.MathUtils.smoothstep(phase, .74, 1);
@@ -704,16 +706,15 @@ export function updateCivilizationEventVisual(event, phase, persistence = 0) {
     }
     effect.builders.geometry.attributes.position.needsUpdate = true;
     effect.builders.material.opacity = reveal * builderFade * .86;
-  }
-
-  if (effect.echoRings) {
+  }],
+  ['signal-wave', ({ event, effect, phase, persistence, reveal, fade, intensity }) => {
     effect.echoRings.forEach((ring, index) => {
       const travel = Math.max(0, Math.min(1, phase * 1.45 - index * .16));
       ring.scale.setScalar(.2 + travel * 4.8);
       ring.material.opacity = Math.sin(travel * Math.PI) * .2;
     });
-  }
-  if (effect.swarm) {
+  }],
+  ['probe-swarm', ({ event, effect, phase, persistence, reveal, fade, intensity }) => {
     const positions = effect.swarm.geometry.attributes.position.array;
     const spread = .08 + Math.pow(Math.max(0, phase), .72) * 2.3;
     for (let index = 0; index < effect.directions.length / 3; index++) {
@@ -725,27 +726,27 @@ export function updateCivilizationEventVisual(event, phase, persistence = 0) {
     }
     effect.swarm.geometry.attributes.position.needsUpdate = true;
     effect.swarm.material.opacity = intensity * .84;
-  }
-  if (effect.shells) {
+  }],
+  ['megastructure', ({ event, effect, phase, persistence, reveal, fade, intensity }) => {
     effect.shells.forEach((shell, index) => {
       shell.material.opacity = Math.max(persistence * .38, reveal * (.34 - index * .055));
       shell.scale.setScalar(.5 + reveal * .5);
     });
-  }
-  if (effect.fractures) {
+  }],
+  ['civilization-fracture', ({ event, effect, phase, persistence, reveal, fade, intensity }) => {
     effect.fractures.material.opacity = intensity * .58;
     effect.fractures.scale.setScalar(.25 + phase * 1.35);
-  }
-  if (effect.archiveCore) {
+  }],
+  ['knowledge-ark', ({ event, effect, phase, persistence, reveal, fade, intensity }) => {
     effect.archiveCore.material.opacity = Math.max(persistence * .55, intensity * .8);
     effect.archiveCore.scale.setScalar(.55 + reveal * .45);
-  }
-  if (effect.strands) {
+  }],
+  ['uplift', ({ event, effect, phase, persistence, reveal, fade, intensity }) => {
     effect.strands.forEach((strand) => { strand.material.opacity = intensity * .64; });
     effect.strands[0].scale.setScalar(.7 + reveal * .3);
     effect.strands[1].scale.setScalar(.7 + reveal * .3);
-  }
-  if (effect.debris) {
+  }],
+  ['orbital-debris', ({ event, effect, phase, persistence, reveal, fade, intensity }) => {
     const positions = effect.debris.geometry.attributes.position.array;
     const disruption = .25 + reveal * 1.25;
     for (let index = 0; index < effect.debrisDirections.length / 3; index++) {
@@ -756,54 +757,54 @@ export function updateCivilizationEventVisual(event, phase, persistence = 0) {
     }
     effect.debris.geometry.attributes.position.needsUpdate = true;
     effect.debris.material.opacity = intensity * .82;
-  }
-  if (effect.planet) {
+  }],
+  ['terraforming', ({ event, effect, phase, persistence, reveal, fade, intensity }) => {
     effect.planet.material.opacity = intensity * .7;
     effect.planet.scale.setScalar(.72 + reveal * .28);
     effect.atmosphere.material.opacity = intensity * .34;
-  }
-  if (effect.lattice) {
+  }],
+  ['digital-migration', ({ event, effect, phase, persistence, reveal, fade, intensity }) => {
     effect.lattice.material.opacity = intensity * .58;
     effect.innerLattice.material.opacity = intensity * .85;
     effect.lattice.scale.setScalar(.5 + reveal * .5);
-  }
-  if (effect.ruin) {
+  }],
+  ['precursor-ruins', ({ event, effect, phase, persistence, reveal, fade, intensity }) => {
     effect.ruin.material.opacity = intensity * .72;
     effect.ruin.scale.setScalar(.52 + reveal * .48);
     effect.ruin.scale.y *= 1.6;
-  }
-  if (effect.infectedNetwork) {
+  }],
+  ['information-plague', ({ event, effect, phase, persistence, reveal, fade, intensity }) => {
     effect.infectedNetwork.material.opacity = intensity * (.32 + Math.sin(phase * Math.PI * 7) * .2);
     effect.infectedNetwork.scale.setScalar(.35 + reveal * .85);
-  }
-  if (effect.relativisticTrails) {
+  }],
+  ['relativistic-divergence', ({ event, effect, phase, persistence, reveal, fade, intensity }) => {
     effect.relativisticTrails.forEach((trail) => {
       trail.material.opacity = intensity * .72;
       trail.scale.setScalar(.32 + reveal * .68);
     });
-  }
-  if (effect.biosphereShells) {
+  }],
+  ['biosphere-chain', ({ event, effect, phase, persistence, reveal, fade, intensity }) => {
     effect.biosphereShells.forEach((shell, index) => {
       const stageReveal = THREE.MathUtils.smoothstep(phase, index * .16, index * .16 + .22);
       shell.material.opacity = stageReveal * fade * (.62 - index * .08);
       shell.scale.setScalar(.58 + stageReveal * .42);
     });
-  }
-  if (effect.lightCones) {
+  }],
+  ['light-cone', ({ event, effect, phase, persistence, reveal, fade, intensity }) => {
     effect.lightCones.forEach((cone) => {
       cone.material.opacity = intensity * .34;
       cone.scale.setScalar(.3 + reveal * .7);
     });
-  }
-  if (effect.engineRings) {
+  }],
+  ['stellar-engine', ({ event, effect, phase, persistence, reveal, fade, intensity }) => {
     effect.engineRings.forEach((engineRing, index) => {
       engineRing.material.opacity = Math.max(persistence * .42, intensity * (.68 - index * .14));
       engineRing.scale.setScalar(.45 + reveal * .55);
     });
     effect.engineBeams.material.opacity = intensity * .44;
     effect.engineBeams.scale.setScalar(.4 + reveal * .6);
-  }
-  if (effect.companion) {
+  }],
+  ['galactic-encounter', ({ event, effect, phase, persistence, reveal, fade, intensity }) => {
     effect.glow.scale.setScalar(6 + phase * 5);
     effect.glow.material.opacity = intensity * .16;
     effect.ring.scale.setScalar(4 + phase * 8);
@@ -812,8 +813,8 @@ export function updateCivilizationEventVisual(event, phase, persistence = 0) {
     effect.tidalRing.material.opacity = intensity * .2;
     effect.tidalRing.scale.setScalar(5 + reveal * 7);
     effect.companion.position.x = 5.2 - phase * 3.8;
-  }
-  if (effect.einsteinRing) {
+  }],
+  ['microlensing', ({ event, effect, phase, persistence, reveal, fade, intensity }) => {
     const alignment = Math.sin(Math.min(1, phase) * Math.PI);
     const magnification = Math.min(2.2, event.peakMagnification || 1.4);
     effect.lensSource.material.opacity = intensity * (.32 + alignment * .68);
@@ -825,24 +826,24 @@ export function updateCivilizationEventVisual(event, phase, persistence = 0) {
       image.position.x = side * (.14 + alignment * .34);
       image.material.opacity = alignment * intensity * (index ? .48 : .72);
     });
-  }
-  if (effect.transitCurve) {
+  }],
+  ['transit-curve', ({ event, effect, phase, persistence, reveal, fade, intensity }) => {
     effect.transitCurve.material.opacity = intensity * .76;
     const scan = THREE.MathUtils.clamp(phase, 0, 1);
     effect.transitScanner.position.x = THREE.MathUtils.lerp(-1.3, 1.3, scan);
     const dip = Math.exp(-(((scan - .5) / .12) ** 2)) * (.22 + (event.transitDepth || .04));
     effect.transitScanner.position.y = .24 - dip;
     effect.transitScanner.material.opacity = intensity;
-  }
-  if (effect.infraredShells) {
+  }],
+  ['waste-heat', ({ event, effect, phase, persistence, reveal, fade, intensity }) => {
     effect.wasteHeatStar.material.opacity = intensity * .68;
     effect.infraredShells.forEach((shell, index) => {
       const travel = (Math.max(0, phase) * .72 + shell.userData.offset) % 1;
       shell.scale.setScalar(.42 + travel * 2.3);
       shell.material.opacity = intensity * Math.sin(travel * Math.PI) * (.34 - index * .055);
     });
-  }
-  if (effect.fadingSignalRings) {
+  }],
+  ['signal-silence', ({ event, effect, phase, persistence, reveal, fade, intensity }) => {
     const silence = THREE.MathUtils.smoothstep(phase, .28, .78);
     effect.fadingSignalRings.forEach((echo, index) => {
       const travel = THREE.MathUtils.clamp(phase * 1.1 - index * .1, 0, 1);
@@ -851,60 +852,18 @@ export function updateCivilizationEventVisual(event, phase, persistence = 0) {
     });
     effect.signalBreak.material.opacity = intensity * silence * .68;
     effect.signalBreak.scale.setScalar(.5 + silence * .5);
-  }
-  if (effect.finalStar) {
+  }],
+  ['last-star', ({ event, effect, phase, persistence, reveal, fade, intensity }) => {
     const extinction = THREE.MathUtils.smoothstep(phase, .3, .82);
     effect.finalStar.material.opacity = intensity * (1 - extinction);
     effect.finalStar.scale.setScalar(.2 * (1 - extinction * .82));
     effect.coolingHalo.material.opacity = intensity * extinction * (1 - phase) * .28;
     effect.coolingHalo.scale.setScalar(.4 + extinction * 2.4);
-  }
-}
+  }]
+]);
 
-export function animateCivilizationEventVisual(event, now) {
-  const effect = event.group.userData.effect;
-  effect.ring.material.rotation = now * .00012;
-  if (effect.swarm) effect.swarm.rotation.y = now * .00024;
-  effect.shells?.forEach((shell, index) => {
-    shell.rotation.y += .0025 + index * .0011;
-  });
-  if (effect.archiveCore) {
-    effect.archiveCore.rotation.x = now * .00019;
-    effect.archiveCore.rotation.y = now * .00027;
-  }
-  effect.strands?.forEach((strand, index) => {
-    strand.rotation.y = now * (index ? -.00034 : .00034);
-  });
-  if (effect.debris) effect.debris.rotation.y = now * .00022;
-  if (effect.planet) effect.planet.rotation.y = now * .00018;
-  if (effect.lattice) {
-    effect.lattice.rotation.x = now * .00016;
-    effect.lattice.rotation.y = now * .00024;
-    effect.innerLattice.rotation.y = now * -.00032;
-  }
-  if (effect.ruin) effect.ruin.rotation.y = now * .0002;
-  if (effect.infectedNetwork) effect.infectedNetwork.rotation.y = now * -.00026;
-  effect.relativisticTrails?.forEach((trail, index) => {
-    trail.rotation.z = Math.sin(now * .0008 + index * Math.PI) * .08;
-  });
-  effect.biosphereShells?.forEach((shell, index) => {
-    shell.rotation.y = now * (.00012 + index * .00004) * (index % 2 ? -1 : 1);
-  });
-  effect.lightCones?.forEach((cone, index) => {
-    cone.rotation.y = now * (index ? -.00014 : .00014);
-  });
-  effect.engineRings?.forEach((engineRing, index) => {
-    engineRing.rotation.y += .0028 + index * .0014;
-  });
-  if (effect.engineBeams) effect.engineBeams.rotation.z = now * .00018;
-  if (effect.tidalRing) effect.tidalRing.material.rotation = now * .00004;
-  if (effect.einsteinRing) effect.einsteinRing.material.rotation = now * .00006;
-  if (effect.infraredShells) {
-    effect.infraredShells.forEach((shell, index) => {
-      shell.material.rotation = now * (.000025 + index * .000012) * (index % 2 ? -1 : 1);
-    });
-  }
-  if (effect.segments) {
+export const civilizationEventVisualAnimationRegistry = new Map([
+  ['interuniversal-gateway', ({ effect, now }) => {
     effect.assembly.rotation.y = Math.sin(now * .00008) * .045;
     effect.energyRings.forEach((energyRing, index) => {
       energyRing.rotation.z = now * (.00007 + index * .00004) * (index ? -1 : 1);
@@ -913,5 +872,114 @@ export function animateCivilizationEventVisual(event, now) {
     updateGatewaySuction(effect, now * .001);
     effect.builders.rotation.z = now * .000035;
     effect.apertureHalo.material.rotation = now * .000025;
-  }
+  }],
+  ['probe-swarm', ({ effect, now }) => {
+    effect.swarm.rotation.y = now * .00024;
+  }],
+  ['megastructure', ({ effect }) => {
+    effect.shells.forEach((shell, index) => {
+      shell.rotation.y += .0025 + index * .0011;
+    });
+  }],
+  ['knowledge-ark', ({ effect, now }) => {
+    effect.archiveCore.rotation.x = now * .00019;
+    effect.archiveCore.rotation.y = now * .00027;
+  }],
+  ['uplift', ({ effect, now }) => {
+    effect.strands.forEach((strand, index) => {
+      strand.rotation.y = now * (index ? -.00034 : .00034);
+    });
+  }],
+  ['orbital-debris', ({ effect, now }) => {
+    effect.debris.rotation.y = now * .00022;
+  }],
+  ['terraforming', ({ effect, now }) => {
+    effect.planet.rotation.y = now * .00018;
+  }],
+  ['digital-migration', ({ effect, now }) => {
+    effect.lattice.rotation.x = now * .00016;
+    effect.lattice.rotation.y = now * .00024;
+    effect.innerLattice.rotation.y = now * -.00032;
+  }],
+  ['precursor-ruins', ({ effect, now }) => {
+    effect.ruin.rotation.y = now * .0002;
+  }],
+  ['information-plague', ({ effect, now }) => {
+    effect.infectedNetwork.rotation.y = now * -.00026;
+  }],
+  ['relativistic-divergence', ({ effect, now }) => {
+    effect.relativisticTrails.forEach((trail, index) => {
+      trail.rotation.z = Math.sin(now * .0008 + index * Math.PI) * .08;
+    });
+  }],
+  ['biosphere-chain', ({ effect, now }) => {
+    effect.biosphereShells.forEach((shell, index) => {
+      shell.rotation.y = now * (.00012 + index * .00004) * (index % 2 ? -1 : 1);
+    });
+  }],
+  ['light-cone', ({ effect, now }) => {
+    effect.lightCones.forEach((cone, index) => {
+      cone.rotation.y = now * (index ? -.00014 : .00014);
+    });
+  }],
+  ['stellar-engine', ({ effect, now }) => {
+    effect.engineRings.forEach((engineRing, index) => {
+      engineRing.rotation.y += .0028 + index * .0014;
+    });
+    effect.engineBeams.rotation.z = now * .00018;
+  }],
+  ['galactic-encounter', ({ effect, now }) => {
+    effect.tidalRing.material.rotation = now * .00004;
+  }],
+  ['microlensing', ({ effect, now }) => {
+    effect.einsteinRing.material.rotation = now * .00006;
+  }],
+  ['waste-heat', ({ effect, now }) => {
+    effect.infraredShells.forEach((shell, index) => {
+      shell.material.rotation = now * (.000025 + index * .000012) * (index % 2 ? -1 : 1);
+    });
+  }]
+]);
+
+export const civilizationEventVisualRegistry = new Map(
+  [...civilizationEventVisualBuilderRegistry.keys()].map((visual) => [visual, {
+    create: civilizationEventVisualBuilderRegistry.get(visual),
+    update: civilizationEventVisualUpdateRegistry.get(visual),
+    animate: civilizationEventVisualAnimationRegistry.get(visual) || null
+  }])
+);
+
+export function createCivilizationEventVisual(event) {
+  const group = new THREE.Group();
+  const color = new THREE.Color(event.color);
+  const glow = new THREE.Sprite(additiveMaterial({ map: makeGlowTexture(), color }));
+  const ring = new THREE.Sprite(additiveMaterial({ map: makeRingTexture(), color }));
+  group.add(glow, ring);
+  const effect = { glow, ring };
+
+  civilizationEventVisualRegistry.get(event.visual)?.create({ event, group, effect, color });
+
+  group.userData.effect = effect;
+  return group;
+}
+
+export function updateCivilizationEventVisual(event, phase, persistence = 0) {
+  const effect = event.group.userData.effect;
+  const reveal = THREE.MathUtils.smoothstep(phase, 0, .12);
+  const fade = 1 - THREE.MathUtils.smoothstep(phase, .78, 1);
+  const intensity = Math.max(persistence, reveal * fade);
+  effect.glow.material.opacity = intensity * .48;
+  effect.glow.scale.setScalar(.38 + phase * 1.5 + persistence * .7);
+  effect.ring.material.opacity = intensity * .32;
+  effect.ring.scale.setScalar(.34 + Math.pow(Math.max(0, phase), .7) * 2.2);
+
+  civilizationEventVisualRegistry.get(event.visual)?.update?.({
+    event, effect, phase, persistence, reveal, fade, intensity
+  });
+}
+
+export function animateCivilizationEventVisual(event, now) {
+  const effect = event.group.userData.effect;
+  effect.ring.material.rotation = now * .00012;
+  civilizationEventVisualRegistry.get(event.visual)?.animate?.({ event, effect, now });
 }

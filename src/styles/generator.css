@@ -1,0 +1,210 @@
+.generator-view,
+.explorer-view {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.8s ease, visibility 0s 0.8s;
+}
+
+.generator-view.is-active,
+.explorer-view.is-active {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.8s ease, visibility 0s;
+}
+
+.hero-copy {
+  position: absolute;
+  top: 16vh;
+  left: 8vw;
+}
+
+.kicker {
+  margin: 0 0 14px;
+  color: var(--muted);
+  font: 400 9px/1.2 "Space Mono", monospace;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+}
+
+h1 { margin: 0; font-family: var(--display-font); font-weight: 400; line-height: 0.84; letter-spacing: -0.025em; }
+h1 span { display: block; font-size: clamp(40px, 6vw, 92px); }
+h1 strong {
+  display: block;
+  margin: clamp(14px, 1.3vw, 22px) 0 0 0.7em;
+  color: transparent;
+  -webkit-text-stroke: 1px rgba(241, 238, 231, 0.65);
+  font: 400 clamp(28px, 2.75vw, 46px)/0.95 "Space Mono", monospace;
+  letter-spacing: -0.055em;
+  white-space: nowrap;
+}
+
+.orbit-label {
+  position: absolute;
+  color: rgba(241, 238, 231, 0.28);
+  font: 8px/1 "Space Mono", monospace;
+  letter-spacing: 0.18em;
+}
+.label-a { top: 32%; left: 53%; transform: rotate(75deg); }
+.label-b { top: 20%; right: 19%; }
+
+.universe-data {
+  position: absolute;
+  right: 3.4vw;
+  bottom: 15vh;
+  width: min(41vw, 610px);
+  height: 294px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(216, 255, 95, .42) rgba(241, 238, 231, .04);
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+  border-top: 1px solid var(--line);
+  pointer-events: auto;
+}
+
+.universe-data::-webkit-scrollbar { width: 5px; }
+.universe-data::-webkit-scrollbar-track { background: rgba(241, 238, 231, .04); }
+.universe-data::-webkit-scrollbar-thumb {
+  border-radius: 99px;
+  background: rgba(216, 255, 95, .42);
+}
+.universe-data:focus-visible {
+  outline: 1px solid rgba(216, 255, 95, .42);
+  outline-offset: 7px;
+}
+
+.metric {
+  display: grid;
+  grid-template-columns: 34px 1fr auto;
+  align-items: baseline;
+  min-height: 49px;
+  padding: 14px 0 12px;
+  border-bottom: 1px solid var(--faint);
+  opacity: 0;
+  transform: translateY(10px);
+  animation: metric-in 0.55s calc(0.5s + var(--order) * 0.07s) forwards ease;
+}
+
+.metric-index { color: rgba(241, 238, 231, 0.26); font: 8px "Space Mono", monospace; }
+.metric-label { color: var(--muted); font-size: 11px; letter-spacing: 0.08em; }
+.metric strong { max-width: 260px; text-align: right; font: 400 16px var(--display-font); letter-spacing: 0; }
+
+.primary-actions {
+  position: absolute;
+  left: 8vw;
+  bottom: 8vh;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.enter-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 185px;
+  height: 54px;
+  padding: 0 16px 0 22px;
+  border: 1px solid rgba(216, 255, 95, 0.65);
+  border-radius: 100px;
+  background: rgba(9, 10, 9, 0.36);
+  backdrop-filter: blur(8px);
+  color: var(--ink);
+  cursor: pointer;
+  font-family: var(--display-font);
+  font-size: 16px;
+  letter-spacing: 0.1em;
+  transition: color 0.35s ease, background 0.35s ease, transform 0.35s ease;
+}
+
+.enter-arrow {
+  display: grid;
+  place-items: center;
+  width: 31px;
+  height: 31px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #111307;
+  font: 17px "Space Mono", monospace;
+  transition: transform 0.35s cubic-bezier(.2,.9,.2,1);
+}
+
+.enter-button:hover { background: var(--accent); color: #111307; transform: translateY(-2px); }
+.enter-button:hover .enter-arrow { transform: rotate(45deg); background: #111307; color: var(--accent); }
+.primary-actions p { margin: 0; color: rgba(241,238,231,.35); font-size: 9px; letter-spacing: .08em; }
+.compare-button {
+  padding: 10px 2px;
+  color: rgba(241,238,231,.58);
+  transition: color .2s ease, transform .25s cubic-bezier(.2,.8,.2,1);
+}
+.compare-button span:first-child { transition: border-color .2s ease; }
+.compare-arrow {
+  color: var(--accent);
+  font: 13px/1 "Space Mono", monospace;
+  opacity: .62;
+  transform: translateX(-3px);
+  transition: opacity .2s ease, transform .25s cubic-bezier(.2,.8,.2,1);
+}
+.compare-button:hover,
+.compare-button:focus-visible,
+.compare-button[aria-expanded="true"] {
+  color: var(--ink);
+  transform: translateX(3px);
+}
+.compare-button:hover span:first-child,
+.compare-button:focus-visible span:first-child,
+.compare-button[aria-expanded="true"] span:first-child { border-color: var(--accent); }
+.compare-button:hover .compare-arrow,
+.compare-button:focus-visible .compare-arrow,
+.compare-button[aria-expanded="true"] .compare-arrow {
+  opacity: 1;
+  transform: translateX(2px);
+}
+.compare-button:focus-visible {
+  border-radius: 2px;
+  outline: 1px solid rgba(216,255,95,.7);
+  outline-offset: 4px;
+}
+.multiverse-lab {
+  position: absolute;
+  z-index: 8;
+  top: 13vh;
+  right: 5vw;
+  width: min(410px, 42vw);
+  max-height: 72vh;
+  padding: 28px;
+  overflow-y: auto;
+  border-top: 1px solid var(--accent);
+  background: rgba(5,5,8,.88);
+  backdrop-filter: blur(18px);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(28px);
+  transition: opacity .35s ease, transform .35s ease, visibility .35s;
+}
+.multiverse-lab.is-open { opacity: 1; visibility: visible; transform: translateX(0); }
+.multiverse-lab h2 { margin: 7px 0 8px; font: 400 28px var(--display-font); }
+.multiverse-lab > p:not(.kicker) { margin: 0 0 24px; color: var(--muted); font-size: 11px; line-height: 1.7; }
+.multiverse-list { display: grid; }
+.multiverse-list button {
+  display: grid;
+  grid-template-columns: 54px 1fr;
+  gap: 4px 12px;
+  padding: 13px 0;
+  border: 0;
+  border-bottom: 1px solid var(--faint);
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.multiverse-list button:hover b { color: var(--accent); }
+.multiverse-list span { grid-row: 1 / 3; color: var(--muted); font: 8px "Space Mono", monospace; }
+.multiverse-list b { font: 400 12px "Space Mono", monospace; transition: color .2s ease; }
+.multiverse-list small { color: var(--muted); font-size: 9px; }
+
